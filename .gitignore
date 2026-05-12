@@ -1,0 +1,15 @@
+.venv/
+.venv-uv/
+.uv-cache/
+.uv-python/
+node_modules/
+dist/
+__pycache__/
+*.py[cod]
+*.log
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+treechat.db
+*.db
+.env

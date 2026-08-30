@@ -19,6 +19,7 @@ import {
 import { CharacterSummary, ChatSession, Message, RegexRule, SessionTree } from "../lib/api";
 import { activeMessages as getActiveMessages, siblingsFor } from "../lib/tree";
 import { useAppStore } from "../state/useAppStore";
+import { ForestTreeView } from "./ForestTreeView";
 import { RegexMessage } from "./RegexMessage";
 
 type Props = {
@@ -82,8 +83,10 @@ export function ChatWorkspace({
   const edit = useAppStore((state) => sessionId ? state.edits[sessionId] : undefined);
   const setEdit = useAppStore((state) => state.setEdit);
   const [interactionError, setInteractionError] = useState<string | null>(null);
+  const [treeViewOpen, setTreeViewOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const shouldFollowRef = useRef(true);
+  const pendingRevealRef = useRef<string | null>(null);
 
   const activeMessages = useMemo(() => getActiveMessages(tree), [tree]);
   const character = characters.find((item) => item.id === activeSession?.character_id);
@@ -105,6 +108,11 @@ export function ChatWorkspace({
       scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: streaming ? "auto" : "smooth" });
     }
   }, [contentRevision, streaming]);
+
+  useLayoutEffect(() => {
+    const messageId = pendingRevealRef.current;
+    if (messageId) revealMessage(messageId);
+  }, [activeMessages]);
 
   function trackScroll() {
     const element = scrollRef.current;
@@ -143,6 +151,38 @@ export function ChatWorkspace({
     }
   }
 
+  function revealMessage(messageId: string) {
+    const container = scrollRef.current;
+    if (!container) return;
+    const target = Array.from(container.querySelectorAll<HTMLElement>("[data-message-id]"))
+      .find((element) => element.dataset.messageId === messageId);
+    if (!target) return;
+    shouldFollowRef.current = false;
+    pendingRevealRef.current = null;
+    target.scrollIntoView({ block: "center", behavior: "smooth" });
+  }
+
+  async function selectMessageAndReveal(messageId: string) {
+    pendingRevealRef.current = messageId;
+    shouldFollowRef.current = false;
+    setInteractionError(null);
+    try {
+      await onSelectMessage(messageId);
+      requestAnimationFrame(() => revealMessage(messageId));
+    } catch (cause) {
+      pendingRevealRef.current = null;
+      const detail = cause instanceof Error ? cause.message : String(cause);
+      setInteractionError(`无法切换到所选消息：${detail}`);
+      throw cause;
+    }
+  }
+
+  function selectSwipeFromToolbar(messageId: string) {
+    void selectMessageAndReveal(messageId).catch((cause) => {
+      console.error("Swipe 切换失败", cause);
+    });
+  }
+
   return (
     <section className="chat-pane">
       <header className="chat-header">
@@ -153,6 +193,15 @@ export function ChatWorkspace({
         </div>
         <div className="chat-actions">
           {character?.avatar_data_url && <img className="avatar" src={character.avatar_data_url} alt={character.name} />}
+          <button
+            className="secondary-button tree-view-trigger"
+            type="button"
+            title="打开完整聊天森林"
+            disabled={!tree}
+            onClick={() => setTreeViewOpen(true)}
+          >
+            <GitBranch size={16} /><span>Tree View</span>
+          </button>
           <button
             className="icon-button theme-toggle"
             type="button"
@@ -192,7 +241,7 @@ export function ChatWorkspace({
           const cachedTokens = message.generation_run?.cached_input_tokens || usageNumber(message.usage, "cached_input_tokens", "cached_tokens") || message.cached_tokens;
           const speed = message.generation_run?.tokens_per_second || tokenSpeed(message);
           return (
-            <div key={message.id} className={`message-line ${message.role}`}>
+            <div key={message.id} className={`message-line ${message.role}`} data-message-id={message.id}>
               {message.role === "assistant" && character?.avatar_data_url && (
                 <img className="message-avatar" src={character.avatar_data_url} alt="" aria-hidden="true" />
               )}
@@ -222,9 +271,9 @@ export function ChatWorkspace({
                   <span className="token-pill">输出 {outputTokens || 0} tok</span>
                   {cachedTokens > 0 && <span className="token-pill cache">缓存输入 {cachedTokens} tok</span>}
                   {speed > 0 && <span className="token-pill">{speed.toFixed(1)} tok/s</span>}
-                  <button className="icon-button" title="上一个 swipe" disabled={!previous} onClick={() => previous && onSelectMessage(previous.id)}><ChevronLeft size={16} /></button>
+                  <button className="icon-button" title="上一个 swipe" disabled={!previous} onClick={() => previous && selectSwipeFromToolbar(previous.id)}><ChevronLeft size={16} /></button>
                   <span className="swipe-counter">{index + 1}/{siblings.length}</span>
-                  <button className="icon-button" title="下一个 swipe" disabled={!next} onClick={() => next && onSelectMessage(next.id)}><ChevronRight size={16} /></button>
+                  <button className="icon-button" title="下一个 swipe" disabled={!next} onClick={() => next && selectSwipeFromToolbar(next.id)}><ChevronRight size={16} /></button>
                   <button className="icon-button" title="复制为新 swipe" onClick={() => onCreateSwipe(message)}><CopyPlus size={16} /></button>
                   <button className="icon-button" title="编辑并创建新 swipe" onClick={() => startEdit(message)}><Edit3 size={16} /></button>
                   {message.role === "assistant" && (
@@ -245,8 +294,19 @@ export function ChatWorkspace({
             placeholder="输入内容；发送后自动生成角色回复"
             disabled={!tree || streaming}
           /></label>
-        <button className="send-button" disabled={!tree || streaming || !draft.trim()} title="发送"><Send size={18} /></button>
+        {streaming ? (
+          <button className="send-button composer-stop-button" type="button" title="停止生成" aria-label="停止生成" onClick={onStop}><Square size={17} /></button>
+        ) : (
+          <button className="send-button" disabled={!tree || !draft.trim()} title="发送" aria-label="发送"><Send size={18} /></button>
+        )}
       </form>
+      {treeViewOpen && tree && (
+        <ForestTreeView
+          tree={tree}
+          onClose={() => setTreeViewOpen(false)}
+          onSelectMessage={selectMessageAndReveal}
+        />
+      )}
     </section>
   );
 }

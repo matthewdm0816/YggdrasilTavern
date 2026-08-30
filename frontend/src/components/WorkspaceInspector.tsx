@@ -19,6 +19,7 @@ import { api, PromptSlot, RegexRule, RegexTarget, SessionTree, WorldBook } from 
 import { defaultPromptSlots, promptSlotsFromPreset, regexRulesFromPreset, worldbookIdsFromPreset } from "../lib/prompt";
 import { validateRegex } from "../lib/regex";
 import { sortMessages } from "../lib/tree";
+import { CollapsibleSection } from "./CollapsibleSection";
 
 type Props = {
   tree?: SessionTree;
@@ -31,6 +32,7 @@ type Props = {
 };
 
 const defaultSlots = defaultPromptSlots();
+const promptSlotDragType = "application/x-yggdrasil-prompt-slot";
 
 const targets: Array<{ value: RegexTarget; label: string; help: string }> = [
   { value: "display", label: "聊天显示", help: "只改变你看到的文本，不改原消息。" },
@@ -176,7 +178,7 @@ export function WorkspaceInspector({ tree, selectedSessionId, worldbooks, onSess
           <button
             className={active ? "branch-node active" : "branch-node"}
             style={{ paddingLeft: 10 + depth * 16 }}
-            onClick={() => onSelectMessage(message.id)}
+            onClick={() => void onSelectMessage(message.id).catch((cause) => onError?.(cause instanceof Error ? cause.message : String(cause)))}
             title="切换到此节点所在分支"
           >
             <span>{message.role === "assistant" ? "A" : message.role === "user" ? "U" : "S"}</span>
@@ -195,8 +197,14 @@ export function WorkspaceInspector({ tree, selectedSessionId, worldbooks, onSess
         <div className="pane-header-actions"><button className="icon-button" title="刷新当前会话上下文" aria-label="刷新当前会话上下文" disabled={!selectedSessionId} onClick={() => previewQuery.refetch()}><RefreshCcw size={17} /></button>{onCloseMobile && <button className="icon-button mobile-pane-close" title="关闭 Inspector" aria-label="关闭 Inspector" onClick={onCloseMobile}><X size={17} /></button>}</div>
       </header>
 
-      <section className="inspector-section prompt-profile-section">
-        <div className="section-title"><Globe2 size={16} /><span>全局 Prompt Profile</span><span className="quiet-badge">全部会话 · r{promptRevision}</span></div>
+      <CollapsibleSection
+        contentId="inspector-global-prompt-content"
+        title="全局 Prompt Profile"
+        icon={<Globe2 size={16} />}
+        storageKey="yggdrasil-tavern.inspector.global-prompt.expanded"
+        className="inspector-section prompt-profile-section"
+        headerMeta={<span className="quiet-badge">全部会话 · r{promptRevision}</span>}
+      >
         <p className="section-help">这里的顺序、开关、role 和覆盖文本由所有会话共同使用；History 仍会读取各会话当前选中的真实树路径。</p>
         {globalPromptQuery.isPending && <p className="muted">正在读取全局 Prompt…</p>}
         {globalPromptQuery.error && <p className="field-error" role="alert">全局 Prompt 读取失败：{globalPromptQuery.error instanceof Error ? globalPromptQuery.error.message : String(globalPromptQuery.error)}</p>}
@@ -205,11 +213,12 @@ export function WorkspaceInspector({ tree, selectedSessionId, worldbooks, onSess
             <article
               key={slot.id}
               className={`slot-card slot-${slot.kind} ${slot.enabled ? "enabled" : "disabled"}`}
-              draggable
-              onDragStart={() => setDraggedIndex(index)}
-              onDragEnd={() => setDraggedIndex(null)}
-              onDragOver={(event) => event.preventDefault()}
-              onDrop={() => {
+              onDragOver={(event) => {
+                if (event.dataTransfer.types.includes(promptSlotDragType)) event.preventDefault();
+              }}
+              onDrop={(event) => {
+                if (!event.dataTransfer.types.includes(promptSlotDragType)) return;
+                event.preventDefault();
                 if (draggedIndex === null || draggedIndex === index) return;
                 setSlots((current) => {
                   const next = [...current];
@@ -221,7 +230,19 @@ export function WorkspaceInspector({ tree, selectedSessionId, worldbooks, onSess
               }}
             >
               <header className="slot-card-header">
-                <GripVertical size={17} aria-hidden="true" />
+                <button
+                  type="button"
+                  className="slot-drag-handle"
+                  draggable
+                  aria-label={`拖动 ${slot.name} 调整顺序`}
+                  title="拖动调整顺序"
+                  onDragStart={(event) => {
+                    event.dataTransfer.effectAllowed = "move";
+                    event.dataTransfer.setData(promptSlotDragType, slot.id);
+                    setDraggedIndex(index);
+                  }}
+                  onDragEnd={() => setDraggedIndex(null)}
+                ><GripVertical size={17} aria-hidden="true" /></button>
                 <label className="form-field slot-name-field"><span>Prompt 名称</span><input value={slot.name} onChange={(event) => patchSlot(index, { name: event.target.value })} /></label>
                 <button
                   className={`icon-button config-toggle ${slot.enabled ? "active" : ""}`}
@@ -256,10 +277,15 @@ export function WorkspaceInspector({ tree, selectedSessionId, worldbooks, onSess
         </div>
         <button className="secondary-button full-button" onClick={() => setSlots((current) => [...current, { id: id("slot"), kind: "custom", name: "自定义 Prompt", enabled: true, role: "system", content: "" }])}><Plus size={15} />添加自定义 Prompt</button>
         <button className="primary-button full-button" disabled={savingPrompt || globalPromptQuery.isPending} onClick={saveGlobalPrompt}><Save size={16} />{savingPrompt ? "保存中…" : "保存全局 Prompt"}</button>
-      </section>
+      </CollapsibleSection>
 
-      <section className="inspector-section">
-        <div className="section-title"><Eye size={16} /><span>当前会话 Regex</span></div>
+      <CollapsibleSection
+        contentId="inspector-regex-content"
+        title="当前会话 Regex"
+        icon={<Eye size={16} />}
+        storageKey="yggdrasil-tavern.inspector.regex.expanded"
+        className="inspector-section"
+      >
         <p className="section-help">显式替换会显示替换后的文本；隐式遮罩保留原文，悬浮或点击才揭示。两种方式都不会改写原始 Message.content。</p>
         <div className="regex-rule-list">
           {regexRules.map((rule, index) => {
@@ -301,32 +327,48 @@ export function WorkspaceInspector({ tree, selectedSessionId, worldbooks, onSess
           })}
         </div>
         <button className="secondary-button full-button" onClick={() => setRegexRules((current) => [...current, { id: id("regex"), name: "新 Regex", enabled: true, scope: "session", pattern: "", flags: "g", replacement: "", targets: ["display"], mode: "replace" }])}><Plus size={15} />添加 Regex</button>
-      </section>
+      </CollapsibleSection>
 
-      <section className="inspector-section">
-        <div className="section-title"><GitFork size={16} /><span>当前会话的世界书</span></div>
+      <CollapsibleSection
+        contentId="inspector-worldbooks-content"
+        title="当前会话的世界书"
+        icon={<GitFork size={16} />}
+        storageKey="yggdrasil-tavern.inspector.worldbooks.expanded"
+        className="inspector-section"
+      >
         <p className="section-help">可同时绑定多本；每个会话保存自己的选择。</p>
         <div className="check-list">
           {worldbooks.map((book) => <label key={book.id}><input type="checkbox" checked={worldbookIds.includes(book.id)} onChange={() => setWorldbookIds((current) => current.includes(book.id) ? current.filter((item) => item !== book.id) : [...current, book.id])} />{book.name}</label>)}
           {!worldbooks.length && <p className="muted">尚无世界书。</p>}
         </div>
-      </section>
+      </CollapsibleSection>
 
       <button className="primary-button inspector-save" disabled={!tree || savingSession || invalidRegexCount > 0} onClick={saveSessionConfiguration}><Save size={16} />{savingSession ? "保存中…" : "保存当前会话 Regex 与世界书"}</button>
 
-      <section className="inspector-section">
-        <div className="section-title"><GitFork size={16} /><span>分支地图</span></div>
+      <CollapsibleSection
+        contentId="inspector-branch-map-content"
+        title="分支地图"
+        icon={<GitFork size={16} />}
+        storageKey="yggdrasil-tavern.inspector.branch-map.expanded"
+        className="inspector-section"
+        defaultExpanded
+      >
         <div className="branch-map">{tree ? renderBranch(null) : <p className="muted">暂无会话树。</p>}</div>
-      </section>
+      </CollapsibleSection>
 
-      <section className="inspector-section">
-        <div className="section-title"><Eye size={16} /><span>最终 Prompt 预览</span></div>
+      <CollapsibleSection
+        contentId="inspector-context-preview-content"
+        title="最终 Prompt 预览"
+        icon={<Eye size={16} />}
+        storageKey="yggdrasil-tavern.inspector.context-preview.expanded"
+        className="inspector-section"
+      >
         <div className="context-preview">
           {previewQuery.isPending && selectedSessionId ? <p className="muted">正在编译预览…</p> : previewQuery.error ? <p className="field-error">{previewQuery.error instanceof Error ? previewQuery.error.message : String(previewQuery.error)}</p> : previewQuery.data ? (
             <><h3>System</h3><pre>{previewQuery.data.system}</pre><h3>Messages</h3><pre>{JSON.stringify(previewQuery.data.messages, null, 2)}</pre><h3>Activated Lore</h3><pre>{JSON.stringify(previewQuery.data.activated_lore, null, 2)}</pre></>
           ) : <p className="muted">选择会话后可查看最终发送给模型的 Prompt。</p>}
         </div>
-      </section>
+      </CollapsibleSection>
     </aside>
   );
 }

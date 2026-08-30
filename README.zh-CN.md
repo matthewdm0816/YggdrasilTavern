@@ -37,6 +37,7 @@ Session 根节点
 - 支持 Markdown 和 GitHub-Flavored Markdown 渲染。
 - 支持流式正文、流式 thinking、停止、继续和重新生成。
 - 支持 swipe 导航、分支地图导航、复制为新 swipe，以及编辑为新 swipe。
+- 弹出的 Tree View 会展示完整聊天森林：悬浮或聚焦可预览 swipe，第一次点击固定预览，第二次点击跳转到该节点和分支。
 - `first_mes` 和 `alternate_greetings` 会成为根级 swipes，默认选择第一条有效开场白。
 - 消息可显示输入、输出、缓存输入和 thinking token，以及生成速度；具体取决于 Provider 是否提供 usage。
 
@@ -127,6 +128,7 @@ Regex 规则目前属于当前 session，可作用于四类目标：
 ### 响应式界面
 
 - 桌面端三栏工作台，左右侧栏可分别折叠。
+- 两个侧栏中的每个 section 都可以独立折叠，并在本地记住状态。
 - 较窄桌面窗口使用压缩三栏布局。
 - 920 px 及以下使用专用移动布局，资源与 Inspector 通过抽屉打开。
 - 粗指针设备上的主要触摸目标最小为 44 px。

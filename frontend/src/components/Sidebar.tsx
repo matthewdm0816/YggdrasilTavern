@@ -1,6 +1,7 @@
 import { ChangeEvent, useEffect, useState } from "react";
 import { Archive, ArchiveRestore, BookOpen, ChevronDown, ChevronRight, CloudDownload, Eye, EyeOff, Folder, FolderPlus, Link, MessageSquarePlus, Pencil, Pin, PinOff, Plus, RefreshCcw, Search, Server, Star, Trash2, Upload, UserRound, X } from "lucide-react";
 import { api, APIProfile, CharacterSummary, ChatSession, ProviderType, SessionFolder, WorldBook } from "../lib/api";
+import { CollapsibleSection } from "./CollapsibleSection";
 import { CharacterManager, WorldbookManager } from "./ResourceEditors";
 
 type Props = {
@@ -384,12 +385,13 @@ export function Sidebar({ profiles, characters, worldbooks, sessions, selectedSe
         <div className="pane-header-actions"><button className="icon-button" title="刷新列表" disabled={busy} onClick={onRefresh}><RefreshCcw size={17} /></button>{onCloseMobile && <button className="icon-button mobile-pane-close" title="关闭资源面板" aria-label="关闭资源面板" onClick={onCloseMobile}><X size={17} /></button>}</div>
       </header>
 
-      <section className="tool-section">
-        <div className="section-title">
-          <MessageSquarePlus size={16} />
-          <span>会话</span>
-        </div>
-
+      <CollapsibleSection
+        contentId="sidebar-sessions-content"
+        title="会话"
+        icon={<MessageSquarePlus size={16} />}
+        storageKey="yggdrasil-tavern.sidebar.sessions.expanded"
+        defaultExpanded
+      >
         {/* Search and archive toggle */}
         <div className="session-toolbar">
           <div className="search-bar">
@@ -492,13 +494,14 @@ export function Sidebar({ profiles, characters, worldbooks, sessions, selectedSe
             </p>
           )}
         </div>
-      </section>
+      </CollapsibleSection>
 
-      <section className="tool-section">
-        <div className="section-title">
-          <Server size={16} />
-          <span>API Profiles</span>
-        </div>
+      <CollapsibleSection
+        contentId="sidebar-api-profiles-content"
+        title="API Profiles"
+        icon={<Server size={16} />}
+        storageKey="yggdrasil-tavern.sidebar.api-profiles.expanded"
+      >
         <div className="compact-form profile-editor">
           <div className="form-caption">
             <strong>{editingProfileId ? "编辑 API Profile" : "新增 API Profile"}</strong>
@@ -534,14 +537,15 @@ export function Sidebar({ profiles, characters, worldbooks, sessions, selectedSe
             </div>
           ))}
         </div>
-      </section>
+      </CollapsibleSection>
 
-      <section className="tool-section two-column-tools">
+      <CollapsibleSection
+        contentId="sidebar-chub-import-content"
+        title="Chub.ai 导入"
+        icon={<Link size={16} />}
+        storageKey="yggdrasil-tavern.sidebar.chub-import.expanded"
+      >
         <div className="chub-import">
-          <div className="section-title">
-            <Link size={16} />
-            <span>Chub.ai 导入</span>
-          </div>
           <label className="form-field"><span>Chub 路径</span><input
               value={chubPath}
               onChange={(event) => setChubPath(event.target.value)}
@@ -555,11 +559,15 @@ export function Sidebar({ profiles, characters, worldbooks, sessions, selectedSe
             </button>
           </div>
         </div>
+      </CollapsibleSection>
+
+      <CollapsibleSection
+        contentId="sidebar-characters-content"
+        title="角色卡"
+        icon={<UserRound size={16} />}
+        storageKey="yggdrasil-tavern.sidebar.characters.expanded"
+      >
         <div>
-          <div className="section-title">
-            <UserRound size={16} />
-            <span>角色卡</span>
-          </div>
           <button className="secondary-button" onClick={createBlankCharacter}>
             <Plus size={15} />
             空角色
@@ -571,11 +579,15 @@ export function Sidebar({ profiles, characters, worldbooks, sessions, selectedSe
           </label>
           <CharacterManager characters={characters} onChanged={onRefresh} onError={onError} />
         </div>
+      </CollapsibleSection>
+
+      <CollapsibleSection
+        contentId="sidebar-worldbooks-content"
+        title="世界书"
+        icon={<BookOpen size={16} />}
+        storageKey="yggdrasil-tavern.sidebar.worldbooks.expanded"
+      >
         <div>
-          <div className="section-title">
-            <BookOpen size={16} />
-            <span>世界书</span>
-          </div>
           <button className="secondary-button" onClick={createBlankWorldbook}>
             <Plus size={15} />
             空世界书
@@ -587,7 +599,7 @@ export function Sidebar({ profiles, characters, worldbooks, sessions, selectedSe
           </label>
           <WorldbookManager worldbooks={worldbooks} onChanged={onRefresh} onError={onError} />
         </div>
-      </section>
+      </CollapsibleSection>
     </aside>
   );
 }

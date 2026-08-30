@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, GitFork, Menu, X } from "lucide-react";
 import { api, ChatSession, Message, SessionTree, streamGenerate } from "./lib/api";
 import { useAppStore } from "./state/useAppStore";
+import { mergeStreamingMessages } from "./lib/tree";
 import { Sidebar } from "./components/Sidebar";
 import { ChatWorkspace } from "./components/ChatWorkspace";
 import { WorkspaceInspector } from "./components/WorkspaceInspector";
@@ -50,6 +51,8 @@ export default function AppShell() {
   const [streamingBySession, setStreamingBySession] = useState<Record<string, boolean>>({});
   const streamingSessions = useRef(new Set<string>());
   const abortControllers = useRef(new Map<string, AbortController>());
+  const selectionRequestRevisions = useRef(new Map<string, number>());
+  const selectionQueues = useRef(new Map<string, Promise<void>>());
   const [error, setError] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
   const [mobilePanel, setMobilePanel] = useState<"left" | "right" | null>(null);
@@ -219,8 +222,20 @@ export default function AppShell() {
   async function handleSelectMessage(messageId: string) {
     const sessionId = selectedSessionId;
     if (!sessionId) return;
-    const next = await api.selectMessage(messageId);
-    if (next.session.id === sessionId) queryClient.setQueryData(["tree", sessionId], next);
+    const requestRevision = (selectionRequestRevisions.current.get(sessionId) || 0) + 1;
+    selectionRequestRevisions.current.set(sessionId, requestRevision);
+    const previous = selectionQueues.current.get(sessionId) || Promise.resolve();
+    const request = previous.then(() => api.selectMessage(messageId));
+    const queueTail = request.then(() => undefined, () => undefined);
+    selectionQueues.current.set(sessionId, queueTail);
+    let next: SessionTree;
+    try {
+      next = await request;
+    } finally {
+      if (selectionQueues.current.get(sessionId) === queueTail) selectionQueues.current.delete(sessionId);
+    }
+    if (requestRevision !== selectionRequestRevisions.current.get(sessionId) || next.session.id !== sessionId) return;
+    queryClient.setQueryData<SessionTree | undefined>(["tree", sessionId], (current) => mergeStreamingMessages(current, next));
   }
 
   async function handleCreateSwipe(message: Message, content = message.content) {

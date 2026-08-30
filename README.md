@@ -37,6 +37,7 @@ This tree model is the core invariant of the project.
 - Markdown and GitHub-Flavored Markdown rendering.
 - Streaming answer text, streaming thinking, stop, continue, and regenerate controls.
 - Swipe navigation, branch map navigation, copy-as-swipe, and edit-as-swipe.
+- A pop-up Tree View renders the complete conversation forest: hover or focus previews a swipe, the first click pins it, and the second click jumps to that node and branch.
 - `first_mes` and `alternate_greetings` become root-level swipes; the first valid greeting is selected by default.
 - Message telemetry for input, output, cached-input, and thinking tokens when available, plus generation speed.
 
@@ -127,6 +128,7 @@ Browser-side display rules use JavaScript `RegExp`; server-side outgoing rules u
 ### Responsive interface
 
 - Three-column desktop workspace with independently collapsible side panels.
+- Every section in both side panels can be collapsed independently, and its state is remembered locally.
 - Compact layout for narrower desktop windows.
 - Dedicated mobile layout at 920 px and below, with resource and Inspector drawers.
 - 44 px minimum primary touch targets on coarse-pointer devices.

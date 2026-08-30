@@ -10,7 +10,10 @@ export type APIProfile = {
   api_key_env: string;
   has_api_key: boolean;
   default_params: Record<string, unknown>;
-  models?: string[];
+  input_token_limit: number;
+  output_token_limit: number;
+  model_catalog: RemoteModelInfo[];
+  models_refreshed_at?: string | null;
 };
 
 export type APIProfileWrite = {
@@ -22,6 +25,18 @@ export type APIProfileWrite = {
   api_key?: string;
   api_key_env?: string;
   default_params: Record<string, unknown>;
+  input_token_limit?: number;
+  output_token_limit?: number;
+};
+
+export type RemoteModelInfo = {
+  id: string;
+  display_name?: string | null;
+  max_input_tokens?: number | null;
+  max_output_tokens?: number | null;
+  max_total_tokens?: number | null;
+  supports_reasoning?: boolean | null;
+  supports_vision?: boolean | null;
 };
 
 export type AvatarTransform = {
@@ -238,6 +253,16 @@ export type ContextPreview = {
   diagnostics: PromptDiagnostic[];
   worldbook_ids: string[];
   prompt_config_revision: number;
+  configured_input_token_limit: number;
+  effective_input_token_limit: number;
+  configured_output_token_limit: number;
+  effective_output_token_limit: number;
+  model_max_input_tokens?: number | null;
+  model_max_output_tokens?: number | null;
+  model_max_total_tokens?: number | null;
+  estimated_input_tokens: number;
+  dropped_history_count: number;
+  dropped_history_tokens: number;
 };
 
 export type AuthStatus = {
@@ -346,7 +371,7 @@ export const api = {
   deleteProfile: (profileId: string) =>
     request<{ ok: boolean }>(`/api/api-profiles/${profileId}`, { method: "DELETE" }),
   refreshProfileModels: (profileId: string) =>
-    request<{ models: string[] }>(`/api/api-profiles/${profileId}/models/refresh`, { method: "POST", body: "{}" }),
+    request<{ models: RemoteModelInfo[]; refreshed_at: string }>(`/api/api-profiles/${profileId}/models/refresh`, { method: "POST", body: "{}" }),
   globalPromptConfig: () => request<GlobalPromptConfig>("/api/settings/prompt"),
   updateGlobalPromptConfig: (payload: { prompt_slots: PromptSlot[]; expected_revision: number }) =>
     request<GlobalPromptConfig>("/api/settings/prompt", { method: "PUT", body: JSON.stringify(payload) }),
@@ -399,8 +424,11 @@ export const api = {
     request<SessionTree>(`/api/messages/${messageId}/select`, { method: "POST", body: "{}" }),
   createSwipe: (messageId: string, payload: { content: string; thinking_content?: string; role?: string; speaker?: string; status?: string }) =>
     request<SessionTree>(`/api/messages/${messageId}/swipes`, { method: "POST", body: JSON.stringify(payload) }),
-  contextPreview: (sessionId: string) =>
-    request<ContextPreview>(`/api/sessions/${sessionId}/context/preview`, { method: "POST", body: "{}" })
+  contextPreview: (sessionId: string, apiProfileId?: string | null) =>
+    request<ContextPreview>(`/api/sessions/${sessionId}/context/preview`, {
+      method: "POST",
+      body: JSON.stringify({ api_profile_id: apiProfileId || null })
+    })
 };
 
 export type StreamHandlers = {

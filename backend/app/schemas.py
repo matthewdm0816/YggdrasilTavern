@@ -18,6 +18,8 @@ class APIProfileBase(BaseModel):
     model: str
     api_key_env: str = Field(default="", pattern=r"^(?:[A-Za-z_][A-Za-z0-9_]*)?$")
     default_params: Dict[str, Any] = Field(default_factory=dict)
+    input_token_limit: int = Field(default=262144, ge=1024, le=8 * 1024 * 1024)
+    output_token_limit: int = Field(default=32768, ge=1, le=1024 * 1024)
 
 
 class APIProfileCreate(APIProfileBase):
@@ -40,17 +42,32 @@ class APIProfileUpdate(BaseModel):
     api_key: Optional[str] = None
     api_key_env: Optional[str] = Field(default=None, pattern=r"^(?:[A-Za-z_][A-Za-z0-9_]*)?$")
     default_params: Optional[Dict[str, Any]] = None
+    input_token_limit: Optional[int] = Field(default=None, ge=1024, le=8 * 1024 * 1024)
+    output_token_limit: Optional[int] = Field(default=None, ge=1, le=1024 * 1024)
+
+
+class RemoteModelInfo(BaseModel):
+    id: str
+    display_name: Optional[str] = None
+    max_input_tokens: Optional[int] = None
+    max_output_tokens: Optional[int] = None
+    max_total_tokens: Optional[int] = None
+    supports_reasoning: Optional[bool] = None
+    supports_vision: Optional[bool] = None
 
 
 class APIProfileOut(APIProfileBase, ORMModel):
     id: str
     has_api_key: bool = False
+    model_catalog: List[RemoteModelInfo] = Field(default_factory=list)
+    models_refreshed_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
 
 
 class ModelsRefreshOut(BaseModel):
-    models: List[str]
+    models: List[RemoteModelInfo]
+    refreshed_at: datetime
 
 
 class CharacterBase(BaseModel):
@@ -423,6 +440,20 @@ class ContextPreviewOut(BaseModel):
     diagnostics: List[PromptDiagnostic] = Field(default_factory=list)
     worldbook_ids: List[str] = Field(default_factory=list)
     prompt_config_revision: int = 0
+    configured_input_token_limit: int = 262144
+    effective_input_token_limit: int = 262144
+    configured_output_token_limit: int = 32768
+    effective_output_token_limit: int = 32768
+    model_max_input_tokens: Optional[int] = None
+    model_max_output_tokens: Optional[int] = None
+    model_max_total_tokens: Optional[int] = None
+    estimated_input_tokens: int = 0
+    dropped_history_count: int = 0
+    dropped_history_tokens: int = 0
+
+
+class ContextPreviewRequest(BaseModel):
+    api_profile_id: Optional[str] = None
 
 
 class GenerateRequest(BaseModel):

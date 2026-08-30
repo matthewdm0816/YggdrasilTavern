@@ -82,7 +82,11 @@ Prompt 结构在所有 session 之间全局共享。默认槽位为：
 
 一个 API Profile 包含名称、协议、Base URL、可选的自定义请求路径、模型 ID、API Key，以及 temperature 等默认参数。当前选中的 Profile 是浏览器本地的全局选择，在开始生成时生效；它不会作为固定配置持久化到 chat session。每次 generation 仍会在运行元数据中记录实际使用的模型和请求参数。
 
+Profile 默认使用 256K token 的输入上限与 32K token 的输出上限，两者都可以编辑。若所选模型报告了更小的能力，YggdrasilTavern 会采用较小的生效值。编译后的 Prompt 超过输入上限时，只会从当前所选树路径中移除最旧的完整消息；固定 Prompt 与最近两条历史始终保留，仍无法容纳时会明确报错，不会从单条消息中间静默切断。
+
 当 Provider 提供兼容的 `/v1/models` 端点时，可以从远端刷新模型列表；不支持该端点时仍可手动填写模型 ID。
+
+模型能力发现取决于 Provider：Anthropic 可以报告独立的输入/输出上限，Kimi 可以报告输入与输出共享的总 Context；OpenAI 标准 `/v1/models` 只提供模型身份信息，不提供 Context 上限。未报告的值会保持未知，可在 Profile 中手动配置。
 
 Thinking Level 会按 OpenAI Responses、OpenAI-compatible Chat Completions 或 Anthropic Messages 协议映射到相应的 Provider 参数。如果所选远端模型不支持该设置，界面会明确展示 Provider 错误，不会静默改写请求。
 

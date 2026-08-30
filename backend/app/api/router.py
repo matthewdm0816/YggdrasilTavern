@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from .. import models, schemas
 from ..database import get_db
 from ..services import chub_import, providers, st_import
-from ..services.prompt_builder import build_context, expand_macros, prompt_errors
+from ..services.prompt_builder import apply_context_token_limit, build_context, expand_macros, prompt_errors
 from ..services.prompt_config import (
     PromptConfigConflict,
     global_prompt_state,
@@ -32,6 +32,7 @@ from ..services.token_counter import (
     output_tokens_from_usage,
     reasoning_tokens_from_usage,
 )
+from ..services.token_limits import default_token_limits, resolve_profile_token_limits
 from ..services.tree import (
     active_path,
     active_path_ids,
@@ -76,10 +77,22 @@ def _prompt_snapshot(context: schemas.ContextPreviewOut) -> tuple[Dict[str, Any]
     return snapshot, hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
-def _estimate_context_tokens(context: schemas.ContextPreviewOut, model: str) -> int:
-    total = count_text_tokens(context.system, model)
-    total += sum(count_text_tokens(message.content, model) for message in context.messages)
-    return total
+def _build_limited_context(
+    db: Session,
+    session: models.ChatSession,
+    profile: models.APIProfile,
+    *,
+    path_override: Optional[List[models.Message]] = None,
+) -> schemas.ContextPreviewOut:
+    try:
+        limits = resolve_profile_token_limits(profile)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return apply_context_token_limit(
+        build_context(db, session, path_override=path_override),
+        model=profile.model,
+        limits=limits,
+    )
 
 
 def _character_create_data(payload: schemas.CharacterCreate) -> Dict[str, Any]:
@@ -155,6 +168,9 @@ def update_api_profile(profile_id: str, payload: schemas.APIProfileUpdate, db: S
             status_code=422,
             detail="修改 API 协议、Base URL 或请求路径时，必须重新输入 API Key，防止旧 Key 被发送到新地址",
         )
+    if routing_changed:
+        data["model_catalog"] = []
+        data["models_refreshed_at"] = None
     for key, value in data.items():
         setattr(profile, key, value)
     db.commit()
@@ -167,7 +183,12 @@ async def refresh_api_profile_models(profile_id: str, db: Session = Depends(get_
     profile = db.get(models.APIProfile, profile_id)
     if not profile:
         raise HTTPException(status_code=404, detail="API profile not found")
-    return schemas.ModelsRefreshOut(models=await providers.refresh_models(profile))
+    discovered = await providers.refresh_models(profile)
+    refreshed_at = models.utc_now()
+    profile.model_catalog = [item.model_dump(mode="json") for item in discovered]
+    profile.models_refreshed_at = refreshed_at
+    db.commit()
+    return schemas.ModelsRefreshOut(models=discovered, refreshed_at=refreshed_at)
 
 
 @router.delete("/api-profiles/{profile_id}")
@@ -636,9 +657,21 @@ def create_swipe_endpoint(message_id: str, payload: schemas.SwipeCreate, db: Ses
 
 
 @router.post("/sessions/{session_id}/context/preview", response_model=schemas.ContextPreviewOut)
-def context_preview(session_id: str, db: Session = Depends(get_db)) -> schemas.ContextPreviewOut:
+def context_preview(
+    session_id: str,
+    payload: Optional[schemas.ContextPreviewRequest] = None,
+    db: Session = Depends(get_db),
+) -> schemas.ContextPreviewOut:
     session = get_session_or_404(db, session_id)
-    return build_context(db, session)
+    requested_profile_id = payload.api_profile_id if payload else None
+    profile = db.get(models.APIProfile, requested_profile_id) if requested_profile_id else session.api_profile
+    if profile:
+        return _build_limited_context(db, session, profile)
+    return apply_context_token_limit(
+        build_context(db, session),
+        model="",
+        limits=default_token_limits(),
+    )
 
 
 @router.get("/sessions/{session_id}/generation-runs", response_model=List[schemas.GenerationRunOut])
@@ -685,7 +718,7 @@ async def generate_stream(
         parent_id = base.parent_id
         context_path = ancestor_path(db, base, include_self=False)
 
-    context = build_context(db, session, path_override=context_path)
+    context = _build_limited_context(db, session, profile, path_override=context_path)
     compilation_errors = prompt_errors(context)
     if compilation_errors:
         raise HTTPException(
@@ -696,7 +729,20 @@ async def generate_stream(
             },
         )
     snapshot, prompt_hash = _prompt_snapshot(context)
-    estimated_input_tokens = _estimate_context_tokens(context, profile.model)
+    estimated_input_tokens = context.estimated_input_tokens
+    limit_snapshot = {
+        "configured_input_tokens": context.configured_input_token_limit,
+        "effective_input_tokens": context.effective_input_token_limit,
+        "configured_output_tokens": context.configured_output_token_limit,
+        "effective_output_tokens": context.effective_output_token_limit,
+        "model_max_input_tokens": context.model_max_input_tokens,
+        "model_max_output_tokens": context.model_max_output_tokens,
+        "model_max_total_tokens": context.model_max_total_tokens,
+    }
+    run_parameters = {
+        **dict(profile.default_params or {}),
+        "_yggdrasil_token_limits": limit_snapshot,
+    }
     speaker = session.character.name if session.character else "Assistant"
     started_at = models.utc_now()
     started_monotonic = time.monotonic()
@@ -721,7 +767,7 @@ async def generate_stream(
         provider_type=profile.provider_type,
         base_url=profile.base_url,
         model=profile.model,
-        parameters=dict(profile.default_params or {}),
+        parameters=run_parameters,
         prompt_snapshot=snapshot,
         prompt_hash=prompt_hash,
         status="streaming",
@@ -738,7 +784,7 @@ async def generate_stream(
             "api_profile_id": profile.id,
             "provider_type": profile.provider_type,
             "model": profile.model,
-            "parameters": dict(profile.default_params or {}),
+            "parameters": run_parameters,
             "prompt_hash": prompt_hash,
         }
         db.commit()

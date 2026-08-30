@@ -9,6 +9,7 @@ import httpx
 from fastapi import HTTPException
 
 from .. import models, schemas
+from .token_limits import apply_provider_output_limit, resolve_profile_token_limits
 
 
 DEFAULT_BASE_URLS = {
@@ -140,7 +141,69 @@ def apply_thinking_level(provider_type: str, params: Dict[str, Any]) -> Dict[str
     raise HTTPException(status_code=400, detail=f"Unsupported provider type: {provider_type}")
 
 
-async def refresh_models(profile: models.APIProfile) -> List[str]:
+def _optional_positive_int(value: Any) -> Optional[int]:
+    if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+        return value
+    return None
+
+
+def _capability_supported(raw: Any) -> Optional[bool]:
+    if isinstance(raw, bool):
+        return raw
+    if isinstance(raw, dict) and isinstance(raw.get("supported"), bool):
+        return raw["supported"]
+    return None
+
+
+def normalize_remote_model(item: Any, provider_type: str) -> Optional[schemas.RemoteModelInfo]:
+    if isinstance(item, str):
+        model_id = item.strip()
+        return schemas.RemoteModelInfo(id=model_id) if model_id else None
+    if not isinstance(item, dict):
+        return None
+    model_id = str(item.get("id") or item.get("name") or "").strip()
+    if not model_id or len(model_id) > 200:
+        return None
+
+    max_input = _optional_positive_int(item.get("max_input_tokens")) or _optional_positive_int(
+        item.get("input_token_limit")
+    )
+    max_total = None
+    for key in ("context_length", "context_window", "max_context_length", "max_model_len"):
+        max_total = _optional_positive_int(item.get(key))
+        if max_total:
+            break
+    max_output = None
+    for key in ("max_output_tokens", "max_completion_tokens", "output_token_limit"):
+        max_output = _optional_positive_int(item.get(key))
+        if max_output:
+            break
+    if provider_type == "anthropic_messages" and max_output is None:
+        max_output = _optional_positive_int(item.get("max_tokens"))
+
+    capabilities = item.get("capabilities") if isinstance(item.get("capabilities"), dict) else {}
+    supports_reasoning = _capability_supported(item.get("supports_reasoning"))
+    if supports_reasoning is None:
+        supports_reasoning = _capability_supported(capabilities.get("reasoning"))
+    if supports_reasoning is None:
+        supports_reasoning = _capability_supported(capabilities.get("thinking"))
+    supports_vision = _capability_supported(item.get("supports_image_in"))
+    if supports_vision is None:
+        supports_vision = _capability_supported(capabilities.get("image_input"))
+
+    display_name = item.get("display_name")
+    return schemas.RemoteModelInfo(
+        id=model_id,
+        display_name=str(display_name).strip() if display_name else None,
+        max_input_tokens=max_input,
+        max_output_tokens=max_output,
+        max_total_tokens=max_total,
+        supports_reasoning=supports_reasoning,
+        supports_vision=supports_vision,
+    )
+
+
+async def refresh_models(profile: models.APIProfile) -> List[schemas.RemoteModelInfo]:
     key = _api_key(profile)
     params = dict(profile.default_params or {})
     if profile.provider_type == "anthropic_messages":
@@ -156,7 +219,8 @@ async def refresh_models(profile: models.APIProfile) -> List[str]:
     url = models_endpoint_for(profile)
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
-            response = await client.get(url, headers=headers)
+            query = {"limit": 1000} if profile.provider_type == "anthropic_messages" else None
+            response = await client.get(url, headers=headers, params=query)
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=502, detail=f"无法连接接口地址，请检查 Base URL：{exc}") from exc
 
@@ -176,19 +240,13 @@ async def refresh_models(profile: models.APIProfile) -> List[str]:
     if not isinstance(raw_models, list):
         raise HTTPException(status_code=502, detail="Remote model discovery response has no model list")
 
-    discovered: List[str] = []
+    discovered: List[schemas.RemoteModelInfo] = []
     seen: set[str] = set()
-    for item in raw_models:
-        if isinstance(item, str):
-            model_id = item
-        elif isinstance(item, dict):
-            model_id = str(item.get("id") or item.get("name") or "")
-        else:
-            continue
-        model_id = model_id.strip()
-        if model_id and model_id not in seen:
-            discovered.append(model_id)
-            seen.add(model_id)
+    for item in raw_models[:1000]:
+        normalized = normalize_remote_model(item, profile.provider_type)
+        if normalized and normalized.id not in seen:
+            discovered.append(normalized)
+            seen.add(normalized.id)
     return discovered
 
 
@@ -417,7 +475,9 @@ def _anthropic_messages(context: schemas.ContextPreviewOut) -> List[Dict[str, st
 
 
 async def stream_completion(profile: models.APIProfile, context: schemas.ContextPreviewOut) -> AsyncIterator[ProviderStreamEvent]:
+    limits = resolve_profile_token_limits(profile)
     params = apply_thinking_level(profile.provider_type, dict(profile.default_params or {}))
+    params = apply_provider_output_limit(profile.provider_type, params, limits)
     url = endpoint_for(profile)
     key = _api_key(profile)
 
@@ -431,7 +491,6 @@ async def stream_completion(profile: models.APIProfile, context: schemas.Context
             "messages": _anthropic_messages(context),
             "stream": True,
         }
-        payload.setdefault("max_tokens", 1024)
         headers = {
             "x-api-key": key,
             "anthropic-version": anthropic_version,

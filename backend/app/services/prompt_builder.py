@@ -14,6 +14,7 @@ from .prompt_config import (
     unique_worldbook_ids,
 )
 from .token_counter import count_text_tokens
+from .token_limits import ResolvedTokenLimits
 from .tree import active_path
 
 
@@ -357,6 +358,7 @@ def build_context(
             )
         )
     compat_system, compat_messages = _compat_context(compiled_blocks)
+    estimated_input_tokens = sum(block.token_count + 4 for block in compiled_blocks)
     return schemas.ContextPreviewOut(
         system=compat_system,
         messages=compat_messages,
@@ -375,6 +377,85 @@ def build_context(
         diagnostics=diagnostics,
         worldbook_ids=loaded_worldbook_ids,
         prompt_config_revision=prompt_config_revision,
+        estimated_input_tokens=estimated_input_tokens,
+    )
+
+
+def apply_context_token_limit(
+    context: schemas.ContextPreviewOut,
+    *,
+    model: str,
+    limits: ResolvedTokenLimits,
+) -> schemas.ContextPreviewOut:
+    """Keep fixed prompt blocks and the newest contiguous history suffix.
+
+    The operation only trims the compiled copy of the currently selected tree
+    path. It never mutates messages or branch selection in the database.
+    """
+
+    blocks = [
+        block.model_copy(update={"token_count": count_text_tokens(block.content, model)})
+        for block in context.compiled_blocks
+    ]
+    costs = [block.token_count + 4 for block in blocks]
+    total = sum(costs)
+    history_indices = [index for index, block in enumerate(blocks) if block.is_history]
+    minimum_history = min(2, len(history_indices))
+    droppable = history_indices[: len(history_indices) - minimum_history]
+    dropped_indices: set[int] = set()
+    dropped_tokens = 0
+
+    for index in droppable:
+        if total <= limits.effective_input_tokens:
+            break
+        dropped_indices.add(index)
+        dropped_tokens += costs[index]
+        total -= costs[index]
+
+    kept_blocks = [block for index, block in enumerate(blocks) if index not in dropped_indices]
+    diagnostics = list(context.diagnostics)
+    if dropped_indices:
+        diagnostics.append(
+            schemas.PromptDiagnostic(
+                level="warning",
+                code="history_truncated",
+                message=(
+                    f"输入预算为 {limits.effective_input_tokens} tokens；"
+                    f"已从当前树路径移除最旧的 {len(dropped_indices)} 条历史消息"
+                ),
+                match_count=len(dropped_indices),
+            )
+        )
+    if total > limits.effective_input_tokens:
+        diagnostics.append(
+            schemas.PromptDiagnostic(
+                level="error",
+                code="context_limit_exceeded",
+                message=(
+                    f"固定 Prompt 与必须保留的最近 {minimum_history} 条历史约需 {total} tokens，"
+                    f"超过生效输入上限 {limits.effective_input_tokens}；请调高上限或缩短内容"
+                ),
+            )
+        )
+
+    system, messages = _compat_context(kept_blocks)
+    return context.model_copy(
+        update={
+            "system": system,
+            "messages": messages,
+            "compiled_blocks": kept_blocks,
+            "diagnostics": diagnostics,
+            "configured_input_token_limit": limits.configured_input_tokens,
+            "effective_input_token_limit": limits.effective_input_tokens,
+            "configured_output_token_limit": limits.configured_output_tokens,
+            "effective_output_token_limit": limits.effective_output_tokens,
+            "model_max_input_tokens": limits.model_max_input_tokens,
+            "model_max_output_tokens": limits.model_max_output_tokens,
+            "model_max_total_tokens": limits.model_max_total_tokens,
+            "estimated_input_tokens": total,
+            "dropped_history_count": len(dropped_indices),
+            "dropped_history_tokens": dropped_tokens,
+        }
     )
 
 

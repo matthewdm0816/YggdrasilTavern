@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { fallbackProfileIdAfterDelete, Sidebar, titleForSelectedCharacter } from "./Sidebar";
+import { fallbackProfileIdAfterDelete, formatTokenLimit, Sidebar, titleForSelectedCharacter } from "./Sidebar";
 
 describe("titleForSelectedCharacter", () => {
   it("uses the selected character name for an empty or automatic title", () => {
@@ -17,6 +17,14 @@ describe("fallbackProfileIdAfterDelete", () => {
   it("selects the first remaining Profile without returning the deleted id", () => {
     expect(fallbackProfileIdAfterDelete([{ id: "deleted" }, { id: "fallback" }], "deleted")).toBe("fallback");
     expect(fallbackProfileIdAfterDelete([{ id: "deleted" }], "deleted")).toBe("");
+  });
+});
+
+describe("formatTokenLimit", () => {
+  it("renders binary token limits in compact K units", () => {
+    expect(formatTokenLimit(262144)).toBe("256K");
+    expect(formatTokenLimit(32768)).toBe("32K");
+    expect(formatTokenLimit(null)).toBe("未知");
   });
 });
 

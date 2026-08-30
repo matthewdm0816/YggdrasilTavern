@@ -44,6 +44,10 @@ class APIProfile(TimestampMixin, Base):
     api_key: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     api_key_env: Mapped[str] = mapped_column(String(120), default="", nullable=False)
     default_params: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    input_token_limit: Mapped[int] = mapped_column(Integer, default=262144, nullable=False)
+    output_token_limit: Mapped[int] = mapped_column(Integer, default=32768, nullable=False)
+    model_catalog: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    models_refreshed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     @property
     def has_api_key(self) -> bool:

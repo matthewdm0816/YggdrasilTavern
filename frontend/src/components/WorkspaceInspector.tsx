@@ -24,6 +24,7 @@ import { CollapsibleSection } from "./CollapsibleSection";
 type Props = {
   tree?: SessionTree;
   selectedSessionId: string | null;
+  activeProfileId: string;
   worldbooks: WorldBook[];
   onSessionUpdated?: () => void;
   onSelectMessage: (messageId: string) => Promise<void>;
@@ -60,7 +61,7 @@ function normalizeRegexRules(value: unknown): RegexRule[] {
   return regexRulesFromPreset({ regex_rules: value });
 }
 
-export function WorkspaceInspector({ tree, selectedSessionId, worldbooks, onSessionUpdated, onSelectMessage, onCloseMobile, onError }: Props) {
+export function WorkspaceInspector({ tree, selectedSessionId, activeProfileId, worldbooks, onSessionUpdated, onSelectMessage, onCloseMobile, onError }: Props) {
   const queryClient = useQueryClient();
   const [slots, setSlots] = useState<PromptSlot[]>(defaultSlots);
   const [promptRevision, setPromptRevision] = useState(0);
@@ -77,8 +78,8 @@ export function WorkspaceInspector({ tree, selectedSessionId, worldbooks, onSess
     refetchOnWindowFocus: false
   });
   const previewQuery = useQuery({
-    queryKey: ["context-preview", selectedSessionId, tree?.active_path_ids.join(":")],
-    queryFn: () => api.contextPreview(selectedSessionId!),
+    queryKey: ["context-preview", selectedSessionId, activeProfileId, tree?.active_path_ids.join(":")],
+    queryFn: () => api.contextPreview(selectedSessionId!, activeProfileId),
     enabled: Boolean(selectedSessionId)
   });
 
@@ -365,7 +366,16 @@ export function WorkspaceInspector({ tree, selectedSessionId, worldbooks, onSess
       >
         <div className="context-preview">
           {previewQuery.isPending && selectedSessionId ? <p className="muted">正在编译预览…</p> : previewQuery.error ? <p className="field-error">{previewQuery.error instanceof Error ? previewQuery.error.message : String(previewQuery.error)}</p> : previewQuery.data ? (
-            <><h3>System</h3><pre>{previewQuery.data.system}</pre><h3>Messages</h3><pre>{JSON.stringify(previewQuery.data.messages, null, 2)}</pre><h3>Activated Lore</h3><pre>{JSON.stringify(previewQuery.data.activated_lore, null, 2)}</pre></>
+            <>
+              <div className="context-budget-summary">
+                <strong>Prompt 约 {previewQuery.data.estimated_input_tokens.toLocaleString()} tokens</strong>
+                <span>输入上限 {previewQuery.data.effective_input_token_limit.toLocaleString()}</span>
+                <span>输出上限 {previewQuery.data.effective_output_token_limit.toLocaleString()}</span>
+                {previewQuery.data.dropped_history_count > 0 ? <span>已移除最旧历史 {previewQuery.data.dropped_history_count} 条</span> : null}
+              </div>
+              {previewQuery.data.diagnostics.length ? <div className="context-diagnostics">{previewQuery.data.diagnostics.map((item, index) => <p className={item.level === "error" ? "field-error" : "muted"} key={`${item.code}-${index}`}>{item.message}</p>)}</div> : null}
+              <h3>System</h3><pre>{previewQuery.data.system}</pre><h3>Messages</h3><pre>{JSON.stringify(previewQuery.data.messages, null, 2)}</pre><h3>Activated Lore</h3><pre>{JSON.stringify(previewQuery.data.activated_lore, null, 2)}</pre>
+            </>
           ) : <p className="muted">选择会话后可查看最终发送给模型的 Prompt。</p>}
         </div>
       </CollapsibleSection>

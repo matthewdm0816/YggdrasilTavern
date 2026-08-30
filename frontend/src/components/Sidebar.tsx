@@ -1,6 +1,6 @@
 import { ChangeEvent, useEffect, useState } from "react";
 import { Archive, ArchiveRestore, BookOpen, ChevronDown, ChevronRight, CloudDownload, Eye, EyeOff, Folder, FolderPlus, Link, MessageSquarePlus, Pencil, Pin, PinOff, Plus, RefreshCcw, Search, Server, Star, Trash2, Upload, UserRound, X } from "lucide-react";
-import { api, APIProfile, CharacterSummary, ChatSession, ProviderType, SessionFolder, WorldBook } from "../lib/api";
+import { api, APIProfile, CharacterSummary, ChatSession, ProviderType, RemoteModelInfo, SessionFolder, WorldBook } from "../lib/api";
 import { CollapsibleSection } from "./CollapsibleSection";
 import { CharacterManager, WorldbookManager } from "./ResourceEditors";
 
@@ -31,6 +31,8 @@ type ProfileDraft = {
   model: string;
   api_key: string;
   default_params: Record<string, unknown>;
+  input_token_limit: number;
+  output_token_limit: number;
 };
 
 const defaultProfile: ProfileDraft = {
@@ -40,7 +42,9 @@ const defaultProfile: ProfileDraft = {
   path_override: "",
   model: "gpt-5",
   api_key: "",
-  default_params: { _thinking_level: "auto" }
+  default_params: { _thinking_level: "auto" },
+  input_token_limit: 256 * 1024,
+  output_token_limit: 32 * 1024
 };
 
 const thinkingLevelOptions = [
@@ -59,6 +63,30 @@ export function titleForSelectedCharacter(currentTitle: string, currentCharacter
 
 export function fallbackProfileIdAfterDelete(profiles: Array<Pick<APIProfile, "id">>, deletedProfileId: string) {
   return profiles.find((profile) => profile.id !== deletedProfileId)?.id || "";
+}
+
+export function formatTokenLimit(value?: number | null): string {
+  if (!value) return "未知";
+  if (value % 1024 === 0) return `${value / 1024}K`;
+  return value.toLocaleString();
+}
+
+function effectiveProfileLimits(profile: APIProfile, model?: RemoteModelInfo) {
+  const output = model?.max_output_tokens
+    ? Math.min(profile.output_token_limit, model.max_output_tokens)
+    : profile.output_token_limit;
+  let input = model?.max_input_tokens
+    ? Math.min(profile.input_token_limit, model.max_input_tokens)
+    : profile.input_token_limit;
+  if (model?.max_total_tokens) input = Math.min(input, Math.max(0, model.max_total_tokens - output));
+  return { input, output };
+}
+
+function remoteModelLabel(model: RemoteModelInfo): string {
+  const limits = model.max_total_tokens
+    ? `总窗 ${formatTokenLimit(model.max_total_tokens)}`
+    : model.max_input_tokens ? `输入 ${formatTokenLimit(model.max_input_tokens)}` : "";
+  return `${model.display_name || model.id}${model.display_name ? ` · ${model.id}` : ""}${limits ? ` · ${limits}` : ""}`;
 }
 
 export function Sidebar({
@@ -91,12 +119,19 @@ export function Sidebar({
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [newFolderName, setNewFolderName] = useState("");
   const [showFolderInput, setShowFolderInput] = useState(false);
-  const [profileModels, setProfileModels] = useState<Record<string, string[]>>({});
+  const [profileModels, setProfileModels] = useState<Record<string, RemoteModelInfo[]>>({});
   const [refreshingProfileId, setRefreshingProfileId] = useState<string | null>(null);
   const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
   const [profileEditorOpen, setProfileEditorOpen] = useState(false);
   const [showApiKey, setShowApiKey] = useState(false);
   const activeProfile = profiles.find((item) => item.id === activeProfileId);
+  const activeCatalog = activeProfile
+    ? (profileModels[activeProfile.id] || activeProfile.model_catalog || [])
+    : [];
+  const activeRemoteModel = activeCatalog.find((item) => item.id === activeProfile?.model);
+  const activeEffectiveLimits = activeProfile
+    ? effectiveProfileLimits(activeProfile, activeRemoteModel)
+    : null;
 
   useEffect(() => {
     loadFolders();
@@ -232,7 +267,9 @@ export function Sidebar({
       path_override: item.path_override || "",
       model: item.model,
       api_key: "",
-      default_params: { _thinking_level: "auto", ...item.default_params }
+      default_params: { _thinking_level: "auto", ...item.default_params },
+      input_token_limit: item.input_token_limit,
+      output_token_limit: item.output_token_limit
     });
     setProfileEditorOpen(true);
     setShowApiKey(false);
@@ -248,6 +285,10 @@ export function Sidebar({
       onError?.("请填写 API Key；保存后会遮罩，编辑时留空表示不替换");
       return;
     }
+    if (profile.input_token_limit < 1024 || profile.output_token_limit < 1) {
+      onError?.("输入上限至少为 1024 tokens，输出上限必须大于 0");
+      return;
+    }
     setBusy(true);
     try {
       let createdProfileId: string | null = null;
@@ -258,7 +299,9 @@ export function Sidebar({
         path_override: profile.path_override || null,
         model: profile.model.trim(),
         ...(profile.api_key.trim() ? { api_key: profile.api_key.trim() } : {}),
-        default_params: profile.default_params
+        default_params: profile.default_params,
+        input_token_limit: profile.input_token_limit,
+        output_token_limit: profile.output_token_limit
       };
       if (editingProfileId) {
         await api.updateProfile(editingProfileId, payload);
@@ -368,6 +411,7 @@ export function Sidebar({
     try {
       const response = await api.refreshProfileModels(profileId);
       setProfileModels((current) => ({ ...current, [profileId]: response.models }));
+      await onRefresh();
     } catch (exc) {
       onError?.(exc instanceof Error ? exc.message : String(exc));
     } finally {
@@ -380,7 +424,7 @@ export function Sidebar({
     setRefreshingProfileId(profileId);
     try {
       await api.updateProfile(profileId, { model });
-      onRefresh();
+      await onRefresh();
     } catch (exc) {
       onError?.(exc instanceof Error ? exc.message : String(exc));
     } finally {
@@ -586,8 +630,20 @@ export function Sidebar({
           </div>
         </div>
         <p className="section-help">所有聊天生成使用此项；切换不会改写聊天历史。</p>
-        {activeProfile && profileModels[activeProfile.id]?.length ? (
-          <label className="form-field profile-model-field"><span>远端模型</span><select value={activeProfile.model} onChange={(event) => selectRemoteModel(activeProfile.id, event.target.value)}><option value={activeProfile.model}>{activeProfile.model}（当前）</option>{profileModels[activeProfile.id].filter((model) => model !== activeProfile.model).map((model) => <option key={model} value={model}>{model}</option>)}</select></label>
+        {activeProfile && activeEffectiveLimits ? (
+          <div className="profile-budget-summary" aria-label="当前 Token 预算">
+            <span>配置输入 {formatTokenLimit(activeProfile.input_token_limit)}</span>
+            <span>配置输出 {formatTokenLimit(activeProfile.output_token_limit)}</span>
+            {(activeEffectiveLimits.input !== activeProfile.input_token_limit || activeEffectiveLimits.output !== activeProfile.output_token_limit) && (
+              <span>生效 {formatTokenLimit(activeEffectiveLimits.input)} / {formatTokenLimit(activeEffectiveLimits.output)}</span>
+            )}
+            {activeRemoteModel?.max_total_tokens ? <span>模型总窗 {formatTokenLimit(activeRemoteModel.max_total_tokens)}</span> : null}
+            {activeRemoteModel?.supports_reasoning === true ? <span>Reasoning</span> : null}
+            {activeRemoteModel?.supports_vision === true ? <span>Vision</span> : null}
+          </div>
+        ) : null}
+        {activeProfile && activeCatalog.length ? (
+          <label className="form-field profile-model-field"><span>远端模型</span><select value={activeProfile.model} onChange={(event) => selectRemoteModel(activeProfile.id, event.target.value)}>{!activeCatalog.some((model) => model.id === activeProfile.model) ? <option value={activeProfile.model}>{activeProfile.model}（当前；远端未报告）</option> : null}{activeCatalog.map((model) => <option key={model.id} value={model.id}>{remoteModelLabel(model)}</option>)}</select></label>
         ) : null}
         {profileEditorOpen && (
           <div className="compact-form profile-editor">
@@ -608,6 +664,11 @@ export function Sidebar({
             <label className="form-field"><span>自定义请求路径（可选）</span><input value={profile.path_override} onChange={(event) => setProfile({ ...profile, path_override: event.target.value })} /><small>留空会按所选协议使用默认路径；只有服务商明确给出不同路径时才填写。</small></label>
             <label className="form-field"><span>模型名称</span><input value={profile.model} onChange={(event) => setProfile({ ...profile, model: event.target.value })} /><small>发送给 API 的模型 ID；保存后也可从远端模型列表选择。</small></label>
             <label className="form-field"><span>API Key</span><div className="secret-input"><input type={showApiKey ? "text" : "password"} autoComplete="off" value={profile.api_key} onChange={(event) => setProfile({ ...profile, api_key: event.target.value.trim() })} /><button className="icon-button" type="button" aria-label={showApiKey ? "隐藏 API Key" : "显示 API Key"} title={showApiKey ? "隐藏" : "显示"} onClick={() => setShowApiKey((value) => !value)}>{showApiKey ? <EyeOff size={15} /> : <Eye size={15} />}</button></div><small>{editingProfileId && profiles.find((item) => item.id === editingProfileId)?.has_api_key ? "已保存；普通编辑可留空。若修改协议、Base URL 或请求路径，必须重新输入 Key。" : "直接粘贴服务商提供的 Key；首尾空格会自动移除，本地保存且读取接口不会回传明文。"}</small></label>
+            <div className="profile-token-limits">
+              <label className="form-field"><span>输入上下文上限</span><input type="number" min="1024" step="1024" value={profile.input_token_limit} onChange={(event) => setProfile({ ...profile, input_token_limit: Number(event.target.value) })} /><small>默认 262144（256K）。超出时只从当前树路径移除最旧历史，固定 Prompt 和最近消息不会被截断。</small></label>
+              <label className="form-field"><span>最大输出 Token</span><input type="number" min="1" step="1024" value={profile.output_token_limit} onChange={(event) => setProfile({ ...profile, output_token_limit: Number(event.target.value) })} /><small>默认 32768（32K），包含模型可能使用的 reasoning tokens；若远端报告更小上限，会使用较小值。</small></label>
+            </div>
+            {editingProfileId === activeProfile?.id && activeRemoteModel ? <small className="model-capability-note">远端报告：{activeRemoteModel.max_input_tokens ? `最大输入 ${formatTokenLimit(activeRemoteModel.max_input_tokens)}；` : ""}{activeRemoteModel.max_output_tokens ? `最大输出 ${formatTokenLimit(activeRemoteModel.max_output_tokens)}；` : ""}{activeRemoteModel.max_total_tokens ? `总上下文 ${formatTokenLimit(activeRemoteModel.max_total_tokens)}；` : ""}{!activeRemoteModel.max_input_tokens && !activeRemoteModel.max_output_tokens && !activeRemoteModel.max_total_tokens ? "未提供 Context 上限。" : "配置高于模型能力时会自动收紧生效值。"}</small> : null}
             <label className="form-field"><span>思考强度（Thinking Level）</span><select value={String(profile.default_params._thinking_level ?? "auto")} onChange={(event) => setProfile({ ...profile, default_params: { ...profile.default_params, _thinking_level: event.target.value } })}>{thinkingLevelOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select><small>自动使用服务商默认；档位越高通常更慢且消耗更多 token；模型不支持该档位时会显示远端错误。</small></label>
             <label className="form-field"><span>Temperature</span><input type="number" min="0" max="2" step="0.1" value={String(profile.default_params.temperature ?? "")} onChange={(event) => setProfile({ ...profile, default_params: { ...profile.default_params, temperature: event.target.value === "" ? undefined : Number(event.target.value) } })} /><small>数值越高回复越随机；常见范围 0–2。</small></label>
             <button className="secondary-button" type="button" disabled={busy} onClick={saveProfile}>

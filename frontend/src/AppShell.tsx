@@ -326,7 +326,8 @@ export default function AppShell() {
             queryClient.invalidateQueries({ queryKey: ["profiles"] }),
             queryClient.invalidateQueries({ queryKey: ["characters"] }),
             queryClient.invalidateQueries({ queryKey: ["worldbooks"] }),
-            queryClient.invalidateQueries({ queryKey: ["sessions"] })
+            queryClient.invalidateQueries({ queryKey: ["sessions"] }),
+            queryClient.invalidateQueries({ queryKey: ["context-preview"] })
           ]);
         }}
         onToggleArchived={() => setShowArchived(!showArchived)}
@@ -355,6 +356,7 @@ export default function AppShell() {
       <WorkspaceInspector
         tree={tree}
         selectedSessionId={selectedSessionId}
+        activeProfileId={activeProfileId}
         worldbooks={worldbooksQuery.data || []}
         onSessionUpdated={() => reloadTree()}
         onSelectMessage={handleSelectMessage}

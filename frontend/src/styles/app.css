@@ -467,6 +467,39 @@ button:disabled {
   margin-top: 10px;
 }
 
+.profile-budget-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 8px;
+}
+
+.profile-budget-summary span {
+  padding: 4px 7px;
+  border-radius: 999px;
+  background: var(--chip-bg);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.profile-token-limits {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.model-capability-note {
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+@media (max-width: 520px) {
+  .profile-token-limits {
+    grid-template-columns: 1fr;
+  }
+}
+
 .secret-input {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 38px;
@@ -1209,6 +1242,31 @@ textarea:focus {
 
 .context-preview {
   padding: 12px;
+}
+
+.context-budget-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.context-budget-summary strong,
+.context-budget-summary span {
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: var(--chip-bg);
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.context-budget-summary strong {
+  color: var(--accent-text);
+}
+
+.context-diagnostics p {
+  margin: 5px 0;
 }
 
 .system-editor {
@@ -2131,6 +2189,75 @@ textarea:focus {
   font-weight: 650;
 }
 
+.forest-tree-toolbar {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) auto;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--pane-strong);
+}
+
+.forest-tree-search {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding-left: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--muted);
+}
+
+.forest-tree-search:focus-within {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 18%, transparent);
+}
+
+.forest-tree-search input {
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  padding: 8px 0;
+  outline: 0;
+}
+
+.forest-tree-search-clear {
+  display: inline-grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+}
+
+.forest-tree-search-clear:hover {
+  color: var(--text);
+}
+
+.forest-tree-toolbar-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.forest-tree-toolbar-actions .secondary-button {
+  min-height: 36px;
+  padding: 7px 10px;
+  white-space: nowrap;
+}
+
+.forest-tree-result-count {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
 .forest-tree-warning,
 .forest-tree-error {
   display: flex;
@@ -2154,58 +2281,93 @@ textarea:focus {
 
 .forest-tree-body {
   display: grid;
-  grid-template-columns: minmax(0, 1.65fr) minmax(300px, 0.75fr);
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 400px);
+  align-items: start;
   flex: 1;
   min-height: 0;
-}
-
-.forest-tree-canvas {
-  min-width: 0;
-  min-height: 0;
-  padding: 22px;
   overflow: auto;
   overscroll-behavior: contain;
   background: var(--chat-bg);
 }
 
-.forest-tree-roots,
-.forest-tree-children {
-  margin: 0;
-  list-style: none;
+.forest-tree-canvas {
+  min-width: 0;
+  min-height: 100%;
+  padding: 16px;
+  overflow: visible;
+  background: var(--chat-bg);
 }
 
 .forest-tree-roots {
   display: grid;
-  grid-auto-columns: minmax(280px, 340px);
-  grid-auto-flow: column;
-  align-items: start;
-  gap: 28px;
-  width: max-content;
-  min-width: 100%;
+  gap: 7px;
+  width: 100%;
+  margin: 0;
   padding: 0;
+  list-style: none;
 }
 
 .forest-tree-item {
+  --forest-depth: 0;
   position: relative;
+  min-width: 0;
+  padding-inline-start: min(calc(var(--forest-depth) * 12px), 84px);
+  content-visibility: auto;
+  contain-intrinsic-size: auto 58px;
+}
+
+.forest-tree-root-row:not(:first-child) {
+  margin-top: 9px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--line);
+}
+
+.forest-tree-node-line {
+  display: grid;
+  grid-template-columns: minmax(34px, auto) minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
   min-width: 0;
 }
 
-.forest-tree-children {
-  display: grid;
-  gap: 8px;
-  margin-top: 9px;
-  margin-left: 24px;
-  padding-left: 22px;
-  border-left: 1px solid var(--line);
+.forest-tree-branch-toggle,
+.forest-tree-branch-spacer {
+  width: auto;
+  min-width: 34px;
+  height: 34px;
 }
 
-.forest-tree-children > .forest-tree-item::before {
-  position: absolute;
-  top: 23px;
-  left: -22px;
-  width: 20px;
-  border-top: 1px solid var(--line);
-  content: "";
+.forest-tree-branch-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  padding: 0 5px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--muted);
+}
+
+.forest-tree-branch-toggle:hover:not(:disabled),
+.forest-tree-branch-toggle:focus-visible {
+  border-color: var(--blue);
+  color: var(--blue);
+}
+
+.forest-tree-branch-toggle:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 18%, transparent);
+}
+
+.forest-tree-branch-toggle:disabled {
+  opacity: 0.5;
+}
+
+.forest-tree-branch-toggle span {
+  color: var(--accent-text);
+  font-size: 9px;
+  font-weight: 750;
 }
 
 .forest-tree-node {
@@ -2222,6 +2384,7 @@ textarea:focus {
   color: var(--text);
   text-align: left;
   box-shadow: var(--shadow);
+  transition: border-color 0.15s, background-color 0.15s, box-shadow 0.15s;
 }
 
 .forest-tree-node:hover,
@@ -2240,6 +2403,16 @@ textarea:focus {
   background: var(--surface-selected);
 }
 
+.forest-tree-node.current-node {
+  border-color: var(--green);
+  box-shadow: var(--shadow), 0 0 0 2px color-mix(in srgb, var(--green) 18%, transparent);
+}
+
+.forest-tree-node.search-match {
+  border-color: color-mix(in srgb, var(--amber) 75%, var(--line));
+  background: color-mix(in srgb, var(--warning-bg) 70%, var(--surface));
+}
+
 .forest-tree-node.pinned-preview {
   border-color: var(--blue);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 20%, transparent);
@@ -2251,6 +2424,7 @@ textarea:focus {
 
 .forest-tree-role,
 .forest-tree-status,
+.forest-tree-current-badge,
 .forest-tree-preview-badges span {
   display: inline-flex;
   align-items: center;
@@ -2307,16 +2481,37 @@ textarea:focus {
   text-overflow: ellipsis;
 }
 
+.forest-tree-node-tail {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+  min-width: 0;
+}
+
+.forest-tree-current-badge {
+  padding: 3px 6px;
+  border-color: color-mix(in srgb, var(--green) 55%, var(--line));
+  color: var(--accent-text);
+}
+
 .forest-tree-status.status-streaming {
   border-color: color-mix(in srgb, var(--amber) 45%, var(--line));
   color: var(--amber);
 }
 
 .forest-tree-preview {
+  position: sticky;
+  top: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  align-self: start;
   min-width: 0;
-  min-height: 0;
+  width: 100%;
+  height: 100%;
+  max-height: 100%;
   padding: 17px;
-  overflow: auto;
+  overflow: hidden;
   border-left: 1px solid var(--line);
   background: var(--pane-strong);
 }
@@ -2350,7 +2545,7 @@ textarea:focus {
 
 .forest-tree-preview-content {
   min-height: 180px;
-  margin: 14px 0;
+  margin: 14px 0 10px;
   padding: 13px;
   overflow: visible;
   border: 1px solid var(--line);
@@ -2362,6 +2557,12 @@ textarea:focus {
   line-height: 1.65;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.forest-tree-preview-scroll {
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
 }
 
 .forest-tree-preview-footer {
@@ -2416,6 +2617,11 @@ textarea:focus {
 
   .collapsible-section-toggle,
   .forest-tree-node {
+    min-height: 48px;
+  }
+
+  .forest-tree-branch-toggle {
+    min-width: 44px;
     min-height: 44px;
   }
 }
@@ -2655,22 +2861,51 @@ textarea:focus {
     font-size: 18px;
   }
 
-  .forest-tree-body {
+  .forest-tree-toolbar {
     grid-template-columns: 1fr;
-    grid-template-rows: minmax(260px, 1fr) minmax(220px, 0.8fr);
+    padding: 9px 10px;
+  }
+
+  .forest-tree-toolbar-actions {
+    width: 100%;
+    padding-bottom: 2px;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+  }
+
+  .forest-tree-toolbar-actions .secondary-button {
+    flex: 0 0 auto;
+  }
+
+  .forest-tree-result-count {
+    grid-column: 1;
+  }
+
+  .forest-tree-body {
+    display: block;
+    overflow: auto;
   }
 
   .forest-tree-canvas {
+    min-height: 62dvh;
     padding: 14px 12px;
   }
 
   .forest-tree-roots {
-    grid-auto-columns: minmax(270px, calc(100vw - 40px));
-    gap: 20px;
+    width: 100%;
+    gap: 7px;
+  }
+
+  .forest-tree-item {
+    padding-inline-start: min(calc(var(--forest-depth) * 9px), 45px);
   }
 
   .forest-tree-preview {
-    padding: 13px;
+    position: static;
+    width: 100%;
+    height: auto;
+    max-height: min(56dvh, 520px);
+    padding: 13px 13px calc(13px + env(safe-area-inset-bottom));
     border-top: 1px solid var(--line);
     border-left: 0;
   }

@@ -93,7 +93,9 @@ def test_failed_stream_preserves_all_partial_data_and_generation_metadata(monkey
     assert failed["generation_run"]["cached_input_tokens"] == 2
     assert failed["generation_run"]["tokens_per_second"] > 0
     run_detail = client.get(f"/api/generation-runs/{failed['generation_run']['id']}").json()
-    assert run_detail["parameters"] == {"temperature": 0.7}
+    assert run_detail["parameters"]["temperature"] == 0.7
+    assert run_detail["parameters"]["_yggdrasil_token_limits"]["configured_input_tokens"] == 262144
+    assert run_detail["parameters"]["_yggdrasil_token_limits"]["configured_output_tokens"] == 32768
     assert run_detail["prompt_snapshot"]["messages"][-1]["content"] == "Hello"
 
     # Interrupted/failed assistant content remains part of future roleplay context.
@@ -295,3 +297,59 @@ def test_first_message_and_alternate_greetings_are_root_swipes():
     ]
     assert all(message["parent_id"] is None for message in tree["messages"])
     assert tree["active_path_ids"] == [tree["messages"][0]["id"]]
+
+
+def test_preview_and_generation_share_the_same_trimmed_active_path(monkeypatch):
+    client, testing_session = make_client()
+    profile = client.post(
+        "/api/api-profiles",
+        json={
+            "name": "Small context",
+            "provider_type": "openai_chat_completions",
+            "base_url": "https://example.test",
+            "model": "mock-model",
+            "api_key": "test-key",
+            "input_token_limit": 1024,
+            "output_token_limit": 128,
+        },
+    ).json()
+    character = client.post("/api/characters", json={"name": "Context", "first_mes": ""}).json()
+    session = client.post(
+        "/api/sessions",
+        json={"title": "Context", "character_id": character["id"], "api_profile_id": profile["id"]},
+    ).json()
+    for index in range(8):
+        client.post(
+            f"/api/sessions/{session['id']}/messages",
+            json={
+                "role": "user" if index % 2 == 0 else "assistant",
+                "speaker": "User" if index % 2 == 0 else "Context",
+                "content": f"history-{index} " + ("context words " * 100),
+            },
+        )
+
+    preview = client.post(
+        f"/api/sessions/{session['id']}/context/preview",
+        json={"api_profile_id": profile["id"]},
+    ).json()
+    assert preview["dropped_history_count"] > 0
+    assert preview["estimated_input_tokens"] <= preview["effective_input_token_limit"] == 1024
+    assert "history-6" in preview["messages"][-2]["content"]
+    assert "history-7" in preview["messages"][-1]["content"]
+
+    seen_messages: list[dict[str, str]] = []
+
+    async def recording_stream(profile, context):
+        seen_messages.extend(item.model_dump() for item in context.messages)
+        yield providers.ProviderStreamEvent(kind="text", delta="trimmed")
+
+    monkeypatch.setattr(providers, "stream_completion", recording_stream)
+    with client.stream("POST", f"/api/sessions/{session['id']}/generate/stream", json={}) as response:
+        assert "message_completed" in "".join(response.iter_text())
+    assert seen_messages == preview["messages"]
+
+    with testing_session() as db:
+        run = db.scalars(select(models.GenerationRun)).one()
+        limits = run.parameters["_yggdrasil_token_limits"]
+        assert limits["effective_input_tokens"] == 1024
+        assert limits["effective_output_tokens"] == 128

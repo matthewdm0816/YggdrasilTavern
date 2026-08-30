@@ -27,6 +27,12 @@ def test_generation_integrity_migration_upgrades_fresh_database(tmp_path, monkey
     assert "generation_runs" in inspector.get_table_names()
     assert "global_prompt_config" in inspector.get_table_names()
     assert "api_key" in {column["name"] for column in inspector.get_columns("api_profiles")}
+    assert {
+        "input_token_limit",
+        "output_token_limit",
+        "model_catalog",
+        "models_refreshed_at",
+    }.issubset({column["name"] for column in inspector.get_columns("api_profiles")})
     assert {"folder_id", "pinned", "archived", "last_activity_at"}.issubset(
         {column["name"] for column in inspector.get_columns("sessions")}
     )
@@ -69,3 +75,6 @@ def test_generation_integrity_migration_accepts_runtime_drift_columns(tmp_path, 
     inspector = inspect(engine)
     assert "generation_runs" in inspector.get_table_names()
     assert "last_activity_at" in {column["name"] for column in inspector.get_columns("sessions")}
+    assert {"input_token_limit", "output_token_limit", "model_catalog"}.issubset(
+        {column["name"] for column in inspector.get_columns("api_profiles")}
+    )

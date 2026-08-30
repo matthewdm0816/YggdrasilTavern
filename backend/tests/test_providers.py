@@ -16,6 +16,7 @@ from app.services.providers import (
     extract_openai_responses_thinking_delta,
     extract_usage,
     models_endpoint_for,
+    normalize_remote_model,
     refresh_models,
 )
 from app.services.token_counter import reasoning_tokens_from_usage
@@ -170,7 +171,40 @@ async def test_refresh_models_ignores_completion_path_override(monkeypatch):
         "app.services.providers.httpx.AsyncClient",
         lambda **kwargs: real_async_client(transport=transport, **kwargs),
     )
-    assert await refresh_models(profile) == ["new-a", "new-b"]
+    assert [item.id for item in await refresh_models(profile)] == ["new-a", "new-b"]
+
+
+def test_remote_model_metadata_keeps_distinct_context_limit_semantics():
+    kimi = normalize_remote_model(
+        {
+            "id": "kimi-k2.6",
+            "context_length": 262144,
+            "supports_reasoning": True,
+            "supports_image_in": True,
+        },
+        "openai_chat_completions",
+    )
+    assert kimi is not None
+    assert kimi.max_total_tokens == 262144
+    assert kimi.max_input_tokens is None
+    assert kimi.max_output_tokens is None
+    assert kimi.supports_reasoning is True
+    assert kimi.supports_vision is True
+
+    claude = normalize_remote_model(
+        {
+            "id": "claude-sonnet",
+            "display_name": "Claude Sonnet",
+            "max_input_tokens": 1000000,
+            "max_tokens": 128000,
+            "capabilities": {"thinking": {"supported": True}},
+        },
+        "anthropic_messages",
+    )
+    assert claude is not None
+    assert claude.max_input_tokens == 1000000
+    assert claude.max_output_tokens == 128000
+    assert claude.max_total_tokens is None
 
 
 @pytest.mark.asyncio

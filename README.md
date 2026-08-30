@@ -82,7 +82,11 @@ Supported provider protocols:
 
 An API Profile contains a name, protocol, Base URL, optional path override, model ID, API Key, and default parameters such as temperature. The selected Profile is a browser-local global choice and is applied when generation starts; it is not persisted as a fixed chat-session setting. Each generation still records the model and request parameters actually used in its run metadata.
 
+Profiles default to a 256K-token input limit and a 32K-token output limit. Both are editable. When the selected model reports a smaller capability, YggdrasilTavern uses the smaller effective value. If the compiled Prompt exceeds the effective input limit, only the oldest complete messages from the currently selected tree path are removed; fixed Prompt blocks and the newest two history messages are preserved, and an impossible fit is reported as an error rather than silently cutting a message.
+
 Remote model discovery is available when the provider implements a compatible `/v1/models` endpoint. Manual model IDs remain supported when it does not.
+
+Capability discovery is provider-dependent: Anthropic can report separate input/output limits, Kimi can report a shared total context window, while OpenAI's standard `/v1/models` response exposes model identity but not context limits. Unknown values remain unknown and can be configured manually in the Profile.
 
 Thinking Level is translated to the appropriate provider parameter for OpenAI Responses, OpenAI-compatible Chat Completions, or Anthropic Messages. If the selected remote model does not support that setting, the provider error is surfaced explicitly instead of silently changing the request.
 

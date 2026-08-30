@@ -3,6 +3,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app import schemas
 from app.database import Base, get_db
 from app.main import create_app
 from app.services import providers
@@ -28,7 +29,10 @@ def test_api_crud_tree_and_mock_stream(monkeypatch):
 
     async def fake_refresh_models(profile):
         assert profile.api_key == "sk-direct-test-secret"
-        return ["mock-model", "new-model"]
+        return [
+            schemas.RemoteModelInfo(id="mock-model", max_total_tokens=262144),
+            schemas.RemoteModelInfo(id="new-model"),
+        ]
 
     monkeypatch.setattr(providers, "stream_completion", fake_stream_completion)
     monkeypatch.setattr(providers, "refresh_models", fake_refresh_models)
@@ -52,6 +56,20 @@ def test_api_crud_tree_and_mock_stream(monkeypatch):
     assert leaked_secret not in invalid.text
     assert '"input"' not in invalid.text
 
+    invalid_limits = client.post(
+        "/api/api-profiles",
+        json={
+            "name": "Invalid limits",
+            "provider_type": "openai_responses",
+            "base_url": "https://example.test",
+            "model": "mock-model",
+            "api_key": "test-secret",
+            "input_token_limit": 100,
+            "output_token_limit": 0,
+        },
+    )
+    assert invalid_limits.status_code == 422
+
     profile = client.post(
         "/api/api-profiles",
         json={
@@ -65,9 +83,14 @@ def test_api_crud_tree_and_mock_stream(monkeypatch):
     ).json()
     assert profile["has_api_key"] is True
     assert "api_key" not in profile
-    assert client.post(f"/api/api-profiles/{profile['id']}/models/refresh").json() == {
-        "models": ["mock-model", "new-model"]
-    }
+    assert profile["input_token_limit"] == 262144
+    assert profile["output_token_limit"] == 32768
+    refreshed = client.post(f"/api/api-profiles/{profile['id']}/models/refresh").json()
+    assert [item["id"] for item in refreshed["models"]] == ["mock-model", "new-model"]
+    assert refreshed["models"][0]["max_total_tokens"] == 262144
+    persisted_profile = client.get("/api/api-profiles").json()[0]
+    assert persisted_profile["model_catalog"][0]["id"] == "mock-model"
+    assert persisted_profile["models_refreshed_at"] is not None
     unsafe_reroute = client.patch(
         f"/api/api-profiles/{profile['id']}", json={"base_url": "https://other-provider.test"}
     )

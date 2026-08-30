@@ -32,6 +32,31 @@ def merge_usage(current: Dict[str, Any], update: Dict[str, Any]) -> Dict[str, An
     return merged
 
 
+def _first_non_negative_int(*values: Any) -> int | None:
+    for value in values:
+        if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+            return value
+    return None
+
+
+def input_tokens_from_usage(usage: Dict[str, Any]) -> int | None:
+    if not usage:
+        return None
+    return _first_non_negative_int(
+        usage.get("input_tokens"),
+        usage.get("prompt_tokens"),
+    )
+
+
+def output_tokens_from_usage(usage: Dict[str, Any]) -> int | None:
+    if not usage:
+        return None
+    return _first_non_negative_int(
+        usage.get("output_tokens"),
+        usage.get("completion_tokens"),
+    )
+
+
 def cached_tokens_from_usage(usage: Dict[str, Any]) -> int:
     if not usage:
         return 0
@@ -40,13 +65,8 @@ def cached_tokens_from_usage(usage: Dict[str, Any]) -> int:
         usage.get("prompt_tokens_details", {}).get("cached_tokens") if isinstance(usage.get("prompt_tokens_details"), dict) else None,
         usage.get("input_tokens_details", {}).get("cached_tokens") if isinstance(usage.get("input_tokens_details"), dict) else None,
         usage.get("cache_read_input_tokens"),
-        usage.get("cache_creation_input_tokens"),
     ]
-    total = 0
-    for value in candidates:
-        if isinstance(value, int):
-            total += value
-    return total
+    return _first_non_negative_int(*candidates) or 0
 
 
 def reasoning_tokens_from_usage(usage: Dict[str, Any]) -> int:
@@ -57,4 +77,4 @@ def reasoning_tokens_from_usage(usage: Dict[str, Any]) -> int:
         usage.get("completion_tokens_details", {}).get("reasoning_tokens") if isinstance(usage.get("completion_tokens_details"), dict) else None,
         usage.get("output_tokens_details", {}).get("reasoning_tokens") if isinstance(usage.get("output_tokens_details"), dict) else None,
     ]
-    return sum(value for value in candidates if isinstance(value, int))
+    return _first_non_negative_int(*candidates) or 0

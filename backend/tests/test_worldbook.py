@@ -23,7 +23,7 @@ def test_worldbook_activation_supports_plain_regex_secondary_constant_and_budget
         ),
         LoreCandidate(id="over-budget", worldbook_id="w", keys=["moon"], secondary_keys=[], content="x" * 100, order=5),
     ]
-    activated = activate_lore(candidates, messages, scan_depth=8, budget=90)
+    activated = activate_lore(candidates, messages, scan_depth=8, budget=25)
     assert [item.id for item in activated] == ["constant", "plain", "regex", "secondary"]
 
 

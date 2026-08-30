@@ -4,7 +4,7 @@ from typing import List, Optional
 
 from fastapi import HTTPException
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from .. import models
 from .token_counter import count_text_tokens
@@ -28,6 +28,7 @@ def list_messages(db: Session, session_id: str) -> List[models.Message]:
     return list(
         db.scalars(
             select(models.Message)
+            .options(selectinload(models.Message.generation_run))
             .where(models.Message.session_id == session_id)
             .order_by(models.Message.parent_id.is_not(None), models.Message.sort_order, models.Message.created_at)
         )
@@ -93,13 +94,53 @@ def active_path_ids(db: Session, session: models.ChatSession) -> List[str]:
     return [message.id for message in active_path(db, session)]
 
 
+def ancestor_path(
+    db: Session,
+    message: models.Message,
+    *,
+    include_self: bool = True,
+) -> List[models.Message]:
+    """Return the immutable parent chain from the root to ``message``.
+
+    The tree may be loaded from an older database whose foreign-key checks were
+    disabled, so fail loudly on a broken cross-session link or a cycle instead
+    of silently compiling the wrong conversation history.
+    """
+
+    reverse_path: List[models.Message] = []
+    current: Optional[models.Message] = message
+    if not include_self:
+        current = db.get(models.Message, message.parent_id) if message.parent_id else None
+    seen: set[str] = set()
+    while current is not None:
+        if current.id in seen:
+            raise HTTPException(status_code=409, detail="Message tree contains a parent cycle")
+        if current.session_id != message.session_id:
+            raise HTTPException(status_code=409, detail="Message parent belongs to another session")
+        seen.add(current.id)
+        reverse_path.append(current)
+        current = db.get(models.Message, current.parent_id) if current.parent_id else None
+    reverse_path.reverse()
+    return reverse_path
+
+
+def _select_path(db: Session, session: models.ChatSession, path: List[models.Message]) -> None:
+    if not path:
+        return
+    root = path[0]
+    if root.parent_id is not None or root.session_id != session.id:
+        raise HTTPException(status_code=409, detail="Selected message does not have a valid session root")
+    session.active_root_child_id = root.id
+    for parent, child in zip(path, path[1:]):
+        if child.parent_id != parent.id or child.session_id != session.id:
+            raise HTTPException(status_code=409, detail="Selected message has an invalid ancestor chain")
+        parent.selected_child_id = child.id
+
+
 def select_message(db: Session, message: models.Message) -> models.ChatSession:
     session = get_session_or_404(db, message.session_id)
-    if message.parent_id is None:
-        session.active_root_child_id = message.id
-    else:
-        parent = get_message_or_404(db, message.parent_id)
-        parent.selected_child_id = message.id
+    _select_path(db, session, ancestor_path(db, message))
+    session.last_activity_at = models.utc_now()
     db.commit()
     db.refresh(session)
     return session
@@ -116,6 +157,8 @@ def create_message(
     speaker: str = "",
     status: str = "complete",
     select_new: bool = True,
+    model: str | None = None,
+    commit: bool = True,
 ) -> models.Message:
     if parent_id:
         parent = get_message_or_404(db, parent_id)
@@ -130,20 +173,20 @@ def create_message(
         thinking_content=thinking_content,
         speaker=speaker,
         status=status,
-        token_count=count_text_tokens(content),
-        thinking_token_count=count_text_tokens(thinking_content),
+        token_count=count_text_tokens(content, model),
+        thinking_token_count=count_text_tokens(thinking_content, model),
         sort_order=_next_sort_order(db, session.id, parent_id),
     )
     db.add(message)
     db.flush()
     if select_new:
-        if parent_id:
-            parent = get_message_or_404(db, parent_id)
-            parent.selected_child_id = message.id
-        else:
-            session.active_root_child_id = message.id
-    db.commit()
-    db.refresh(message)
+        _select_path(db, session, ancestor_path(db, message))
+    session.last_activity_at = models.utc_now()
+    if commit:
+        db.commit()
+        db.refresh(message)
+    else:
+        db.flush()
     return message
 
 
@@ -156,6 +199,7 @@ def create_swipe(
     thinking_content: str = "",
     speaker: Optional[str],
     status: str = "complete",
+    model: str | None = None,
 ) -> models.Message:
     session = get_session_or_404(db, base_message.session_id)
     return create_message(
@@ -166,6 +210,7 @@ def create_swipe(
         content=content,
         thinking_content=thinking_content,
         speaker=base_message.speaker if speaker is None else speaker,
+        model=model,
         status=status,
         select_new=True,
     )

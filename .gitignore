@@ -12,4 +12,6 @@ __pycache__/
 .ruff_cache/
 treechat.db
 *.db
+*.db-wal
+*.db-shm
 .env

@@ -26,12 +26,31 @@ def test_api_crud_tree_and_mock_stream(monkeypatch):
         yield "Mock "
         yield "reply"
 
-    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    async def fake_refresh_models(profile):
+        assert profile.api_key == "sk-direct-test-secret"
+        return ["mock-model", "new-model"]
+
     monkeypatch.setattr(providers, "stream_completion", fake_stream_completion)
+    monkeypatch.setattr(providers, "refresh_models", fake_refresh_models)
 
     app = create_app(init_on_startup=False)
     app.dependency_overrides[get_db] = override_db
     client = TestClient(app)
+
+    leaked_secret = "sk-should-never-appear-in-validation"
+    invalid = client.post(
+        "/api/api-profiles",
+        json={
+            "name": "Invalid",
+            "provider_type": "openai_responses",
+            "base_url": "https://example.test",
+            "model": "mock-model",
+            "api_key_env": leaked_secret,
+        },
+    )
+    assert invalid.status_code == 422
+    assert leaked_secret not in invalid.text
+    assert '"input"' not in invalid.text
 
     profile = client.post(
         "/api/api-profiles",
@@ -40,10 +59,15 @@ def test_api_crud_tree_and_mock_stream(monkeypatch):
             "provider_type": "openai_responses",
             "base_url": "https://example.test",
             "model": "mock-model",
-            "api_key_env": "OPENAI_API_KEY",
+            "api_key": "sk-direct-test-secret",
             "default_params": {},
         },
     ).json()
+    assert profile["has_api_key"] is True
+    assert "api_key" not in profile
+    assert client.post(f"/api/api-profiles/{profile['id']}/models/refresh").json() == {
+        "models": ["mock-model", "new-model"]
+    }
     character = client.post("/api/characters", json={"name": "Luna", "first_mes": "Hi."}).json()
     session = client.post(
         "/api/sessions",

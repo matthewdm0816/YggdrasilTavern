@@ -2,11 +2,18 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Iterable, List, Optional
+from typing import Iterable, List, Optional, Sequence
 
 from sqlalchemy.orm import Session
 
 from .. import models, schemas
+from .prompt_config import (
+    apply_outgoing_regex,
+    global_prompt_state,
+    parsed_regex_rules,
+    unique_worldbook_ids,
+)
+from .token_counter import count_text_tokens
 from .tree import active_path
 
 
@@ -199,7 +206,7 @@ def activate_lore(
         should_activate = candidate.constant or (primary and (secondary or not candidate.selective))
         if not should_activate:
             continue
-        next_size = used + len(candidate.content)
+        next_size = used + count_text_tokens(candidate.content)
         if budget > 0 and next_size > budget:
             continue
         activated.append(candidate)
@@ -213,60 +220,146 @@ def build_context(
     path_override: Optional[List[models.Message]] = None,
 ) -> schemas.ContextPreviewOut:
     character = session.character
-    user_name = str((session.preset or {}).get("user_name") or "User")
+    preset = session.preset or {}
+    user_name = str(preset.get("user_name") or "User")
     path = path_override if path_override is not None else active_path(db, session)
+    diagnostics: List[schemas.PromptDiagnostic] = []
 
-    worldbook_candidates = []
-    scan_depth = 8
-    budget = 4000
-    if session.worldbook:
-        scan_depth = session.worldbook.scan_depth
-        budget = session.worldbook.token_budget
-        worldbook_candidates.extend(_candidate_from_entry(entry) for entry in session.worldbook.entries)
-    worldbook_candidates.extend(_candidates_from_character_book(character))
-    activated_lore = activate_lore(worldbook_candidates, path, scan_depth=scan_depth, budget=budget)
+    try:
+        worldbook_ids = unique_worldbook_ids(session.worldbook_id, preset)
+    except ValueError as exc:
+        worldbook_ids = [session.worldbook_id] if session.worldbook_id else []
+        diagnostics.append(schemas.PromptDiagnostic(level="error", code="invalid_worldbook_ids", message=str(exc)))
 
-    original_system = str((session.preset or {}).get("system_prompt") or DEFAULT_SYSTEM)
-    character_system = expand_macros(character.system_prompt if character else "", character, user_name, original_system)
-    system_parts = [character_system or original_system]
+    activated_lore: List[LoreCandidate] = []
+    loaded_worldbook_ids: List[str] = []
+    for worldbook_id in worldbook_ids:
+        worldbook = db.get(models.WorldBook, worldbook_id)
+        if not worldbook:
+            diagnostics.append(
+                schemas.PromptDiagnostic(
+                    level="error",
+                    code="missing_worldbook",
+                    message=f"Worldbook '{worldbook_id}' does not exist",
+                )
+            )
+            continue
+        loaded_worldbook_ids.append(worldbook.id)
+        candidates = [_candidate_from_entry(entry) for entry in worldbook.entries]
+        activated_lore.extend(
+            activate_lore(candidates, path, scan_depth=worldbook.scan_depth, budget=worldbook.token_budget)
+        )
+
+    # An embedded character book is an independent source with its own conservative budget.
+    activated_lore.extend(
+        activate_lore(_candidates_from_character_book(character), path, scan_depth=8, budget=4000)
+    )
+    activated_lore.sort(key=lambda item: (item.order, item.worldbook_id, item.id))
 
     lore_before = [item.content for item in activated_lore if item.position in {"before_char", "before_char_defs", "0"}]
     lore_after = [item.content for item in activated_lore if item.position not in {"before_char", "before_char_defs", "0"}]
-    if lore_before:
-        system_parts.append("[World Info]\n" + "\n\n".join(expand_macros(item, character, user_name) for item in lore_before))
+    original_system = str(preset.get("system_prompt") or DEFAULT_SYSTEM)
 
-    if character:
-        char_sections = []
-        if character.description:
-            char_sections.append("Description:\n" + character.description)
-        if character.personality:
-            char_sections.append("Personality:\n" + character.personality)
-        if character.scenario:
-            char_sections.append("Scenario:\n" + character.scenario)
-        if character.mes_example:
-            char_sections.append("Example dialogue:\n" + character.mes_example)
-        if char_sections:
-            system_parts.append(expand_macros("\n\n".join(char_sections), character, user_name))
-
-    if lore_after:
-        system_parts.append("[World Info]\n" + "\n\n".join(expand_macros(item, character, user_name) for item in lore_after))
-
-    if character and character.post_history_instructions:
-        system_parts.append(expand_macros(character.post_history_instructions, character, user_name))
-
-    prompt_messages = [
-        schemas.PromptMessage(
-            role=message.role,
-            speaker=message.speaker,
-            content=expand_macros(message.content, character, user_name),
+    slots, prompt_config_revision, _, prompt_config_error = global_prompt_state(db)
+    if prompt_config_error:
+        diagnostics.append(
+            schemas.PromptDiagnostic(
+                level="error",
+                code="invalid_global_prompt_config",
+                message=prompt_config_error,
+            )
         )
-        for message in path
-        if message.role in {"user", "assistant"} and message.status != "failed"
-    ]
+    try:
+        regex_rules = parsed_regex_rules(preset)
+    except ValueError as exc:
+        regex_rules = []
+        diagnostics.append(schemas.PromptDiagnostic(level="error", code="invalid_regex_rules", message=str(exc)))
 
+    compiled_blocks: List[schemas.CompiledPromptBlock] = []
+
+    def source_content(slot: schemas.PromptSlot) -> tuple[str, str]:
+        if slot.kind == "main":
+            if character and character.system_prompt:
+                return character.system_prompt, "character.system_prompt"
+            if preset.get("system_prompt"):
+                return original_system, "session.system_prompt"
+            return original_system, "default.main_prompt"
+        if slot.kind == "world_before":
+            return _world_info_text(lore_before, character, user_name), "worldbooks.before"
+        if slot.kind == "char_description":
+            value = f"Description:\n{character.description}" if character and character.description else ""
+            return value, "character.description"
+        if slot.kind == "char_personality":
+            value = f"Personality:\n{character.personality}" if character and character.personality else ""
+            return value, "character.personality"
+        if slot.kind == "scenario":
+            value = f"Scenario:\n{character.scenario}" if character and character.scenario else ""
+            return value, "character.scenario"
+        if slot.kind == "examples":
+            value = f"Example dialogue:\n{character.mes_example}" if character and character.mes_example else ""
+            return value, "character.mes_example"
+        if slot.kind == "pre_history":
+            value = str(preset.get("pre_history_instruction") or preset.get("pre_history_instructions") or "")
+            return value, "session.pre_history_instruction"
+        if slot.kind == "world_after":
+            return _world_info_text(lore_after, character, user_name), "worldbooks.after"
+        if slot.kind == "post_history":
+            value = character.post_history_instructions if character else ""
+            return value, "character.post_history_instructions"
+        return slot.content or "", "global.custom_prompt"
+
+    for slot in slots:
+        if not slot.enabled:
+            continue
+        if slot.kind == "history":
+            for message in path:
+                if message.role not in {"user", "assistant"}:
+                    continue
+                content = expand_macros(message.content, character, user_name)
+                transformed, regex_diagnostics = apply_outgoing_regex(content, regex_rules)
+                diagnostics.extend(_diagnostics_for_slot(regex_diagnostics, slot.id))
+                if not transformed.strip():
+                    continue
+                compiled_blocks.append(
+                    schemas.CompiledPromptBlock(
+                        slot_id=slot.id,
+                        slot_kind=slot.kind,
+                        slot_name=slot.name,
+                        source=f"message:{message.id}",
+                        role=message.role,
+                        content=transformed,
+                        token_count=count_text_tokens(transformed),
+                        is_history=True,
+                        message_id=message.id,
+                        speaker=message.speaker,
+                    )
+                )
+            continue
+
+        raw_content, source = source_content(slot)
+        if slot.content is not None:
+            raw_content = slot.content
+            source = f"{source}.override"
+        content = expand_macros(raw_content, character, user_name, original_system)
+        transformed, regex_diagnostics = apply_outgoing_regex(content, regex_rules)
+        diagnostics.extend(_diagnostics_for_slot(regex_diagnostics, slot.id))
+        if not transformed.strip():
+            continue
+        compiled_blocks.append(
+            schemas.CompiledPromptBlock(
+                slot_id=slot.id,
+                slot_kind=slot.kind,
+                slot_name=slot.name,
+                source=source,
+                role=slot.role,
+                content=transformed,
+                token_count=count_text_tokens(transformed),
+            )
+        )
+    compat_system, compat_messages = _compat_context(compiled_blocks)
     return schemas.ContextPreviewOut(
-        system="\n\n".join(part for part in system_parts if part.strip()),
-        messages=prompt_messages,
+        system=compat_system,
+        messages=compat_messages,
         activated_lore=[
             schemas.ActivatedLore(
                 id=item.id,
@@ -278,4 +371,41 @@ def build_context(
             )
             for item in activated_lore
         ],
+        compiled_blocks=compiled_blocks,
+        diagnostics=diagnostics,
+        worldbook_ids=loaded_worldbook_ids,
+        prompt_config_revision=prompt_config_revision,
     )
+
+
+def _world_info_text(contents: Sequence[str], character: Optional[models.Character], user_name: str) -> str:
+    if not contents:
+        return ""
+    return "[World Info]\n" + "\n\n".join(expand_macros(item, character, user_name) for item in contents)
+
+
+def _diagnostics_for_slot(
+    diagnostics: Sequence[schemas.PromptDiagnostic], slot_id: str
+) -> List[schemas.PromptDiagnostic]:
+    return [diagnostic.model_copy(update={"slot_id": slot_id}) for diagnostic in diagnostics]
+
+
+def _compat_context(
+    blocks: Sequence[schemas.CompiledPromptBlock],
+) -> tuple[str, List[schemas.PromptMessage]]:
+    leading_system: List[str] = []
+    messages: List[schemas.PromptMessage] = []
+    prefix = True
+    for block in blocks:
+        if prefix and block.role == "system" and not block.is_history:
+            leading_system.append(block.content)
+            continue
+        prefix = False
+        messages.append(
+            schemas.PromptMessage(role=block.role, content=block.content, speaker=block.speaker)
+        )
+    return "\n\n".join(leading_system), messages
+
+
+def prompt_errors(context: schemas.ContextPreviewOut) -> List[schemas.PromptDiagnostic]:
+    return [diagnostic for diagnostic in context.diagnostics if diagnostic.level == "error"]

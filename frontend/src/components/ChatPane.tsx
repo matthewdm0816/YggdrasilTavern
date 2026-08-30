@@ -2,6 +2,7 @@ import { FormEvent, useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight, CopyPlus, Edit3, GitBranch, RefreshCcw, Send, Sparkles, X } from "lucide-react";
 import { Character, ChatSession, Message, SessionTree } from "../lib/api";
 import { activeMessages as getActiveMessages, siblingsFor } from "../lib/tree";
+import { MarkdownMessage } from "./MarkdownMessage";
 
 type Props = {
   tree?: SessionTree;
@@ -110,9 +111,11 @@ export function ChatPane({
                     </button>
                   </div>
                 </div>
-              ) : (
-                <p className="message-content">{message.content || (message.status === "streaming" ? "…" : "")}</p>
-              )}
+              ) : message.content ? (
+                <MarkdownMessage content={message.content} />
+              ) : message.status === "streaming" ? (
+                <p className="message-content">…</p>
+              ) : null}
               {message.error && <p className="message-error">{message.error}</p>}
               <div className="message-toolbar">
                 <span className="token-pill">正文 {message.token_count || 0} tok</span>

@@ -5,6 +5,7 @@ from app.models import APIProfile
 from app.services.providers import (
     _api_key,
     _stream_terminal_state,
+    apply_thinking_level,
     endpoint_for,
     extract_anthropic_delta,
     extract_anthropic_thinking_delta,
@@ -50,6 +51,41 @@ def test_stream_completion_markers_and_reasoning_aliases_are_normalized():
         "output_tokens_details": {"reasoning_tokens": 7},
     }
     assert reasoning_tokens_from_usage(usage) == 7
+
+
+@pytest.mark.parametrize(
+    ("provider_type", "params", "expected"),
+    [
+        (
+            "openai_responses",
+            {"temperature": 0.7, "_thinking_level": "high", "reasoning": {"summary": "auto"}},
+            {"temperature": 0.7, "reasoning": {"summary": "auto", "effort": "high"}},
+        ),
+        (
+            "openai_chat_completions",
+            {"temperature": 0.7, "_thinking_level": "off"},
+            {"temperature": 0.7, "reasoning_effort": "none"},
+        ),
+        (
+            "anthropic_messages",
+            {"_thinking_level": "medium"},
+            {"thinking": {"type": "adaptive"}, "output_config": {"effort": "medium"}},
+        ),
+    ],
+)
+def test_thinking_level_is_translated_without_leaking_internal_param(provider_type, params, expected):
+    assert apply_thinking_level(provider_type, params) == expected
+    assert "_thinking_level" in params
+
+
+def test_thinking_level_auto_preserves_provider_params_and_invalid_level_is_loud():
+    assert apply_thinking_level("openai_responses", {"_thinking_level": "auto", "temperature": 1}) == {
+        "temperature": 1
+    }
+    with pytest.raises(Exception, match="未知的 Thinking Level"):
+        apply_thinking_level("openai_responses", {"_thinking_level": "extreme"})
+    with pytest.raises(Exception, match="Temperature 必须留空或设为 1"):
+        apply_thinking_level("anthropic_messages", {"_thinking_level": "high", "temperature": 0.8})
 
 
 def test_direct_key_precedes_legacy_env_and_v1_base_is_not_duplicated(monkeypatch):

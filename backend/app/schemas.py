@@ -265,7 +265,8 @@ class SessionBase(BaseModel):
 
 
 class SessionCreate(SessionBase):
-    pass
+    title: str = ""
+    character_id: str = Field(min_length=1)
 
 
 class SessionUpdate(BaseModel):
@@ -426,6 +427,7 @@ class ContextPreviewOut(BaseModel):
 
 class GenerateRequest(BaseModel):
     regenerate_message_id: Optional[str] = None
+    api_profile_id: Optional[str] = None
 
 
 class ChubImportRequest(BaseModel):

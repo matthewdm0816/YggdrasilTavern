@@ -240,7 +240,24 @@ export type ContextPreview = {
   prompt_config_revision: number;
 };
 
+export type AuthStatus = {
+  enabled: boolean;
+  authenticated: boolean;
+  username: string | null;
+};
+
+export type AuthLogin = {
+  username: string;
+  password: string;
+};
+
 const API_BASE = import.meta.env.VITE_API_BASE || "";
+export const AUTH_REQUIRED_EVENT = "yggdrasil:auth-required";
+
+function notifyAuthenticationRequired(path: string, response: Response): void {
+  if (response.status !== 401 || path === "/api/auth/login" || typeof window === "undefined") return;
+  window.dispatchEvent(new Event(AUTH_REQUIRED_EVENT));
+}
 
 async function responseError(response: Response): Promise<string> {
   const text = await response.text();
@@ -273,12 +290,14 @@ async function responseError(response: Response): Promise<string> {
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
     ...options,
+    credentials: "include",
     headers: {
       "Content-Type": "application/json",
       ...(options.headers || {})
     }
   });
   if (!response.ok) {
+    notifyAuthenticationRequired(path, response);
     throw new Error(await responseError(response));
   }
   return response.json() as Promise<T>;
@@ -287,16 +306,20 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 async function upload<T>(path: string, file: File): Promise<T> {
   const form = new FormData();
   form.append("file", file);
-  const response = await fetch(`${API_BASE}${path}`, { method: "POST", body: form });
+  const response = await fetch(`${API_BASE}${path}`, { method: "POST", body: form, credentials: "include" });
   if (!response.ok) {
+    notifyAuthenticationRequired(path, response);
     throw new Error(await responseError(response));
   }
   return response.json() as Promise<T>;
 }
 
 async function download(path: string, fallbackName: string): Promise<void> {
-  const response = await fetch(`${API_BASE}${path}`);
-  if (!response.ok) throw new Error(await responseError(response));
+  const response = await fetch(`${API_BASE}${path}`, { credentials: "include" });
+  if (!response.ok) {
+    notifyAuthenticationRequired(path, response);
+    throw new Error(await responseError(response));
+  }
   const blob = await response.blob();
   const disposition = response.headers.get("Content-Disposition") || "";
   const encodedName = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
@@ -311,6 +334,10 @@ async function download(path: string, fallbackName: string): Promise<void> {
 }
 
 export const api = {
+  authStatus: () => request<AuthStatus>("/api/auth/status"),
+  authLogin: (payload: AuthLogin) =>
+    request<AuthStatus>("/api/auth/login", { method: "POST", body: JSON.stringify(payload) }),
+  authLogout: () => request<AuthStatus>("/api/auth/logout", { method: "POST", body: "{}" }),
   profiles: () => request<APIProfile[]>("/api/api-profiles"),
   createProfile: (payload: APIProfileWrite) =>
     request<APIProfile>("/api/api-profiles", { method: "POST", body: JSON.stringify(payload) }),
@@ -428,17 +455,19 @@ function flushSseBuffer(buffer: string, handlers: StreamHandlers): void {
 
 export async function streamGenerate(
   sessionId: string,
-  payload: { regenerate_message_id?: string | null },
+  payload: { regenerate_message_id?: string | null; api_profile_id?: string | null },
   handlers: StreamHandlers,
   signal?: AbortSignal
 ): Promise<void> {
   const response = await fetch(`${API_BASE}/api/sessions/${sessionId}/generate/stream`, {
     method: "POST",
+    credentials: "include",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
     signal
   });
   if (!response.ok || !response.body) {
+    notifyAuthenticationRequired(`/api/sessions/${sessionId}/generate/stream`, response);
     throw new Error(await responseError(response));
   }
   const reader = response.body.getReader();

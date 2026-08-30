@@ -68,11 +68,26 @@ def test_api_crud_tree_and_mock_stream(monkeypatch):
     assert client.post(f"/api/api-profiles/{profile['id']}/models/refresh").json() == {
         "models": ["mock-model", "new-model"]
     }
+    unsafe_reroute = client.patch(
+        f"/api/api-profiles/{profile['id']}", json={"base_url": "https://other-provider.test"}
+    )
+    assert unsafe_reroute.status_code == 422
+    assert "必须重新输入 API Key" in unsafe_reroute.text
+    rerouted = client.patch(
+        f"/api/api-profiles/{profile['id']}",
+        json={"base_url": "https://other-provider.test", "api_key": "sk-reentered-test-secret"},
+    )
+    assert rerouted.status_code == 200
+    assert rerouted.json()["base_url"] == "https://other-provider.test"
     character = client.post("/api/characters", json={"name": "Luna", "first_mes": "Hi."}).json()
+    no_character = client.post("/api/sessions", json={"title": "Invalid"})
+    assert no_character.status_code == 422
     session = client.post(
         "/api/sessions",
-        json={"title": "Session", "character_id": character["id"], "api_profile_id": profile["id"], "preset": {"auto_greeting": True}},
+        json={"title": "", "character_id": character["id"], "preset": {"auto_greeting": True}},
     ).json()
+    assert session["title"] == "Luna"
+    assert session["api_profile_id"] is None
     tree = client.get(f"/api/sessions/{session['id']}/tree").json()
     assert tree["active_path_ids"]
 
@@ -80,8 +95,16 @@ def test_api_crud_tree_and_mock_stream(monkeypatch):
         f"/api/sessions/{session['id']}/messages",
         json={"role": "user", "speaker": "User", "content": "Hello", "status": "complete"},
     )
-    with client.stream("POST", f"/api/sessions/{session['id']}/generate/stream", json={}) as response:
+    with client.stream(
+        "POST",
+        f"/api/sessions/{session['id']}/generate/stream",
+        json={"api_profile_id": profile["id"]},
+    ) as response:
         body = "".join(response.iter_text())
     assert "message_created" in body
     assert "Mock " in body
     assert "message_completed" in body
+
+    in_use = client.delete(f"/api/characters/{character['id']}")
+    assert in_use.status_code == 409
+    assert "Chat session" in in_use.text

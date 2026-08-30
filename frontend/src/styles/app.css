@@ -38,6 +38,174 @@
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
+/* Authentication gate */
+.auth-gate {
+  display: grid;
+  min-height: 100dvh;
+  place-items: center;
+  padding: max(24px, env(safe-area-inset-top)) max(18px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(18px, env(safe-area-inset-left));
+  background:
+    radial-gradient(circle at 16% 12%, color-mix(in srgb, var(--green) 18%, transparent), transparent 38%),
+    radial-gradient(circle at 86% 84%, color-mix(in srgb, var(--blue) 13%, transparent), transparent 42%),
+    var(--bg);
+}
+
+.auth-card {
+  width: min(430px, 100%);
+  padding: clamp(22px, 5vw, 34px);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--glass-bg);
+  box-shadow: var(--modal-shadow);
+  backdrop-filter: blur(12px);
+}
+
+.auth-brand {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+}
+
+.auth-brand-icon {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  flex: 0 0 48px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--green) 38%, var(--line));
+  border-radius: 12px;
+  background: var(--surface-selected);
+  color: var(--accent-text);
+}
+
+.auth-brand h1 {
+  margin: 0;
+  font-size: clamp(20px, 5vw, 25px);
+  line-height: 1.2;
+}
+
+.auth-introduction,
+.auth-status-copy {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.auth-introduction {
+  margin: 20px 0 15px;
+}
+
+.auth-status-copy {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  margin-top: 26px;
+  text-align: center;
+}
+
+.auth-status-copy p {
+  margin: 0;
+}
+
+.auth-spinner {
+  color: var(--accent-text);
+  animation: auth-spin 1s linear infinite;
+}
+
+@keyframes auth-spin {
+  to { transform: rotate(360deg); }
+}
+
+.auth-form,
+.auth-field {
+  display: grid;
+}
+
+.auth-form {
+  gap: 13px;
+}
+
+.auth-field {
+  gap: 6px;
+}
+
+.auth-field > span {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.auth-error {
+  margin: 0;
+  padding: 10px 11px;
+  border: 1px solid color-mix(in srgb, var(--red) 34%, var(--line));
+  border-radius: 8px;
+  background: var(--danger-bg);
+  color: var(--red);
+  font-size: 12px;
+  line-height: 1.45;
+  text-align: left;
+}
+
+.auth-submit,
+.auth-retry {
+  width: 100%;
+}
+
+.auth-logout-button {
+  position: fixed;
+  z-index: 70;
+  top: max(10px, env(safe-area-inset-top));
+  right: max(10px, env(safe-area-inset-right));
+  width: 34px;
+  min-height: 34px;
+  opacity: 0.48;
+  box-shadow: var(--shadow);
+  transition: opacity 0.15s, border-color 0.15s;
+}
+
+.auth-logout-button:hover,
+.auth-logout-button:focus-visible {
+  opacity: 1;
+}
+
+.auth-logout-error {
+  position: fixed;
+  z-index: 71;
+  top: max(52px, calc(env(safe-area-inset-top) + 52px));
+  right: max(10px, env(safe-area-inset-right));
+  max-width: min(380px, calc(100vw - 20px));
+  margin: 0;
+  padding: 9px 11px;
+  border: 1px solid color-mix(in srgb, var(--red) 34%, var(--line));
+  border-radius: 8px;
+  background: var(--danger-bg);
+  color: var(--red);
+  box-shadow: var(--shadow);
+  font-size: 12px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-spinner {
+    animation: none;
+  }
+}
+
+@media (max-width: 520px) {
+  .auth-card {
+    padding: 22px 18px;
+    border-radius: 12px;
+  }
+
+  .auth-logout-button {
+    top: calc(62px + env(safe-area-inset-top));
+  }
+
+  .auth-logout-error {
+    top: calc(106px + env(safe-area-inset-top));
+  }
+}
+
 :root[data-theme="dark"] {
   color-scheme: dark;
   --bg: #0f1310;
@@ -270,10 +438,33 @@ button:disabled {
 }
 
 .profile-editor {
+  margin-top: 10px;
   padding: 10px;
   border: 1px solid var(--line);
   border-radius: 9px;
   background: var(--surface-soft);
+}
+
+.profile-selector-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.profile-selector-row > .form-field {
+  min-width: 0;
+  flex: 1 1 180px;
+}
+
+.profile-selector-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 6px;
+}
+
+.profile-model-field {
+  margin-top: 10px;
 }
 
 .secret-input {
@@ -695,6 +886,31 @@ textarea:focus {
 .message-row.assistant {
   margin-right: auto;
   border-color: color-mix(in srgb, var(--green) 35%, transparent);
+}
+
+.message-row.is-streaming {
+  border-color: color-mix(in srgb, var(--accent-text) 72%, var(--line));
+  box-shadow:
+    var(--shadow),
+    0 0 0 2px color-mix(in srgb, var(--accent-text) 14%, transparent),
+    0 0 16px color-mix(in srgb, var(--accent-text) 10%, transparent);
+  animation: message-streaming-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes message-streaming-pulse {
+  50% {
+    border-color: color-mix(in srgb, var(--accent-text) 88%, var(--line));
+    box-shadow:
+      var(--shadow),
+      0 0 0 3px color-mix(in srgb, var(--accent-text) 20%, transparent),
+      0 0 20px color-mix(in srgb, var(--accent-text) 15%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .message-row.is-streaming {
+    animation: none;
+  }
 }
 
 .message-meta,
@@ -2303,22 +2519,24 @@ textarea:focus {
 
   .chat-pane {
     grid-template-rows: auto minmax(0, 1fr) auto auto;
+    width: 100%;
+    max-width: 100%;
     height: 100dvh;
     min-height: 100dvh;
+    overflow: hidden;
     padding-top: calc(52px + env(safe-area-inset-top));
   }
 
   .chat-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    min-width: 0;
     padding: 10px 12px;
   }
 
   .desktop-pane-toggle,
-  .chat-header .session-title-block .eyebrow {
+  .chat-header .session-title-block {
     display: none;
-  }
-
-  .chat-header h2 {
-    font-size: 15px;
   }
 
   .chat-actions .avatar {
@@ -2330,7 +2548,17 @@ textarea:focus {
   }
 
   .chat-actions {
-    gap: 6px;
+    width: 100%;
+    min-width: 0;
+    justify-content: center;
+    gap: 4px;
+  }
+
+  .chat-actions > .secondary-button {
+    width: 44px;
+    min-width: 44px;
+    padding: 0;
+    font-size: 0;
   }
 
   .tree-view-trigger {
@@ -2343,13 +2571,25 @@ textarea:focus {
   }
 
   .message-scroll {
+    width: 100%;
+    min-width: 0;
+    overflow-x: hidden;
     padding: 14px 10px;
     overscroll-behavior: contain;
   }
 
   .message-line {
+    width: 100%;
+    min-width: 0;
     max-width: 100%;
     gap: 6px;
+  }
+
+  .message-line .markdown-body,
+  .message-line .message-content,
+  .message-line .thinking-box {
+    max-width: 100%;
+    overflow-wrap: anywhere;
   }
 
   .message-avatar {

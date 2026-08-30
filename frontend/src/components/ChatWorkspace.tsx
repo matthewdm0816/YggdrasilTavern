@@ -58,6 +58,15 @@ function tokenSpeed(message: Message): number {
   return output && durationMs ? output / (durationMs / 1000) : 0;
 }
 
+export function getMessagePresentation(message: Pick<Message, "role" | "status">) {
+  const isStreaming = message.status === "streaming";
+  return {
+    isStreaming,
+    rowClassName: `message-row ${message.role}${isStreaming ? " is-streaming" : ""}`,
+    statusLabel: isStreaming ? "正在生成" : message.status
+  };
+}
+
 export function ChatWorkspace({
   tree,
   activeSession,
@@ -212,9 +221,9 @@ export function ChatWorkspace({
             {themePreference === "system" ? <Monitor size={17} /> : themePreference === "light" ? <Sun size={17} /> : <Moon size={17} />}
           </button>
           {streaming ? (
-            <button className="secondary-button danger-button" onClick={onStop}><Square size={14} />停止</button>
+            <button className="secondary-button danger-button" title="停止生成" aria-label="停止生成" onClick={onStop}><Square size={14} />停止</button>
           ) : (
-            <button className="secondary-button" disabled={!tree} onClick={onGenerate}><Sparkles size={16} />继续</button>
+            <button className="secondary-button" title="继续生成" aria-label="继续生成" disabled={!tree} onClick={onGenerate}><Sparkles size={16} />继续</button>
           )}
           <button className="icon-button desktop-pane-toggle" title="折叠/展开右栏" onClick={onToggleRight}><PanelRightClose size={17} /></button>
         </div>
@@ -240,13 +249,14 @@ export function ChatWorkspace({
           const outputTokens = message.generation_run?.output_tokens || usageNumber(message.usage, "output_tokens", "completion_tokens") || message.token_count;
           const cachedTokens = message.generation_run?.cached_input_tokens || usageNumber(message.usage, "cached_input_tokens", "cached_tokens") || message.cached_tokens;
           const speed = message.generation_run?.tokens_per_second || tokenSpeed(message);
+          const presentation = getMessagePresentation(message);
           return (
             <div key={message.id} className={`message-line ${message.role}`} data-message-id={message.id}>
               {message.role === "assistant" && character?.avatar_data_url && (
                 <img className="message-avatar" src={character.avatar_data_url} alt="" aria-hidden="true" />
               )}
-              <article className={`message-row ${message.role}`}>
-                <div className="message-meta"><strong>{message.speaker || message.role}</strong><span>{message.status}</span></div>
+              <article className={presentation.rowClassName} aria-busy={presentation.isStreaming}>
+                <div className="message-meta"><strong>{message.speaker || message.role}</strong><span aria-live="polite">{presentation.statusLabel}</span></div>
                 {message.thinking_content && (
                   <details className="thinking-box" open={message.status === "streaming"}>
                     <summary>Thinking · {message.thinking_token_count || "估算中"} tokens</summary>

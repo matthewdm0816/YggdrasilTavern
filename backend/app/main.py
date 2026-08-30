@@ -6,12 +6,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from .api.router import router
-from .config import get_settings
+from .auth import AuthenticationMiddleware, router as auth_router
+from .config import Settings, get_settings
 from .database import init_db
 
 
-def create_app(init_on_startup: bool = True) -> FastAPI:
-    settings = get_settings()
+def create_app(init_on_startup: bool = True, settings: Settings | None = None) -> FastAPI:
+    settings = settings or get_settings()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -20,13 +21,7 @@ def create_app(init_on_startup: bool = True) -> FastAPI:
         yield
 
     app = FastAPI(title="YggdrasilTavern API", version="0.1.0", lifespan=lifespan)
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=settings.cors_origin_list,
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+    app.state.settings = settings
 
     @app.exception_handler(RequestValidationError)
     async def validation_error_without_submitted_values(
@@ -45,7 +40,20 @@ def create_app(init_on_startup: bool = True) -> FastAPI:
         ]
         return JSONResponse(status_code=422, content={"detail": detail})
 
+    app.include_router(auth_router)
     app.include_router(router)
+
+    # Authentication is inner and CORS is outer so even 401 responses include
+    # the browser's required cross-origin headers.  The pure ASGI auth layer
+    # also leaves generation streams unbuffered.
+    app.add_middleware(AuthenticationMiddleware, settings=settings)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_origin_list,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
     return app
 

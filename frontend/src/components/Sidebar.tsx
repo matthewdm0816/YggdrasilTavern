@@ -6,6 +6,8 @@ import { CharacterManager, WorldbookManager } from "./ResourceEditors";
 
 type Props = {
   profiles: APIProfile[];
+  activeProfileId: string;
+  onActiveProfileChange: (id: string) => void;
   characters: CharacterSummary[];
   worldbooks: WorldBook[];
   sessions: ChatSession[];
@@ -15,7 +17,7 @@ type Props = {
   creatingSession: boolean;
   createSessionError: string | null;
   onCreateSession: (payload: Partial<ChatSession>) => Promise<ChatSession>;
-  onRefresh: () => void;
+  onRefresh: () => Promise<void>;
   onToggleArchived: () => void;
   onCloseMobile?: () => void;
   onError?: (message: string) => void;
@@ -38,14 +40,48 @@ const defaultProfile: ProfileDraft = {
   path_override: "",
   model: "gpt-5",
   api_key: "",
-  default_params: { temperature: 0.8 }
+  default_params: { _thinking_level: "auto" }
 };
 
-export function Sidebar({ profiles, characters, worldbooks, sessions, selectedSessionId, showArchived, creatingSession, createSessionError, onSelectSession, onCreateSession, onRefresh, onToggleArchived, onCloseMobile, onError }: Props) {
+const thinkingLevelOptions = [
+  { value: "auto", label: "自动" },
+  { value: "off", label: "关闭" },
+  { value: "low", label: "低" },
+  { value: "medium", label: "中" },
+  { value: "high", label: "高" },
+  { value: "xhigh", label: "更高" },
+  { value: "max", label: "最大" }
+] as const;
+
+export function titleForSelectedCharacter(currentTitle: string, currentCharacterName: string, nextCharacterName: string) {
+  return !currentTitle.trim() || currentTitle === currentCharacterName ? nextCharacterName : currentTitle;
+}
+
+export function fallbackProfileIdAfterDelete(profiles: Array<Pick<APIProfile, "id">>, deletedProfileId: string) {
+  return profiles.find((profile) => profile.id !== deletedProfileId)?.id || "";
+}
+
+export function Sidebar({
+  profiles,
+  activeProfileId,
+  onActiveProfileChange,
+  characters,
+  worldbooks,
+  sessions,
+  selectedSessionId,
+  showArchived,
+  creatingSession,
+  createSessionError,
+  onSelectSession,
+  onCreateSession,
+  onRefresh,
+  onToggleArchived,
+  onCloseMobile,
+  onError
+}: Props) {
   const [profile, setProfile] = useState(defaultProfile);
-  const [sessionTitle, setSessionTitle] = useState("新的树状会话");
+  const [sessionTitle, setSessionTitle] = useState("");
   const [selectedCharacter, setSelectedCharacter] = useState("");
-  const [selectedProfile, setSelectedProfile] = useState("");
   const [selectedWorldbooks, setSelectedWorldbooks] = useState<string[]>([]);
   const [selectedFolderId, setSelectedFolderId] = useState("");
   const [chubPath, setChubPath] = useState("");
@@ -58,7 +94,9 @@ export function Sidebar({ profiles, characters, worldbooks, sessions, selectedSe
   const [profileModels, setProfileModels] = useState<Record<string, string[]>>({});
   const [refreshingProfileId, setRefreshingProfileId] = useState<string | null>(null);
   const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
+  const [profileEditorOpen, setProfileEditorOpen] = useState(false);
   const [showApiKey, setShowApiKey] = useState(false);
+  const activeProfile = profiles.find((item) => item.id === activeProfileId);
 
   useEffect(() => {
     loadFolders();
@@ -174,6 +212,14 @@ export function Sidebar({ profiles, characters, worldbooks, sessions, selectedSe
   function resetProfileEditor() {
     setEditingProfileId(null);
     setProfile(defaultProfile);
+    setProfileEditorOpen(false);
+    setShowApiKey(false);
+  }
+
+  function createProfileDraft() {
+    setEditingProfileId(null);
+    setProfile(defaultProfile);
+    setProfileEditorOpen(true);
     setShowApiKey(false);
   }
 
@@ -186,8 +232,9 @@ export function Sidebar({ profiles, characters, worldbooks, sessions, selectedSe
       path_override: item.path_override || "",
       model: item.model,
       api_key: "",
-      default_params: { ...item.default_params }
+      default_params: { _thinking_level: "auto", ...item.default_params }
     });
+    setProfileEditorOpen(true);
     setShowApiKey(false);
   }
 
@@ -203,6 +250,7 @@ export function Sidebar({ profiles, characters, worldbooks, sessions, selectedSe
     }
     setBusy(true);
     try {
+      let createdProfileId: string | null = null;
       const payload = {
         name: profile.name.trim(),
         provider_type: profile.provider_type,
@@ -212,10 +260,15 @@ export function Sidebar({ profiles, characters, worldbooks, sessions, selectedSe
         ...(profile.api_key.trim() ? { api_key: profile.api_key.trim() } : {}),
         default_params: profile.default_params
       };
-      if (editingProfileId) await api.updateProfile(editingProfileId, payload);
-      else await api.createProfile(payload);
+      if (editingProfileId) {
+        await api.updateProfile(editingProfileId, payload);
+      } else {
+        const created = await api.createProfile(payload);
+        createdProfileId = created.id;
+      }
       resetProfileEditor();
-      onRefresh();
+      await onRefresh();
+      if (createdProfileId) onActiveProfileChange(createdProfileId);
     } catch (exc) {
       onError?.(exc instanceof Error ? exc.message : String(exc));
     } finally {
@@ -229,6 +282,9 @@ export function Sidebar({ profiles, characters, worldbooks, sessions, selectedSe
     try {
       await api.deleteProfile(item.id);
       if (editingProfileId === item.id) resetProfileEditor();
+      if (activeProfileId === item.id) {
+        onActiveProfileChange(fallbackProfileIdAfterDelete(profiles, item.id));
+      }
       onRefresh();
     } catch (exc) {
       onError?.(exc instanceof Error ? exc.message : String(exc));
@@ -281,18 +337,30 @@ export function Sidebar({ profiles, characters, worldbooks, sessions, selectedSe
   }
 
   async function submitSession() {
+    const character = characters.find((item) => item.id === selectedCharacter);
+    if (!character) {
+      onError?.("请先选择一个角色，再创建会话");
+      return;
+    }
+
     try {
       await onCreateSession({
-      title: sessionTitle || "新的树状会话",
-      character_id: selectedCharacter || null,
-      api_profile_id: selectedProfile || null,
-      worldbook_id: selectedWorldbooks[0] || null,
-      folder_id: selectedFolderId || null,
-      preset: { user_name: "User", auto_greeting: true, worldbook_ids: selectedWorldbooks }
+        title: sessionTitle.trim() || character.name,
+        character_id: character.id,
+        worldbook_id: selectedWorldbooks[0] || null,
+        folder_id: selectedFolderId || null,
+        preset: { user_name: "User", auto_greeting: true, worldbook_ids: selectedWorldbooks }
       });
     } catch {
       // Mutation error is rendered next to the create button by AppShell.
     }
+  }
+
+  function selectCharacter(characterId: string) {
+    const currentCharacterName = characters.find((item) => item.id === selectedCharacter)?.name || "";
+    const nextCharacterName = characters.find((item) => item.id === characterId)?.name || "";
+    setSelectedCharacter(characterId);
+    setSessionTitle((current) => titleForSelectedCharacter(current, currentCharacterName, nextCharacterName));
   }
 
   async function refreshProfileModels(profileId: string) {
@@ -414,15 +482,11 @@ export function Sidebar({ profiles, characters, worldbooks, sessions, selectedSe
 
         {/* New session form */}
         <div className="compact-form">
-          <label className="form-field"><span>会话标题</span><input value={sessionTitle} onChange={(event) => setSessionTitle(event.target.value)} /></label>
-          <label className="form-field"><span>扮演角色</span><select value={selectedCharacter} onChange={(event) => setSelectedCharacter(event.target.value)}>
-            <option value="">不绑定角色</option>
+          <label className="form-field"><span>扮演角色（必选）</span><select required value={selectedCharacter} onChange={(event) => selectCharacter(event.target.value)}>
+            <option value="">请选择角色</option>
             {characters.map((character) => <option key={character.id} value={character.id}>{character.name}</option>)}
-          </select><small>决定角色设定、开场白和头像。</small></label>
-          <label className="form-field"><span>生成模型 Profile</span><select value={selectedProfile} onChange={(event) => setSelectedProfile(event.target.value)}>
-            <option value="">暂不绑定</option>
-            {profiles.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-          </select><small>每个会话可独立使用不同模型；修改 Profile 会立即影响所有绑定会话。</small></label>
+          </select><small>决定角色设定、开场白和头像；必须选择后才能创建会话。</small></label>
+          <label className="form-field"><span>会话标题（可选）</span><input value={sessionTitle} onChange={(event) => setSessionTitle(event.target.value)} placeholder="默认使用角色名" /><small>留空时使用所选角色名；手动填写可覆盖。</small></label>
           <fieldset className="compact-check-list">
             <legend>绑定多个世界书（可留空）</legend>
             {worldbooks.map((book) => (
@@ -443,7 +507,7 @@ export function Sidebar({ profiles, characters, worldbooks, sessions, selectedSe
               <option key={f.id} value={f.id}>{f.name}</option>
             ))}
           </select></label>
-          <button className="primary-button" disabled={creatingSession} onClick={submitSession}>
+          <button className="primary-button" disabled={creatingSession || !selectedCharacter} onClick={submitSession}>
             <Plus size={16} />
             {creatingSession ? "创建中…" : "新建会话"}
           </button>
@@ -502,41 +566,56 @@ export function Sidebar({ profiles, characters, worldbooks, sessions, selectedSe
         icon={<Server size={16} />}
         storageKey="yggdrasil-tavern.sidebar.api-profiles.expanded"
       >
-        <div className="compact-form profile-editor">
-          <div className="form-caption">
-            <strong>{editingProfileId ? "编辑 API Profile" : "新增 API Profile"}</strong>
-            {editingProfileId && <button className="icon-button" type="button" title="取消编辑" aria-label="取消编辑 Profile" onClick={resetProfileEditor}><X size={15} /></button>}
+        <div className="profile-selector-row">
+          <label className="form-field">
+            <span>当前 Profile（本机全局）</span>
+            <select value={activeProfile?.id || ""} onChange={(event) => { resetProfileEditor(); onActiveProfileChange(event.target.value); }}>
+              <option value="">未选择 Profile</option>
+              {profiles.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.model}</option>)}
+            </select>
+          </label>
+          <div className="profile-selector-actions">
+            <button className="icon-button" type="button" disabled={busy} title="新建 Profile" aria-label="新建 Profile" onClick={createProfileDraft}><Plus size={16} /></button>
+            {activeProfile && (
+              <>
+              <button className="icon-button" type="button" disabled={busy} title={`编辑 ${activeProfile.name}`} aria-label={`编辑 ${activeProfile.name}`} onClick={() => editProfile(activeProfile)}><Pencil size={15} /></button>
+              <button className="icon-button" type="button" disabled={refreshingProfileId === activeProfile.id} title="从远端刷新模型列表" aria-label={`刷新 ${activeProfile.name} 的模型列表`} onClick={() => refreshProfileModels(activeProfile.id)}><CloudDownload size={15} /></button>
+              <button className="icon-button danger-button" type="button" disabled={busy} title={`删除 ${activeProfile.name}`} aria-label={`删除 ${activeProfile.name}`} onClick={() => deleteProfile(activeProfile)}><Trash2 size={15} /></button>
+              </>
+            )}
           </div>
-          <label className="form-field"><span>Profile 名称</span><input value={profile.name} onChange={(event) => setProfile({ ...profile, name: event.target.value })} /><small>给这组连接设置起一个容易辨认的名称。</small></label>
-          <label className="form-field"><span>API 协议</span><select
-              value={profile.provider_type}
-              onChange={(event) => setProfile({ ...profile, provider_type: event.target.value as ProviderType })}
-            >
-              <option value="openai_responses">OpenAI Responses API</option>
-              <option value="openai_chat_completions">OpenAI 兼容 Chat Completions</option>
-              <option value="anthropic_messages">Anthropic Messages API</option>
-            </select><small>需与服务商文档所写的接口格式一致；Kimi 等兼容服务通常选 Chat Completions。</small></label>
-          <label className="form-field"><span>Base URL</span><input value={profile.base_url} onChange={(event) => setProfile({ ...profile, base_url: event.target.value })} /><small>服务地址，例如 https://api.moonshot.cn/v1；末尾的 /v1 可保留。</small></label>
-          <label className="form-field"><span>自定义请求路径（可选）</span><input value={profile.path_override} onChange={(event) => setProfile({ ...profile, path_override: event.target.value })} /><small>留空会按所选协议使用默认路径；只有服务商明确给出不同路径时才填写。</small></label>
-          <label className="form-field"><span>模型名称</span><input value={profile.model} onChange={(event) => setProfile({ ...profile, model: event.target.value })} /><small>发送给 API 的模型 ID；保存后也可从远端模型列表选择。</small></label>
-          <label className="form-field"><span>API Key</span><div className="secret-input"><input type={showApiKey ? "text" : "password"} autoComplete="off" value={profile.api_key} onChange={(event) => setProfile({ ...profile, api_key: event.target.value.trim() })} /><button className="icon-button" type="button" aria-label={showApiKey ? "隐藏 API Key" : "显示 API Key"} title={showApiKey ? "隐藏" : "显示"} onClick={() => setShowApiKey((value) => !value)}>{showApiKey ? <EyeOff size={15} /> : <Eye size={15} />}</button></div><small>{editingProfileId && profiles.find((item) => item.id === editingProfileId)?.has_api_key ? "已保存；留空不会替换现有 Key。" : "直接粘贴服务商提供的 Key；首尾空格会自动移除，本地保存且读取接口不会回传明文。"}</small></label>
-          <label className="form-field"><span>Temperature</span><input type="number" min="0" max="2" step="0.1" value={String(profile.default_params.temperature ?? "")} onChange={(event) => setProfile({ ...profile, default_params: { ...profile.default_params, temperature: event.target.value === "" ? undefined : Number(event.target.value) } })} /><small>数值越高回复越随机；常见范围 0–2。</small></label>
-          <button className="secondary-button" disabled={busy} onClick={saveProfile}>
-            {editingProfileId ? <Pencil size={15} /> : <Plus size={15} />}
-            {editingProfileId ? "保存修改" : "新增 Profile"}
-          </button>
         </div>
-        <div className="profile-list">
-          {profiles.map((item) => (
-            <div className="profile-row" key={item.id}>
-              <span><strong>{item.name}</strong><small>{item.model} · {item.has_api_key ? "Key 已配置" : "未配置 Key"}</small></span>
-              <button className="icon-button" title="编辑 Profile" aria-label={`编辑 ${item.name}`} onClick={() => editProfile(item)}><Pencil size={15} /></button>
-              <button className="icon-button" disabled={refreshingProfileId === item.id} title="从远端刷新该 Profile 的模型列表" onClick={() => refreshProfileModels(item.id)}><CloudDownload size={15} /></button>
-              {profileModels[item.id]?.length ? <label className="form-field profile-model-field"><span>远端模型</span><select value={item.model} onChange={(event) => selectRemoteModel(item.id, event.target.value)}><option value={item.model}>{item.model}（当前）</option>{profileModels[item.id].filter((model) => model !== item.model).map((model) => <option key={model} value={model}>{model}</option>)}</select></label> : null}
-              <button className="icon-button danger-button" title="删除 Profile" aria-label={`删除 ${item.name}`} onClick={() => deleteProfile(item)}><Trash2 size={15} /></button>
+        <p className="section-help">所有聊天生成使用此项；切换不会改写聊天历史。</p>
+        {activeProfile && profileModels[activeProfile.id]?.length ? (
+          <label className="form-field profile-model-field"><span>远端模型</span><select value={activeProfile.model} onChange={(event) => selectRemoteModel(activeProfile.id, event.target.value)}><option value={activeProfile.model}>{activeProfile.model}（当前）</option>{profileModels[activeProfile.id].filter((model) => model !== activeProfile.model).map((model) => <option key={model} value={model}>{model}</option>)}</select></label>
+        ) : null}
+        {profileEditorOpen && (
+          <div className="compact-form profile-editor">
+            <div className="form-caption">
+              <strong>{editingProfileId ? "编辑 API Profile" : "新增 API Profile"}</strong>
+              <button className="icon-button" type="button" title="取消编辑" aria-label="取消编辑 Profile" onClick={resetProfileEditor}><X size={15} /></button>
             </div>
-          ))}
-        </div>
+            <label className="form-field"><span>Profile 名称</span><input value={profile.name} onChange={(event) => setProfile({ ...profile, name: event.target.value })} /><small>给这组连接设置起一个容易辨认的名称。</small></label>
+            <label className="form-field"><span>API 协议</span><select
+                value={profile.provider_type}
+                onChange={(event) => setProfile({ ...profile, provider_type: event.target.value as ProviderType })}
+              >
+                <option value="openai_responses">OpenAI Responses API</option>
+                <option value="openai_chat_completions">OpenAI 兼容 Chat Completions</option>
+                <option value="anthropic_messages">Anthropic Messages API</option>
+              </select><small>需与服务商文档所写的接口格式一致；Kimi 等兼容服务通常选 Chat Completions。</small></label>
+            <label className="form-field"><span>Base URL</span><input value={profile.base_url} onChange={(event) => setProfile({ ...profile, base_url: event.target.value })} /><small>服务地址，例如 https://api.moonshot.cn/v1；末尾的 /v1 可保留。</small></label>
+            <label className="form-field"><span>自定义请求路径（可选）</span><input value={profile.path_override} onChange={(event) => setProfile({ ...profile, path_override: event.target.value })} /><small>留空会按所选协议使用默认路径；只有服务商明确给出不同路径时才填写。</small></label>
+            <label className="form-field"><span>模型名称</span><input value={profile.model} onChange={(event) => setProfile({ ...profile, model: event.target.value })} /><small>发送给 API 的模型 ID；保存后也可从远端模型列表选择。</small></label>
+            <label className="form-field"><span>API Key</span><div className="secret-input"><input type={showApiKey ? "text" : "password"} autoComplete="off" value={profile.api_key} onChange={(event) => setProfile({ ...profile, api_key: event.target.value.trim() })} /><button className="icon-button" type="button" aria-label={showApiKey ? "隐藏 API Key" : "显示 API Key"} title={showApiKey ? "隐藏" : "显示"} onClick={() => setShowApiKey((value) => !value)}>{showApiKey ? <EyeOff size={15} /> : <Eye size={15} />}</button></div><small>{editingProfileId && profiles.find((item) => item.id === editingProfileId)?.has_api_key ? "已保存；普通编辑可留空。若修改协议、Base URL 或请求路径，必须重新输入 Key。" : "直接粘贴服务商提供的 Key；首尾空格会自动移除，本地保存且读取接口不会回传明文。"}</small></label>
+            <label className="form-field"><span>思考强度（Thinking Level）</span><select value={String(profile.default_params._thinking_level ?? "auto")} onChange={(event) => setProfile({ ...profile, default_params: { ...profile.default_params, _thinking_level: event.target.value } })}>{thinkingLevelOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select><small>自动使用服务商默认；档位越高通常更慢且消耗更多 token；模型不支持该档位时会显示远端错误。</small></label>
+            <label className="form-field"><span>Temperature</span><input type="number" min="0" max="2" step="0.1" value={String(profile.default_params.temperature ?? "")} onChange={(event) => setProfile({ ...profile, default_params: { ...profile.default_params, temperature: event.target.value === "" ? undefined : Number(event.target.value) } })} /><small>数值越高回复越随机；常见范围 0–2。</small></label>
+            <button className="secondary-button" type="button" disabled={busy} onClick={saveProfile}>
+              {editingProfileId ? <Pencil size={15} /> : <Plus size={15} />}
+              {editingProfileId ? "保存修改" : "新增 Profile"}
+            </button>
+          </div>
+        )}
       </CollapsibleSection>
 
       <CollapsibleSection

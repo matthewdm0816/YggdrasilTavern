@@ -23,6 +23,9 @@ DEFAULT_PATHS = {
     "openai_responses": "/v1/responses",
 }
 
+THINKING_LEVEL_PARAM = "_thinking_level"
+THINKING_LEVELS = {"auto", "off", "low", "medium", "high", "xhigh", "max"}
+
 
 @dataclass
 class ProviderStreamEvent:
@@ -76,6 +79,65 @@ def _safe_provider_error(status_code: int, *, discovering_models: bool = False) 
     if status_code == 429:
         return "请求过于频繁或额度不足，请稍后重试并检查账户额度"
     return f"远端服务返回 HTTP {status_code}"
+
+
+def apply_thinking_level(provider_type: str, params: Dict[str, Any]) -> Dict[str, Any]:
+    """Translate the UI's provider-neutral thinking level into API parameters.
+
+    ``_thinking_level`` is an application-only setting stored with the profile.
+    It must never leak into a provider payload.  Model support differs, so this
+    function only translates protocol shapes and deliberately leaves an
+    unsupported level for the remote API to reject with its useful error.
+    """
+
+    translated = dict(params)
+    raw_level = translated.pop(THINKING_LEVEL_PARAM, "auto")
+    level = "auto" if raw_level is None else str(raw_level).strip().lower()
+    if level not in THINKING_LEVELS:
+        raise HTTPException(status_code=400, detail=f"未知的 Thinking Level：{raw_level}")
+    if level == "auto":
+        return translated
+
+    if provider_type == "openai_responses":
+        reasoning = translated.get("reasoning")
+        if reasoning is not None and not isinstance(reasoning, dict):
+            raise HTTPException(status_code=400, detail="default_params.reasoning 必须是对象")
+        translated["reasoning"] = {**(reasoning or {}), "effort": "none" if level == "off" else level}
+        return translated
+
+    if provider_type == "openai_chat_completions":
+        translated["reasoning_effort"] = "none" if level == "off" else level
+        return translated
+
+    if provider_type == "anthropic_messages":
+        if level == "off":
+            translated["thinking"] = {"type": "disabled"}
+            output_config = translated.get("output_config")
+            if output_config is not None and not isinstance(output_config, dict):
+                raise HTTPException(status_code=400, detail="default_params.output_config 必须是对象")
+            if isinstance(output_config, dict) and "effort" in output_config:
+                output_config = dict(output_config)
+                output_config.pop("effort", None)
+                if output_config:
+                    translated["output_config"] = output_config
+                else:
+                    translated.pop("output_config", None)
+            return translated
+
+        temperature = translated.get("temperature")
+        if temperature is not None and temperature != 1:
+            raise HTTPException(
+                status_code=400,
+                detail="Anthropic 开启思考时 Temperature 必须留空或设为 1",
+            )
+        output_config = translated.get("output_config")
+        if output_config is not None and not isinstance(output_config, dict):
+            raise HTTPException(status_code=400, detail="default_params.output_config 必须是对象")
+        translated["thinking"] = {"type": "adaptive"}
+        translated["output_config"] = {**(output_config or {}), "effort": level}
+        return translated
+
+    raise HTTPException(status_code=400, detail=f"Unsupported provider type: {provider_type}")
 
 
 async def refresh_models(profile: models.APIProfile) -> List[str]:
@@ -329,7 +391,7 @@ def _anthropic_messages(context: schemas.ContextPreviewOut) -> List[Dict[str, st
 
 
 async def stream_completion(profile: models.APIProfile, context: schemas.ContextPreviewOut) -> AsyncIterator[ProviderStreamEvent]:
-    params = dict(profile.default_params or {})
+    params = apply_thinking_level(profile.provider_type, dict(profile.default_params or {}))
     url = endpoint_for(profile)
     key = _api_key(profile)
 

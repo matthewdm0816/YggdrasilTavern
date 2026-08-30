@@ -31,6 +31,10 @@ def make_client():
 
 
 def create_profile_and_session(client: TestClient, *, character_id: str | None = None):
+    if character_id is None:
+        character_id = client.post(
+            "/api/characters", json={"name": "Test Character", "first_mes": ""}
+        ).json()["id"]
     profile = client.post(
         "/api/api-profiles",
         json={

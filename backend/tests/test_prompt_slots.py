@@ -187,6 +187,7 @@ def test_session_creation_materializes_alternate_greetings_as_root_swipes():
 
 def test_global_prompt_config_is_shared_versioned_and_not_overridden_by_sessions():
     client = _api_client()
+    character = client.post("/api/characters", json={"name": "Shared", "first_mes": ""}).json()
     initial = client.get("/api/settings/prompt").json()
     assert initial["revision"] == 0
     slots = initial["prompt_slots"]
@@ -207,8 +208,12 @@ def test_global_prompt_config_is_shared_versioned_and_not_overridden_by_sessions
     assert stale.status_code == 409
     assert "刷新" in stale.text
 
-    first = client.post("/api/sessions", json={"title": "First"}).json()
-    second = client.post("/api/sessions", json={"title": "Second"}).json()
+    first = client.post(
+        "/api/sessions", json={"title": "First", "character_id": character["id"]}
+    ).json()
+    second = client.post(
+        "/api/sessions", json={"title": "Second", "character_id": character["id"]}
+    ).json()
     client.post(
         f"/api/sessions/{first['id']}/messages",
         json={"role": "user", "speaker": "User", "content": "first history"},
@@ -227,9 +232,12 @@ def test_global_prompt_config_is_shared_versioned_and_not_overridden_by_sessions
 
 def test_session_preset_validation_rejects_deleted_slots_bad_regex_and_unknown_worldbooks():
     client = _api_client()
+    character = client.post("/api/characters", json={"name": "Validator", "first_mes": ""}).json()
+    character_id = character["id"]
     missing_history = [slot for slot in default_prompt_slots() if slot["kind"] != "history"]
     response = client.post(
-        "/api/sessions", json={"title": "Bad slots", "preset": {"prompt_slots": missing_history}}
+        "/api/sessions",
+        json={"title": "Bad slots", "character_id": character_id, "preset": {"prompt_slots": missing_history}},
     )
     assert response.status_code == 422
     assert "全局配置" in response.text
@@ -238,6 +246,7 @@ def test_session_preset_validation_rejects_deleted_slots_bad_regex_and_unknown_w
         "/api/sessions",
         json={
             "title": "Bad regex",
+            "character_id": character_id,
             "preset": {
                 "regex_rules": [
                     {"id": "broken", "pattern": "(", "targets": ["outgoing_prompt"], "mode": "replace"}
@@ -252,6 +261,7 @@ def test_session_preset_validation_rejects_deleted_slots_bad_regex_and_unknown_w
         "/api/sessions",
         json={
             "title": "Browser regex",
+            "character_id": character_id,
             "preset": {
                 "regex_rules": [
                     {
@@ -268,7 +278,7 @@ def test_session_preset_validation_rejects_deleted_slots_bad_regex_and_unknown_w
 
     response = client.post(
         "/api/sessions",
-        json={"title": "Bad lore", "preset": {"worldbook_ids": ["does-not-exist"]}},
+        json={"title": "Bad lore", "character_id": character_id, "preset": {"worldbook_ids": ["does-not-exist"]}},
     )
     assert response.status_code == 422
     assert "does-not-exist" in response.text
@@ -276,6 +286,7 @@ def test_session_preset_validation_rejects_deleted_slots_bad_regex_and_unknown_w
 
 def test_worldbook_edits_win_on_export_and_delete_cleans_session_sources():
     client = _api_client()
+    character = client.post("/api/characters", json={"name": "Archivist", "first_mes": ""}).json()
     book = client.post(
         "/api/worldbooks",
         json={
@@ -294,6 +305,7 @@ def test_worldbook_edits_win_on_export_and_delete_cleans_session_sources():
         "/api/sessions",
         json={
             "title": "Multiple books",
+            "character_id": character["id"],
             "worldbook_id": book["id"],
             "preset": {"worldbook_ids": [book["id"]]},
         },

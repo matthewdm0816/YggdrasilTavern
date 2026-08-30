@@ -8,7 +8,8 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .. import models, schemas
@@ -141,7 +142,19 @@ def update_api_profile(profile_id: str, payload: schemas.APIProfileUpdate, db: S
     profile = db.get(models.APIProfile, profile_id)
     if not profile:
         raise HTTPException(status_code=404, detail="API profile not found")
-    for key, value in _api_profile_write_data(payload).items():
+    data = _api_profile_write_data(payload)
+    routing_changed = any(
+        field in data and data[field] != getattr(profile, field)
+        for field in ("provider_type", "base_url", "path_override")
+    )
+    has_existing_credential = bool(profile.api_key or profile.api_key_env)
+    supplied_replacement = bool(data.get("api_key") or data.get("api_key_env"))
+    if routing_changed and has_existing_credential and not supplied_replacement:
+        raise HTTPException(
+            status_code=422,
+            detail="修改 API 协议、Base URL 或请求路径时，必须重新输入 API Key，防止旧 Key 被发送到新地址",
+        )
+    for key, value in data.items():
         setattr(profile, key, value)
     db.commit()
     db.refresh(profile)
@@ -272,7 +285,14 @@ def delete_character(character_id: str, db: Session = Depends(get_db)) -> Dict[s
     character = db.get(models.Character, character_id)
     if not character:
         raise HTTPException(status_code=404, detail="Character not found")
-    db.execute(update(models.ChatSession).where(models.ChatSession.character_id == character.id).values(character_id=None))
+    bound_sessions = db.scalar(
+        select(func.count()).select_from(models.ChatSession).where(models.ChatSession.character_id == character.id)
+    ) or 0
+    if bound_sessions:
+        raise HTTPException(
+            status_code=409,
+            detail=f"该角色仍被 {bound_sessions} 个 Chat session 使用；请先删除这些会话或改绑其他角色",
+        )
     db.delete(character)
     db.commit()
     return {"ok": True}
@@ -469,6 +489,11 @@ def create_session(payload: schemas.SessionCreate, db: Session = Depends(get_db)
     data = payload.model_dump()
     data["preset"] = _normalize_session_preset_or_422(data.get("preset"))
     _validate_session_references(db, data)
+    character = db.get(models.Character, data["character_id"])
+    if not character:
+        raise HTTPException(status_code=400, detail="Character not found")
+    if not data.get("title", "").strip():
+        data["title"] = character.name
     _validate_session_worldbooks(db, legacy_worldbook_id=data.get("worldbook_id"), preset=data["preset"])
     if data.get("active_root_child_id") is not None:
         raise HTTPException(status_code=400, detail="A new session cannot select an existing message")
@@ -476,7 +501,7 @@ def create_session(payload: schemas.SessionCreate, db: Session = Depends(get_db)
     try:
         db.add(session)
         db.flush()
-        character = db.get(models.Character, session.character_id) if session.character_id else None
+        character = db.get(models.Character, session.character_id)
         profile = db.get(models.APIProfile, session.api_profile_id) if session.api_profile_id else None
         if character and session.preset.get("auto_greeting", True):
             greetings = [character.first_mes, *list(character.alternate_greetings or [])]
@@ -511,6 +536,8 @@ def create_session(payload: schemas.SessionCreate, db: Session = Depends(get_db)
 def update_session(session_id: str, payload: schemas.SessionUpdate, db: Session = Depends(get_db)) -> models.ChatSession:
     session = get_session_or_404(db, session_id)
     data = payload.model_dump(exclude_unset=True)
+    if "character_id" in data and data["character_id"] is None:
+        raise HTTPException(status_code=422, detail="Chat session 必须保留一个角色")
     if "preset" in data:
         data["preset"] = _normalize_session_preset_or_422(data["preset"])
     _validate_session_references(db, data)
@@ -640,10 +667,11 @@ async def generate_stream(
     db: Session = Depends(get_db),
 ) -> StreamingResponse:
     session = get_session_or_404(db, session_id)
-    if not session.api_profile:
-        raise HTTPException(status_code=400, detail="Session has no API profile")
-
-    profile = session.api_profile
+    if not session.character:
+        raise HTTPException(status_code=400, detail="此 Chat session 没有角色，无法生成回复")
+    profile = db.get(models.APIProfile, payload.api_profile_id) if payload.api_profile_id else session.api_profile
+    if not profile:
+        raise HTTPException(status_code=400, detail="请先在本地应用中选择一个 API Profile")
     path = active_path(db, session)
     parent_id = path[-1].id if path else None
     context_path = path
@@ -680,6 +708,7 @@ async def generate_stream(
         content="",
         status="streaming",
         model=profile.model,
+        commit=False,
     )
 
     generation_run = models.GenerationRun(
@@ -699,18 +728,25 @@ async def generate_stream(
         input_tokens=estimated_input_tokens,
         usage_source="estimated",
     )
-    db.add(generation_run)
-    db.flush()
-    assistant_message.provider_metadata = {
-        **dict(assistant_message.provider_metadata or {}),
-        "generation_run_id": generation_run.id,
-        "api_profile_id": profile.id,
-        "provider_type": profile.provider_type,
-        "model": profile.model,
-        "parameters": dict(profile.default_params or {}),
-        "prompt_hash": prompt_hash,
-    }
-    db.commit()
+    try:
+        db.add(generation_run)
+        db.flush()
+        assistant_message.provider_metadata = {
+            **dict(assistant_message.provider_metadata or {}),
+            "generation_run_id": generation_run.id,
+            "api_profile_id": profile.id,
+            "provider_type": profile.provider_type,
+            "model": profile.model,
+            "parameters": dict(profile.default_params or {}),
+            "prompt_hash": prompt_hash,
+        }
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="生成开始前 API Profile 或聊天数据已被修改，请刷新后重试",
+        ) from exc
     db.refresh(assistant_message)
     db.refresh(generation_run)
     assistant_message_id = assistant_message.id

@@ -32,7 +32,8 @@ This tree model is the core invariant of the project.
 
 ### Sessions and chat
 
-- Independent sessions with their own character, API Profile/model, selected tree path, Regex rules, and worldbook bindings.
+- Independent sessions with their own character, selected tree path, Regex rules, and worldbook bindings. Creating a chat requires a character; when its title is blank, the character name is used automatically.
+- The active API Profile is a browser-local global selection, not a Profile permanently bound to the current chat session.
 - Session title search, folders, pinning, archiving, and archived-session view.
 - Markdown and GitHub-Flavored Markdown rendering.
 - Streaming answer text, streaming thinking, stop, continue, and regenerate controls.
@@ -66,9 +67,8 @@ Global structure does not remove session independence:
 | --- | --- |
 | Slot order, names, roles, enabled state | Character and character fields |
 | Custom slots | Selected tree/history path |
-| Explicit slot overrides | API Profile and model binding |
+| Explicit slot overrides | User name and greeting behavior |
 | Prompt configuration revision | Regex rules and worldbook selection |
-|  | User name and greeting behavior |
 
 Each generation stores the compiled Prompt snapshot, Prompt hash, model, parameters, timing, usage, and terminal status, so older replies retain the configuration that produced them.
 
@@ -80,9 +80,11 @@ Supported provider protocols:
 - OpenAI-compatible Chat Completions
 - Anthropic Messages API
 
-An API Profile contains a name, protocol, Base URL, optional path override, model ID, API Key, and default parameters such as temperature. Profiles are shared mutable references: changing a Profile immediately affects every session bound to it, while different sessions may bind different Profiles and models.
+An API Profile contains a name, protocol, Base URL, optional path override, model ID, API Key, and default parameters such as temperature. The selected Profile is a browser-local global choice and is applied when generation starts; it is not persisted as a fixed chat-session setting. Each generation still records the model and request parameters actually used in its run metadata.
 
 Remote model discovery is available when the provider implements a compatible `/v1/models` endpoint. Manual model IDs remain supported when it does not.
+
+Thinking Level is translated to the appropriate provider parameter for OpenAI Responses, OpenAI-compatible Chat Completions, or Anthropic Messages. If the selected remote model does not support that setting, the provider error is surfaced explicitly instead of silently changing the request.
 
 ### Character cards and avatars
 
@@ -185,6 +187,36 @@ or:
 
 The stop script terminates processes listening on the configured backend and frontend ports. Pass matching port arguments if you deliberately changed them.
 
+### LAN access and HTTPS
+
+The default command remains loopback-only. To make the UI reachable from other devices on the same LAN, pass `-Lan` through the batch launcher:
+
+```powershell
+.\start.bat -Lan
+```
+
+LAN mode asks interactively for a username and a password of at least 12 characters. The password and a newly generated 32-byte session-signing secret are passed only through the backend child process environment; they are not placed in the process command line, log files, or `backend\.env`. Restarting LAN mode generates a new signing secret and invalidates existing login sessions.
+
+Only Vite binds to `0.0.0.0`. Uvicorn remains on `127.0.0.1`, so LAN clients cannot bypass authentication by connecting directly to the backend port; browser `/api` traffic goes through Vite's loopback proxy and is authenticated by the backend. Stop existing servers before switching into or out of LAN/HTTPS mode so the script can verify that both configured ports are clean.
+
+For HTTPS, provide a PEM certificate and its PEM private key. HTTPS terminates at Vite; the proxy hop to Uvicorn stays HTTP on loopback:
+
+```powershell
+.\start.bat -Lan `
+  -HttpsCertificate "C:\certs\Yggdrasil LAN\yggdrasil-cert.pem" `
+  -HttpsPrivateKey "C:\certs\Yggdrasil LAN\yggdrasil-key.pem"
+```
+
+The same certificate options can be used without `-Lan` for local HTTPS. In authenticated HTTPS mode the script also enables the cookie's `Secure` flag. The startup script passes the matching backend origin to Vite, so its `/api` proxy uses the backend's actual `http://127.0.0.1:<port>` scheme rather than a hard-coded target.
+
+For a self-signed or private-CA certificate:
+
+- Put every name clients will use in the certificate's Subject Alternative Name (SAN), typically `localhost`, `127.0.0.1`, the computer's LAN IP, and any LAN DNS name. A matching Common Name alone is not sufficient in modern browsers.
+- Trust the issuing CA or certificate on every client device and verify its fingerprint through a separate trusted channel. Trusting it on the server computer does not automatically trust it on phones or other PCs.
+- Keep the private key outside the repository and restrict access to it. Never commit it.
+
+Plain HTTP LAN mode provides authentication but no transport encryption. The password, signed session cookie, prompts, and responses can be observed or modified by someone with access to the network. Use it only on an isolated trusted LAN; prefer HTTPS, restrict the frontend port with the host firewall, and never expose this development server directly to the public Internet.
+
 ### Manual development startup
 
 Backend, from the repository root:
@@ -204,19 +236,19 @@ npm install
 npm run dev -- --host 127.0.0.1 --port 5173
 ```
 
-The Vite development server proxies `/api` to `http://127.0.0.1:8000` by default.
+The Vite development server proxies `/api` to `http://127.0.0.1:8000` by default. `scripts/start.ps1` supplies an explicit `YGGDRASIL_BACKEND_ORIGIN` when it launches Vite and supplies the certificate/key paths when HTTPS is enabled.
 
 ## First-use workflow
 
-1. Open **API Profiles** and create a Profile with the provider protocol, Base URL, model ID, and API Key.
+1. Open **API Profiles**, create a Profile with the provider protocol, Base URL, model ID, and API Key, then select it as the browser's active global Profile.
 2. Optionally refresh the remote model list, or keep the manually entered model ID.
 3. Import or create a character, then edit its fields and avatar if needed.
 4. Import or create any worldbooks and edit their entries.
-5. Create a session and bind its character, API Profile, worldbooks, and optional folder.
+5. Create a chat with a required character, worldbooks, and optional folder. Leave the title blank to use the character name automatically.
 6. Chat normally; use swipe controls or the branch map to move through the real tree.
 7. Use the Inspector to edit the global Prompt Profile, configure session Regex/worldbooks, and inspect the final compiled Prompt.
 
-Profile changes take effect on the next request; no application restart is required.
+The browser's currently selected API Profile is used for the next generation; changing it requires no application restart and does not rewrite a chat-session setting.
 
 ## Data and security
 
@@ -225,6 +257,7 @@ Profile changes take effect on the next request; no application restart is requi
 - SQLite foreign keys, WAL mode, and a busy timeout are enabled.
 - Directly entered API Keys are stored **unencrypted** in the local SQLite database.
 - Profile read responses expose only `has_api_key`; they never return the stored Key.
+- Changing a Profile's protocol, Base URL, or request path requires entering the API Key again, preventing a hidden saved Key from being silently reused against a new destination.
 - Keys are not included in Prompt snapshots, Generation Runs, message history, or frontend browser storage.
 - The API removes submitted input values from validation errors and does not relay raw provider error bodies.
 - Leading and trailing whitespace is removed from API Key input in both the UI and backend.
@@ -232,7 +265,7 @@ Profile changes take effect on the next request; no application restart is requi
 
 For legacy/API-only Profiles, `api_key_env` can reference a variable already present in the backend process environment; a directly stored Key takes precedence. Do not assume arbitrary provider keys written to `backend\.env` are exported into the process environment.
 
-The supplied servers bind to loopback and have no application-level authentication. Do not expose them directly to a LAN or the public Internet without adding authentication, TLS, and an appropriate secret-storage strategy.
+The default startup remains loopback-only. Explicit `-Lan` mode exposes only the Vite port and enables signed-cookie authentication in the backend; use the HTTPS certificate options on any LAN that is not fully trusted. This remains a development server, not a hardened public deployment.
 
 Provider generation, remote model discovery, and Chub imports make outbound network requests.
 

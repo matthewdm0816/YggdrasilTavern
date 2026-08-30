@@ -11,6 +11,16 @@ import { WorkspaceInspector } from "./components/WorkspaceInspector";
 type ThemePreference = "light" | "dark" | "system";
 
 const THEME_STORAGE_KEY = "yggdrasil-tavern.theme";
+const ACTIVE_PROFILE_STORAGE_KEY = "yggdrasil-tavern.active-api-profile";
+
+function loadActiveProfileId(): string {
+  try {
+    return window.localStorage.getItem(ACTIVE_PROFILE_STORAGE_KEY) || "";
+  } catch (cause) {
+    console.error("Unable to read the active API Profile from localStorage.", cause);
+    return "";
+  }
+}
 
 function loadThemePreference(): ThemePreference {
   try {
@@ -59,6 +69,7 @@ export default function AppShell() {
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(false);
   const [themePreference, setThemePreference] = useState<ThemePreference>(loadThemePreference);
+  const [activeProfileId, setActiveProfileId] = useState(loadActiveProfileId);
 
   const profilesQuery = useQuery({ queryKey: ["profiles"], queryFn: api.profiles });
   const charactersQuery = useQuery({ queryKey: ["characters"], queryFn: api.characters });
@@ -78,6 +89,23 @@ export default function AppShell() {
   useEffect(() => {
     if (!selectedSessionId && sessionsQuery.data?.length) setSelectedSessionId(sessionsQuery.data[0].id);
   }, [selectedSessionId, sessionsQuery.data, setSelectedSessionId]);
+
+  useEffect(() => {
+    const profiles = profilesQuery.data;
+    if (!profiles || profilesQuery.isFetching) return;
+    if (!profiles.some((profile) => profile.id === activeProfileId)) {
+      setActiveProfileId(profiles[0]?.id || "");
+    }
+  }, [activeProfileId, profilesQuery.data, profilesQuery.isFetching]);
+
+  useEffect(() => {
+    try {
+      if (activeProfileId) window.localStorage.setItem(ACTIVE_PROFILE_STORAGE_KEY, activeProfileId);
+      else window.localStorage.removeItem(ACTIVE_PROFILE_STORAGE_KEY);
+    } catch (cause) {
+      console.error("Unable to persist the active API Profile to localStorage.", cause);
+    }
+  }, [activeProfileId]);
 
   useLayoutEffect(() => {
     const systemTheme = window.matchMedia("(prefers-color-scheme: dark)");
@@ -155,6 +183,10 @@ export default function AppShell() {
   async function handleSend(content: string) {
     const sessionId = selectedSessionId;
     if (!sessionId || !content.trim()) return;
+    if (!activeProfileId) {
+      setError("请先在 API Profiles 中选择或新建一个当前 Profile");
+      return;
+    }
     setError(null);
     await api.appendMessage(sessionId, { role: "user", speaker: "User", content: content.trim(), status: "complete" });
     await reloadTree(sessionId);
@@ -164,6 +196,10 @@ export default function AppShell() {
   async function handleGenerate(regenerateMessageId?: string, sessionIdOverride?: string) {
     const sessionId = sessionIdOverride || selectedSessionId;
     if (!sessionId || streamingSessions.current.has(sessionId)) return;
+    if (!activeProfileId) {
+      setError("请先在 API Profiles 中选择或新建一个当前 Profile");
+      return;
+    }
     const controller = new AbortController();
     streamingSessions.current.add(sessionId);
     abortControllers.current.set(sessionId, controller);
@@ -171,7 +207,10 @@ export default function AppShell() {
     setError(null);
     let generatedMessageId: string | undefined;
     try {
-      await streamGenerate(sessionId, { regenerate_message_id: regenerateMessageId || null }, {
+      await streamGenerate(sessionId, {
+        regenerate_message_id: regenerateMessageId || null,
+        api_profile_id: activeProfileId
+      }, {
         onCreated: (message) => {
           generatedMessageId = message.id;
           updateTree(sessionId, (current) => upsertMessage(current, message));
@@ -271,6 +310,8 @@ export default function AppShell() {
       {mobilePanel && <button className="mobile-scrim" aria-label="关闭面板" onClick={() => setMobilePanel(null)} />}
       <Sidebar
         profiles={profilesQuery.data || []}
+        activeProfileId={activeProfileId}
+        onActiveProfileChange={setActiveProfileId}
         characters={charactersQuery.data || []}
         worldbooks={worldbooksQuery.data || []}
         sessions={sessionsQuery.data || []}
@@ -280,11 +321,13 @@ export default function AppShell() {
         createSessionError={createSession.error instanceof Error ? createSession.error.message : null}
         onSelectSession={(id) => { setSelectedSessionId(id); setMobilePanel(null); }}
         onCreateSession={(payload) => createSession.mutateAsync(payload)}
-        onRefresh={() => {
-          queryClient.invalidateQueries({ queryKey: ["profiles"] });
-          queryClient.invalidateQueries({ queryKey: ["characters"] });
-          queryClient.invalidateQueries({ queryKey: ["worldbooks"] });
-          queryClient.invalidateQueries({ queryKey: ["sessions"] });
+        onRefresh={async () => {
+          await Promise.all([
+            queryClient.invalidateQueries({ queryKey: ["profiles"] }),
+            queryClient.invalidateQueries({ queryKey: ["characters"] }),
+            queryClient.invalidateQueries({ queryKey: ["worldbooks"] }),
+            queryClient.invalidateQueries({ queryKey: ["sessions"] })
+          ]);
         }}
         onToggleArchived={() => setShowArchived(!showArchived)}
         onCloseMobile={() => setMobilePanel(null)}

@@ -32,7 +32,8 @@ Session 根节点
 
 ### Session 与聊天
 
-- 每个 session 独立保存角色、API Profile/模型、所选树路径、Regex 规则和世界书绑定。
+- 每个 session 独立保存角色、所选树路径、Regex 规则和世界书绑定。新建聊天必须选择角色；标题留空时自动使用角色名。
+- 当前 API Profile 是浏览器本地的全局选择，不是永久绑定到当前 chat session 的配置。
 - 支持标题搜索、文件夹、置顶、归档以及归档会话视图。
 - 支持 Markdown 和 GitHub-Flavored Markdown 渲染。
 - 支持流式正文、流式 thinking、停止、继续和重新生成。
@@ -66,9 +67,8 @@ Prompt 结构在所有 session 之间全局共享。默认槽位为：
 | --- | --- |
 | 槽位顺序、名称、role、启用状态 | 角色及角色字段 |
 | 自定义槽位 | 当前选择的树/历史路径 |
-| 槽位显式覆盖文本 | API Profile 与模型绑定 |
+| 槽位显式覆盖文本 | 用户名与开场白行为 |
 | Prompt 配置 revision | Regex 规则与世界书选择 |
-|  | 用户名与开场白行为 |
 
 每次生成都会保存编译后的 Prompt 快照、Prompt hash、模型、参数、耗时、usage 和终态，因此旧回复仍保留生成当时的配置证据。
 
@@ -80,9 +80,11 @@ Prompt 结构在所有 session 之间全局共享。默认槽位为：
 - OpenAI-compatible Chat Completions
 - Anthropic Messages API
 
-一个 API Profile 包含名称、协议、Base URL、可选的自定义请求路径、模型 ID、API Key，以及 temperature 等默认参数。Profile 是共享的可变引用：修改 Profile 会立即影响所有绑定它的 session，而不同 session 可以绑定不同的 Profile 和模型。
+一个 API Profile 包含名称、协议、Base URL、可选的自定义请求路径、模型 ID、API Key，以及 temperature 等默认参数。当前选中的 Profile 是浏览器本地的全局选择，在开始生成时生效；它不会作为固定配置持久化到 chat session。每次 generation 仍会在运行元数据中记录实际使用的模型和请求参数。
 
 当 Provider 提供兼容的 `/v1/models` 端点时，可以从远端刷新模型列表；不支持该端点时仍可手动填写模型 ID。
+
+Thinking Level 会按 OpenAI Responses、OpenAI-compatible Chat Completions 或 Anthropic Messages 协议映射到相应的 Provider 参数。如果所选远端模型不支持该设置，界面会明确展示 Provider 错误，不会静默改写请求。
 
 ### 角色卡与头像
 
@@ -185,6 +187,36 @@ cd YggdrasilTavern
 
 停止脚本会终止正在监听所配置前后端端口的进程。如果手动更改了端口，停止时也需要传入相同端口参数。
 
+### 局域网访问与 HTTPS
+
+默认命令仍只绑定 loopback。需要让同一局域网中的其他设备访问界面时，请通过 batch launcher 传入 `-Lan`：
+
+```powershell
+.\start.bat -Lan
+```
+
+LAN 模式会交互式要求输入用户名和至少 12 个字符的密码。密码和每次启动新生成的 32-byte session 签名 secret 只通过后端子进程环境传递，不会进入进程命令行、日志或 `backend\.env`。重新启动 LAN 模式会生成新的签名 secret，因此已有登录 session 会失效。
+
+只有 Vite 会绑定 `0.0.0.0`；Uvicorn 始终留在 `127.0.0.1`。这样，局域网客户端无法绕过身份验证直接连接后端端口；浏览器的 `/api` 流量会经过 Vite 的 loopback proxy，并由后端完成鉴权。切换 LAN/HTTPS 模式前请先停止已有服务，让启动脚本确认两个配置端口都未被占用。
+
+启用 HTTPS 时，需要同时提供 PEM 证书和对应的 PEM 私钥。TLS 在 Vite 这一外层终止；代理到 Uvicorn 的链路仍是在本机 loopback 上的 HTTP：
+
+```powershell
+.\start.bat -Lan `
+  -HttpsCertificate "C:\certs\Yggdrasil LAN\yggdrasil-cert.pem" `
+  -HttpsPrivateKey "C:\certs\Yggdrasil LAN\yggdrasil-key.pem"
+```
+
+不加 `-Lan` 也可以使用相同参数启用本机 HTTPS。在带身份验证的 HTTPS 模式中，脚本还会自动启用 Cookie 的 `Secure` 标志。启动脚本会把实际后端 origin 传给 Vite，因此 `/api` proxy 使用的是与后端一致的 `http://127.0.0.1:<port>`，不是写死的错误 scheme。
+
+使用自签名证书或私有 CA 时：
+
+- 证书的 Subject Alternative Name（SAN）必须包含客户端实际使用的所有名称，通常包括 `localhost`、`127.0.0.1`、电脑的局域网 IP 以及局域网 DNS 名。现代浏览器不会只凭匹配的 Common Name 判定证书有效。
+- 每台客户端设备都必须信任签发 CA 或该证书，并通过另一条可信渠道核对 fingerprint；只在服务端电脑上信任，并不会让手机或其他电脑自动信任。
+- 私钥应放在仓库外并限制访问权限，绝对不要提交到 Git。
+
+HTTP LAN 模式只有身份验证，没有传输加密。能接触该网络的人可能截获或篡改密码、签名 Cookie、Prompt 与回复。只应在隔离且可信的局域网中临时使用；优先启用 HTTPS，用主机防火墙限制前端端口，并且不要把这个开发服务器直接暴露到公网。
+
 ### 手动启动开发环境
 
 在仓库根目录启动后端：
@@ -204,19 +236,19 @@ npm install
 npm run dev -- --host 127.0.0.1 --port 5173
 ```
 
-Vite 开发服务器默认把 `/api` 代理到 `http://127.0.0.1:8000`。
+Vite 开发服务器默认把 `/api` 代理到 `http://127.0.0.1:8000`。`scripts/start.ps1` 启动 Vite 时会显式传入 `YGGDRASIL_BACKEND_ORIGIN`，启用 HTTPS 时还会传入证书/私钥路径。
 
 ## 第一次使用
 
-1. 打开 **API Profiles**，填写 Provider 协议、Base URL、模型 ID 和 API Key，创建 Profile。
+1. 打开 **API Profiles**，填写 Provider 协议、Base URL、模型 ID 和 API Key，创建 Profile，并把它选为当前浏览器的全局 Profile。
 2. 可选地从远端刷新模型列表；也可以继续使用手动填写的模型 ID。
 3. 导入或创建角色，并按需要编辑字段和头像。
 4. 导入或创建世界书，并编辑其中的条目。
-5. 新建 session，绑定角色、API Profile、多本世界书和可选文件夹。
+5. 新建聊天并选择必需的角色、多本世界书和可选文件夹；标题留空时会自动使用角色名。
 6. 正常聊天；通过 swipe 控件或分支地图在真实树中移动。
 7. 在 Inspector 中编辑全局 Prompt Profile、配置当前 session 的 Regex/世界书，并检查最终编译 Prompt。
 
-修改 Profile 后，下一次请求会直接使用新配置，不需要重启应用。
+下一次生成会使用浏览器当前选中的 API Profile；切换 Profile 不需要重启应用，也不会改写 chat session 配置。
 
 ## 数据与安全
 
@@ -225,6 +257,7 @@ Vite 开发服务器默认把 `/api` 代理到 `http://127.0.0.1:8000`。
 - SQLite 启用了 foreign keys、WAL 模式和 busy timeout。
 - 直接在界面中输入的 API Key 会以**未加密明文**形式保存在本地 SQLite 数据库中。
 - Profile 读取接口只返回 `has_api_key`，绝不会返回已保存 Key。
+- 修改 Profile 的协议、Base URL 或请求路径时必须重新输入 API Key，防止隐藏的旧 Key 被静默发送到新地址。
 - Key 不会进入 Prompt 快照、Generation Run、消息历史或前端浏览器存储。
 - API 会从校验错误中移除用户提交的原始 input，也不会把 Provider 的原始错误正文直接传给前端。
 - UI 与后端都会移除 API Key 首尾空白。
@@ -232,7 +265,7 @@ Vite 开发服务器默认把 `/api` 代理到 `http://127.0.0.1:8000`。
 
 对于旧版/API-only Profile，`api_key_env` 可以引用后端进程环境中已经存在的变量；直接保存的 Key 优先级更高。不要假设写入 `backend\.env` 的任意 Provider Key 会自动导出为进程环境变量。
 
-项目脚本只绑定 loopback，API 本身没有应用级身份验证。在补充身份验证、TLS 和合适的密钥存储方案之前，不要把服务直接暴露到局域网或公网。
+默认启动仍只绑定 loopback。显式 `-Lan` 模式只暴露 Vite 端口，并在后端启用签名 Cookie 身份验证；只要局域网并非完全可信，就应同时提供 HTTPS 证书参数。这仍是开发服务器，不是适合公网的加固部署。
 
 Provider 生成、远端模型发现和 Chub 导入会发起外部网络请求。
 

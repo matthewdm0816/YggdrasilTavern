@@ -11,6 +11,7 @@ from app import models
 from app.database import Base, get_db
 from app.main import create_app
 from app.services import providers
+from app.services.token_counter import count_text_tokens
 
 
 def make_client():
@@ -109,6 +110,16 @@ def test_cancelled_stream_persists_partial_content_and_cancelled_status(monkeypa
     client, testing_session = make_client()
 
     async def cancelled_stream(profile, context):
+        # Anthropic-style streams can report a tiny initial usage value before
+        # any deltas. Cancellation means a final cumulative usage never arrives.
+        yield providers.ProviderStreamEvent(
+            kind="usage",
+            usage={
+                "input_tokens": 42,
+                "output_tokens": 1,
+                "output_tokens_details": {"reasoning_tokens": 1},
+            },
+        )
         yield providers.ProviderStreamEvent(kind="text", delta="Keep this partial")
         yield providers.ProviderStreamEvent(kind="thinking", delta="Keep this thought")
         raise asyncio.CancelledError()
@@ -137,6 +148,77 @@ def test_cancelled_stream_persists_partial_content_and_cancelled_status(monkeypa
         assert message.status == "cancelled"
         assert message.content == "Keep this partial"
         assert message.thinking_content == "Keep this thought"
+        expected_text_tokens = count_text_tokens(message.content, "mock-model")
+        expected_thinking_tokens = count_text_tokens(message.thinking_content, "mock-model")
+        assert message.token_count == expected_text_tokens
+        assert message.thinking_token_count == expected_thinking_tokens
+        assert run.input_tokens == 42
+        assert run.output_tokens == expected_text_tokens + expected_thinking_tokens
+        assert run.output_tokens > 1
+        assert run.usage_source == "mixed"
+        assert message.provider_metadata["usage_reconciled"] is True
+
+
+def test_completed_stream_keeps_final_cumulative_provider_usage(monkeypatch):
+    client, testing_session = make_client()
+
+    async def completed_stream(profile, context):
+        yield providers.ProviderStreamEvent(kind="usage", usage={"input_tokens": 30, "output_tokens": 1})
+        yield providers.ProviderStreamEvent(kind="text", delta="A complete provider response")
+        yield providers.ProviderStreamEvent(kind="usage", usage={"output_tokens": 7})
+
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr(providers, "stream_completion", completed_stream)
+    _profile, session = create_profile_and_session(client)
+    client.post(
+        f"/api/sessions/{session['id']}/messages",
+        json={"role": "user", "content": "Start"},
+    )
+
+    with client.stream("POST", f"/api/sessions/{session['id']}/generate/stream", json={}) as response:
+        body = "".join(response.iter_text())
+    assert "message_completed" in body
+
+    with testing_session() as db:
+        run = db.scalars(select(models.GenerationRun)).one()
+        message = db.get(models.Message, run.output_message_id)
+        assert run.status == "complete"
+        assert run.input_tokens == 30
+        assert run.output_tokens == 7
+        assert run.usage_source == "provider"
+        assert message is not None
+        assert message.provider_metadata["usage_reconciled"] is False
+
+
+def test_completed_stream_reconciles_usage_that_precedes_later_content(monkeypatch):
+    client, testing_session = make_client()
+
+    async def completed_without_final_usage(profile, context):
+        yield providers.ProviderStreamEvent(kind="usage", usage={"input_tokens": 30, "output_tokens": 1})
+        yield providers.ProviderStreamEvent(kind="text", delta="Content received after provisional usage")
+
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr(providers, "stream_completion", completed_without_final_usage)
+    _profile, session = create_profile_and_session(client)
+    client.post(
+        f"/api/sessions/{session['id']}/messages",
+        json={"role": "user", "content": "Start"},
+    )
+
+    with client.stream("POST", f"/api/sessions/{session['id']}/generate/stream", json={}) as response:
+        body = "".join(response.iter_text())
+    assert "message_completed" in body
+
+    with testing_session() as db:
+        run = db.scalars(select(models.GenerationRun)).one()
+        message = db.get(models.Message, run.output_message_id)
+        assert message is not None
+        expected = count_text_tokens(message.content, "mock-model")
+        assert run.status == "complete"
+        assert run.output_tokens == expected
+        assert run.output_tokens > 1
+        assert run.usage_source == "mixed"
+        assert message.provider_metadata["usage_reconciled"] is True
 
 
 def test_regenerate_inactive_assistant_uses_its_own_ancestor_path(monkeypatch):

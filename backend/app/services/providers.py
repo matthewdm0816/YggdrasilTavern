@@ -212,12 +212,26 @@ def extract_anthropic_thinking_delta(payload: Dict[str, Any]) -> str:
 
 def extract_anthropic_usage(payload: Dict[str, Any]) -> Dict[str, Any]:
     usage = payload.get("usage")
-    if isinstance(usage, dict):
-        return usage
-    message = payload.get("message")
-    if isinstance(message, dict) and isinstance(message.get("usage"), dict):
-        return message["usage"]
-    return {}
+    if not isinstance(usage, dict):
+        message = payload.get("message")
+        usage = message.get("usage") if isinstance(message, dict) else None
+    if not isinstance(usage, dict):
+        return {}
+
+    normalized = dict(usage)
+    if payload.get("type") == "message_start":
+        # Anthropic emits provisional output usage before any content. A client
+        # cancellation may prevent the final cumulative message_delta usage,
+        # so never expose the start value as a terminal output count.
+        for key in (
+            "output_tokens",
+            "completion_tokens",
+            "reasoning_tokens",
+            "output_tokens_details",
+            "completion_tokens_details",
+        ):
+            normalized.pop(key, None)
+    return normalized
 
 
 def extract_openai_chat_delta(payload: Dict[str, Any]) -> str:
@@ -258,13 +272,25 @@ def extract_openai_responses_thinking_delta(payload: Dict[str, Any]) -> str:
 
 
 def extract_usage(payload: Dict[str, Any]) -> Dict[str, Any]:
+    merged: Dict[str, Any] = {}
     usage = payload.get("usage")
     if isinstance(usage, dict):
-        return usage
+        merged.update(usage)
     response = payload.get("response")
     if isinstance(response, dict) and isinstance(response.get("usage"), dict):
-        return response["usage"]
-    return {}
+        merged.update(response["usage"])
+    choices = payload.get("choices")
+    if isinstance(choices, list):
+        for choice in choices:
+            if not isinstance(choice, dict):
+                continue
+            choice_usage = choice.get("usage")
+            if isinstance(choice_usage, dict):
+                merged.update(choice_usage)
+            delta = choice.get("delta")
+            if isinstance(delta, dict) and isinstance(delta.get("usage"), dict):
+                merged.update(delta["usage"])
+    return merged
 
 
 def _stream_terminal_state(payload: Dict[str, Any]) -> tuple[bool, Optional[str]]:

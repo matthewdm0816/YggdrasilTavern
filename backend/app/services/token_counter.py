@@ -69,12 +69,16 @@ def cached_tokens_from_usage(usage: Dict[str, Any]) -> int:
     return _first_non_negative_int(*candidates) or 0
 
 
-def reasoning_tokens_from_usage(usage: Dict[str, Any]) -> int:
+def optional_reasoning_tokens_from_usage(usage: Dict[str, Any]) -> int | None:
     if not usage:
-        return 0
+        return None
     candidates = [
         usage.get("reasoning_tokens"),
         usage.get("completion_tokens_details", {}).get("reasoning_tokens") if isinstance(usage.get("completion_tokens_details"), dict) else None,
         usage.get("output_tokens_details", {}).get("reasoning_tokens") if isinstance(usage.get("output_tokens_details"), dict) else None,
     ]
-    return _first_non_negative_int(*candidates) or 0
+    return _first_non_negative_int(*candidates)
+
+
+def reasoning_tokens_from_usage(usage: Dict[str, Any]) -> int:
+    return optional_reasoning_tokens_from_usage(usage) or 0

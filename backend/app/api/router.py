@@ -28,6 +28,7 @@ from ..services.token_counter import (
     count_text_tokens,
     input_tokens_from_usage,
     merge_usage,
+    optional_reasoning_tokens_from_usage,
     output_tokens_from_usage,
     reasoning_tokens_from_usage,
 )
@@ -760,6 +761,10 @@ async def generate_stream(
         full_text = ""
         thinking_text = ""
         usage: Dict[str, Any] = {}
+        output_revision = 0
+        thinking_revision = 0
+        output_usage_revision: Optional[int] = None
+        reasoning_usage_revision: Optional[int] = None
         dirty = False
         last_commit = time.monotonic()
         first_token_at = None
@@ -779,17 +784,34 @@ async def generate_stream(
             text_tokens = count_text_tokens(full_text, model_name)
             estimated_thinking_tokens = count_text_tokens(thinking_text, model_name)
             reported_reasoning_tokens = reasoning_tokens_from_usage(usage)
-            thinking_tokens = reported_reasoning_tokens or estimated_thinking_tokens
             provider_input_tokens = input_tokens_from_usage(usage)
             provider_output_tokens = output_tokens_from_usage(usage)
-            output_tokens = provider_output_tokens
-            if output_tokens is None:
-                output_tokens = text_tokens + thinking_tokens
+            output_usage_is_stale = bool(
+                provider_output_tokens is not None
+                and output_usage_revision is not None
+                and output_usage_revision < output_revision
+            )
+            reasoning_usage_is_stale = bool(
+                reasoning_usage_revision is not None
+                and reasoning_usage_revision < thinking_revision
+            )
+            if reasoning_usage_is_stale:
+                thinking_tokens = max(reported_reasoning_tokens, estimated_thinking_tokens)
+            else:
+                thinking_tokens = reported_reasoning_tokens or estimated_thinking_tokens
+            estimated_output_tokens = text_tokens + thinking_tokens
+            if provider_output_tokens is None:
+                output_tokens = estimated_output_tokens
+            elif output_usage_is_stale:
+                output_tokens = max(provider_output_tokens, estimated_output_tokens)
+            else:
+                output_tokens = provider_output_tokens
             input_tokens = provider_input_tokens if provider_input_tokens is not None else estimated_input_tokens
             cached_input_tokens = cached_tokens_from_usage(usage)
             duration_seconds = max(time.monotonic() - started_monotonic, 0.0)
             tokens_per_second = output_tokens / duration_seconds if duration_seconds > 0 else 0.0
-            if provider_input_tokens is not None and provider_output_tokens is not None:
+            usage_was_reconciled = output_usage_is_stale or reasoning_usage_is_stale
+            if provider_input_tokens is not None and provider_output_tokens is not None and not usage_was_reconciled:
                 usage_source = "provider"
             elif provider_input_tokens is not None or provider_output_tokens is not None:
                 usage_source = "mixed"
@@ -812,6 +834,9 @@ async def generate_stream(
                 "cached_input_tokens": cached_input_tokens,
                 "tokens_per_second": tokens_per_second,
                 "duration_seconds": duration_seconds,
+                "usage_reconciled": usage_was_reconciled,
+                "observed_output_tokens": estimated_output_tokens,
+                "provider_output_tokens": provider_output_tokens,
             }
 
             run_row.status = status
@@ -839,24 +864,35 @@ async def generate_stream(
             async for event in providers.stream_completion(profile, context):
                 if isinstance(event, str):
                     full_text += event
+                    if event:
+                        output_revision += 1
                     if event and first_token_at is None:
                         first_token_at = models.utc_now()
                     dirty = True
                     yield _json_event("token", {"message_id": assistant_message_id, "delta": event})
                 elif event.kind == "thinking":
                     thinking_text += event.delta
+                    if event.delta:
+                        output_revision += 1
+                        thinking_revision += 1
                     if event.delta and first_token_at is None:
                         first_token_at = models.utc_now()
                     dirty = True
                     yield _json_event("thinking", {"message_id": assistant_message_id, "delta": event.delta})
                 elif event.kind == "text":
                     full_text += event.delta
+                    if event.delta:
+                        output_revision += 1
                     if event.delta and first_token_at is None:
                         first_token_at = models.utc_now()
                     dirty = True
                     yield _json_event("token", {"message_id": assistant_message_id, "delta": event.delta})
                 elif event.kind == "usage":
                     usage = merge_usage(usage, event.usage)
+                    if output_tokens_from_usage(event.usage) is not None:
+                        output_usage_revision = output_revision
+                    if optional_reasoning_tokens_from_usage(event.usage) is not None:
+                        reasoning_usage_revision = thinking_revision
                     dirty = True
                     yield _json_event("usage", {"message_id": assistant_message_id, "usage": usage})
                 # Batch-commit: flush dirty state periodically instead of every token

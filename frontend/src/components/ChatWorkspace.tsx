@@ -50,12 +50,51 @@ function usageNumber(usage: Record<string, unknown>, ...keys: string[]): number 
   return 0;
 }
 
-function tokenSpeed(message: Message): number {
+function tokenSpeed(message: Pick<Message, "usage">): number {
   const direct = usageNumber(message.usage, "tokens_per_second", "output_tokens_per_second");
   if (direct) return direct;
   const output = usageNumber(message.usage, "output_tokens", "completion_tokens");
   const durationMs = usageNumber(message.usage, "duration_ms", "generation_duration_ms");
   return output && durationMs ? output / (durationMs / 1000) : 0;
+}
+
+type TokenDisplayMessage = Pick<
+  Message,
+  "status" | "token_count" | "thinking_token_count" | "provider_metadata" | "usage"
+> & {
+  generation_run?: Pick<
+    NonNullable<Message["generation_run"]>,
+    "output_tokens" | "duration_seconds" | "tokens_per_second"
+  > | null;
+};
+
+export function generationTokenDisplay(message: TokenDisplayMessage) {
+  const usageOutput = usageNumber(message.usage, "output_tokens", "completion_tokens");
+  const providerOutput = message.generation_run?.output_tokens ?? (usageOutput || null);
+  const observedOutput = Math.max(0, message.token_count) + Math.max(0, message.thinking_token_count);
+  const incomplete = message.status !== "complete";
+  const implausiblyLow = Boolean(
+    providerOutput
+    && observedOutput >= 32
+    && observedOutput > providerOutput * 3
+  );
+  const useObserved = observedOutput > 0 && (
+    providerOutput === null
+    || providerOutput <= 0
+    || (incomplete && observedOutput > providerOutput)
+    || implausiblyLow
+  );
+  const outputTokens = useObserved ? observedOutput : providerOutput || 0;
+  const wasServerReconciled = message.provider_metadata.usage_reconciled === true;
+  let tokensPerSecond = message.generation_run?.tokens_per_second || tokenSpeed(message);
+  if (useObserved && message.generation_run?.duration_seconds) {
+    tokensPerSecond = outputTokens / message.generation_run.duration_seconds;
+  }
+  return {
+    outputTokens,
+    outputEstimated: useObserved || wasServerReconciled,
+    tokensPerSecond
+  };
 }
 
 export function getMessagePresentation(message: Pick<Message, "role" | "status">) {
@@ -246,9 +285,10 @@ export function ChatWorkspace({
           const next = siblings[index + 1];
           const isEditing = edit?.messageId === message.id;
           const inputTokens = message.generation_run?.input_tokens || usageNumber(message.usage, "input_tokens", "prompt_tokens");
-          const outputTokens = message.generation_run?.output_tokens || usageNumber(message.usage, "output_tokens", "completion_tokens") || message.token_count;
+          const tokenDisplay = generationTokenDisplay(message);
+          const outputTokens = tokenDisplay.outputTokens;
           const cachedTokens = message.generation_run?.cached_input_tokens || usageNumber(message.usage, "cached_input_tokens", "cached_tokens") || message.cached_tokens;
-          const speed = message.generation_run?.tokens_per_second || tokenSpeed(message);
+          const speed = tokenDisplay.tokensPerSecond;
           const presentation = getMessagePresentation(message);
           return (
             <div key={message.id} className={`message-line ${message.role}`} data-message-id={message.id}>
@@ -278,7 +318,10 @@ export function ChatWorkspace({
                 {message.error && <p className="message-error">{message.error}</p>}
                 <div className="message-toolbar">
                   {inputTokens > 0 && <span className="token-pill">输入 {inputTokens} tok</span>}
-                  <span className="token-pill">输出 {outputTokens || 0} tok</span>
+                  <span
+                    className="token-pill"
+                    title={tokenDisplay.outputEstimated ? "Provider 未返回可信的最终用量；根据已保存正文与 Thinking 估算" : "Provider 返回的最终输出用量"}
+                  >输出{tokenDisplay.outputEstimated ? "约 " : " "}{outputTokens || 0} tok</span>
                   {cachedTokens > 0 && <span className="token-pill cache">缓存输入 {cachedTokens} tok</span>}
                   {speed > 0 && <span className="token-pill">{speed.toFixed(1)} tok/s</span>}
                   <button className="icon-button" title="上一个 swipe" disabled={!previous} onClick={() => previous && selectSwipeFromToolbar(previous.id)}><ChevronLeft size={16} /></button>

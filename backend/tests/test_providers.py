@@ -9,6 +9,7 @@ from app.services.providers import (
     endpoint_for,
     extract_anthropic_delta,
     extract_anthropic_thinking_delta,
+    extract_anthropic_usage,
     extract_openai_chat_delta,
     extract_openai_chat_thinking_delta,
     extract_openai_responses_delta,
@@ -35,6 +36,44 @@ def test_provider_thinking_and_usage_extractors():
     assert extract_openai_responses_thinking_delta({"type": "response.reasoning_summary_text.delta", "delta": "summary"}) == "summary"
     assert extract_usage({"response": {"usage": {"input_tokens_details": {"cached_tokens": 12}}}}) == {
         "input_tokens_details": {"cached_tokens": 12}
+    }
+
+
+def test_anthropic_start_usage_does_not_publish_provisional_output_count():
+    assert extract_anthropic_usage(
+        {
+            "type": "message_start",
+            "message": {
+                "usage": {
+                    "input_tokens": 12,
+                    "cache_read_input_tokens": 4,
+                    "output_tokens": 1,
+                }
+            },
+        }
+    ) == {"input_tokens": 12, "cache_read_input_tokens": 4}
+    assert extract_anthropic_usage(
+        {"type": "message_delta", "usage": {"output_tokens": 37}}
+    ) == {"output_tokens": 37}
+
+
+def test_openai_compatible_nested_choice_usage_overrides_provisional_top_level_usage():
+    assert extract_usage(
+        {
+            "usage": {"prompt_tokens": 20, "completion_tokens": 1},
+            "choices": [
+                {
+                    "usage": {
+                        "completion_tokens": 40,
+                        "completion_tokens_details": {"reasoning_tokens": 9},
+                    }
+                }
+            ],
+        }
+    ) == {
+        "prompt_tokens": 20,
+        "completion_tokens": 40,
+        "completion_tokens_details": {"reasoning_tokens": 9},
     }
 
 

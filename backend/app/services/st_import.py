@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import base64
+import binascii
 import io
 import json
+from pathlib import Path
 from typing import Any, Dict, Iterable, List
 
 from fastapi import HTTPException
@@ -22,28 +24,62 @@ def _as_list(value: Any) -> List[str]:
 
 
 def _decode_card_payload(value: str) -> Dict[str, Any]:
-    for candidate in (value, value.strip()):
+    errors: List[str] = []
+    candidates = list(dict.fromkeys((value, value.strip(), "".join(value.split()))))
+    for candidate in candidates:
+        if not candidate:
+            continue
         try:
-            decoded = base64.b64decode(candidate).decode("utf-8")
-            return json.loads(decoded)
-        except Exception:
-            pass
+            decoded = base64.b64decode(candidate, validate=True).decode("utf-8")
+            parsed = json.loads(decoded)
+            if not isinstance(parsed, dict):
+                raise ValueError("decoded JSON root is not an object")
+            return parsed
+        except (binascii.Error, UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+            errors.append(f"base64 JSON: {exc}")
     try:
-        return json.loads(value)
-    except json.JSONDecodeError as exc:
-        raise HTTPException(status_code=400, detail="PNG character metadata is not valid JSON/base64 JSON") from exc
+        parsed = json.loads(value)
+        if not isinstance(parsed, dict):
+            raise ValueError("JSON root is not an object")
+        return parsed
+    except (json.JSONDecodeError, ValueError) as exc:
+        errors.append(f"plain JSON: {exc}")
+    detail = "; ".join(dict.fromkeys(errors))
+    raise HTTPException(
+        status_code=400,
+        detail=f"PNG character metadata is not valid JSON/base64 JSON ({detail})",
+    )
 
 
 def read_png_character_card(content: bytes) -> Dict[str, Any]:
     try:
         image = Image.open(io.BytesIO(content))
+        # SillyTavern writes its chara/ccv3 tEXt chunks after IDAT. Pillow only
+        # scans chunks after the image stream when the image is fully loaded,
+        # so Image.open() alone leaves image.info empty for valid ST exports.
+        image.load()
     except Exception as exc:
         raise HTTPException(status_code=400, detail="Could not read PNG character card") from exc
 
-    payload = image.info.get("ccv3") or image.info.get("chara")
-    if not payload:
+    payloads = [(key, image.info.get(key)) for key in ("ccv3", "chara") if image.info.get(key)]
+    if not payloads:
         raise HTTPException(status_code=400, detail="PNG has no ccv3/chara metadata")
-    return _decode_card_payload(str(payload))
+    failures: List[str] = []
+    for key, payload in payloads:
+        if isinstance(payload, bytes):
+            try:
+                payload = payload.decode("utf-8")
+            except UnicodeDecodeError as exc:
+                failures.append(f"{key}: metadata is not UTF-8 ({exc})")
+                continue
+        try:
+            return _decode_card_payload(str(payload))
+        except HTTPException as exc:
+            failures.append(f"{key}: {exc.detail}")
+    raise HTTPException(
+        status_code=400,
+        detail="PNG character metadata could not be decoded: " + "; ".join(failures),
+    )
 
 
 def normalize_character(raw: Dict[str, Any], avatar_data_url: str | None = None) -> schemas.CharacterCreate:
@@ -122,7 +158,11 @@ def _iter_worldbook_entries(raw: Dict[str, Any]) -> Iterable[Dict[str, Any]]:
                 yield entry
 
 
-def normalize_worldbook(raw: Dict[str, Any]) -> schemas.WorldBookCreate:
+def normalize_worldbook(
+    raw: Dict[str, Any],
+    *,
+    fallback_name: str = "Imported Worldbook",
+) -> schemas.WorldBookCreate:
     entries = []
     for raw_entry in _iter_worldbook_entries(raw):
         keys = raw_entry.get("keys", raw_entry.get("key", []))
@@ -148,7 +188,7 @@ def normalize_worldbook(raw: Dict[str, Any]) -> schemas.WorldBookCreate:
             )
         )
     return schemas.WorldBookCreate(
-        name=str(raw.get("name") or raw.get("display_name") or "Imported Worldbook"),
+        name=str(raw.get("name") or raw.get("display_name") or fallback_name),
         description=str(raw.get("description", "")),
         scan_depth=int(raw.get("scan_depth", 8) or 8),
         token_budget=int(raw.get("token_budget", raw.get("budget", 4000)) or 4000),
@@ -158,9 +198,11 @@ def normalize_worldbook(raw: Dict[str, Any]) -> schemas.WorldBookCreate:
     )
 
 
-def load_worldbook_upload(content: bytes) -> schemas.WorldBookCreate:
+def load_worldbook_upload(content: bytes, filename: str | None = None) -> schemas.WorldBookCreate:
     try:
         raw = json.loads(content.decode("utf-8"))
     except Exception as exc:
         raise HTTPException(status_code=400, detail="Worldbook JSON is invalid") from exc
-    return normalize_worldbook(raw)
+    uploaded_name = filename.replace("\\", "/").rsplit("/", 1)[-1] if filename else ""
+    filename_stem = Path(uploaded_name).stem.strip() if uploaded_name else ""
+    return normalize_worldbook(raw, fallback_name=filename_stem or "Imported Worldbook")

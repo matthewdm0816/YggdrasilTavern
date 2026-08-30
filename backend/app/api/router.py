@@ -302,7 +302,7 @@ def create_worldbook(payload: schemas.WorldBookCreate, db: Session = Depends(get
 
 @router.post("/worldbooks/import", response_model=schemas.WorldBookOut)
 async def import_worldbook(file: UploadFile = File(...), db: Session = Depends(get_db)) -> models.WorldBook:
-    payload = st_import.load_worldbook_upload(await file.read())
+    payload = st_import.load_worldbook_upload(await file.read(), filename=file.filename)
     worldbook = _create_worldbook_model(payload)
     db.add(worldbook)
     db.commit()

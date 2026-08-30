@@ -981,6 +981,7 @@ textarea:focus {
 
 .toast {
   position: fixed;
+  z-index: 100;
   right: 18px;
   bottom: 18px;
   display: flex;

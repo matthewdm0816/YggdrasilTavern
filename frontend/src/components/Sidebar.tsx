@@ -154,13 +154,16 @@ export function Sidebar({ profiles, characters, worldbooks, sessions, selectedSe
   async function importFile(event: ChangeEvent<HTMLInputElement>, kind: "character" | "worldbook") {
     const file = event.target.files?.[0];
     if (!file) return;
+    onError?.("");
     setBusy(true);
     try {
       if (kind === "character") await api.importCharacter(file);
       else await api.importWorldbook(file);
       onRefresh();
     } catch (exc) {
-      onError?.(exc instanceof Error ? exc.message : String(exc));
+      const label = kind === "character" ? "角色卡" : "世界书";
+      const detail = exc instanceof Error ? exc.message : String(exc);
+      onError?.(`导入${label}「${file.name}」失败：${detail}`);
     } finally {
       setBusy(false);
       event.target.value = "";
@@ -564,7 +567,7 @@ export function Sidebar({ profiles, characters, worldbooks, sessions, selectedSe
           <label className="file-button">
             <Upload size={15} />
             导入 JSON/PNG
-            <input type="file" accept=".json,.png,application/json,image/png" onChange={(event) => importFile(event, "character")} />
+            <input type="file" disabled={busy} accept=".json,.png,application/json,image/png" onChange={(event) => importFile(event, "character")} />
           </label>
           <CharacterManager characters={characters} onChanged={onRefresh} onError={onError} />
         </div>
@@ -580,7 +583,7 @@ export function Sidebar({ profiles, characters, worldbooks, sessions, selectedSe
           <label className="file-button">
             <Upload size={15} />
             导入 JSON
-            <input type="file" accept=".json,application/json" onChange={(event) => importFile(event, "worldbook")} />
+            <input type="file" disabled={busy} accept=".json,application/json" onChange={(event) => importFile(event, "worldbook")} />
           </label>
           <WorldbookManager worldbooks={worldbooks} onChanged={onRefresh} onError={onError} />
         </div>

@@ -622,8 +622,16 @@ textarea:focus {
 /* Session management UI */
 .session-toolbar {
   display: flex;
+  align-items: center;
   gap: 6px;
   margin-bottom: 8px;
+}
+
+.session-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
 }
 
 .search-bar {
@@ -677,8 +685,8 @@ textarea:focus {
 
 .session-list {
   display: grid;
-  gap: 4px;
-  margin-top: 8px;
+  gap: 6px;
+  margin-top: 4px;
 }
 
 .session-group {
@@ -745,11 +753,12 @@ textarea:focus {
   display: flex;
   align-items: center;
   gap: 4px;
+  min-height: 58px;
   border: 1px solid var(--line);
-  border-radius: 7px;
+  border-radius: 10px;
   background: var(--surface);
   overflow: hidden;
-  transition: border-color 0.15s;
+  transition: border-color 0.15s, background-color 0.15s, box-shadow 0.15s;
 }
 
 .session-row:hover {
@@ -759,27 +768,70 @@ textarea:focus {
 .session-row.selected {
   border-color: var(--green);
   background: var(--surface-selected);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--green) 12%, transparent);
 }
 
 .session-title-btn {
   flex: 1;
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 7px 10px;
+  gap: 9px;
+  align-self: stretch;
+  min-height: 58px;
+  padding: 7px 6px 7px 8px;
   border: none;
   background: transparent;
   color: var(--text);
-  font-size: 12px;
+  font-size: 14px;
   text-align: left;
   cursor: pointer;
   min-width: 0;
 }
 
-.session-title-btn span {
+.session-character-avatar {
+  display: grid;
+  place-items: center;
+  flex: 0 0 38px;
+  width: 38px;
+  height: 38px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
+  border-radius: 10px;
+  background: var(--surface-soft);
+  color: var(--accent-text);
+  font-size: 15px;
+  font-weight: 750;
+}
+
+.session-character-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.session-title-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.session-title-text,
+.session-character-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.session-title-text {
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1.25;
+}
+
+.session-character-name {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.25;
 }
 
 .pin-icon {
@@ -919,6 +971,14 @@ textarea:focus {
 .message-row.assistant {
   margin-right: auto;
   border-color: color-mix(in srgb, var(--green) 35%, transparent);
+}
+
+.session-editor {
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface-soft);
 }
 
 .message-row.is-streaming {
@@ -1136,8 +1196,8 @@ textarea:focus {
 }
 
 .thinking-box pre {
-  max-height: 220px;
-  overflow: auto;
+  max-height: none;
+  overflow: visible;
   margin: 0;
   padding: 0 11px 11px;
   white-space: pre-wrap;
@@ -1158,6 +1218,16 @@ textarea:focus {
 .editor-box textarea {
   min-height: 140px;
   margin: 10px 0;
+}
+
+.auto-size-textarea {
+  height: auto;
+  overflow: hidden;
+  resize: none;
+}
+
+.editor-box .auto-size-textarea {
+  width: 100%;
 }
 
 .composer {

@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { generationTokenDisplay, getMessagePresentation } from "./ChatWorkspace";
+import { generationTokenDisplay, getMessagePresentation, messageEditDraft } from "./ChatWorkspace";
+
+describe("messageEditDraft", () => {
+  it("keeps both visible content and thinking content editable", () => {
+    expect(messageEditDraft({ id: "message-1", content: "Visible reply", thinking_content: "Reasoning trace" })).toEqual({
+      messageId: "message-1",
+      value: "Visible reply",
+      thinkingValue: "Reasoning trace"
+    });
+  });
+});
 
 describe("getMessagePresentation", () => {
   it("marks only a streaming message as busy and highlighted", () => {

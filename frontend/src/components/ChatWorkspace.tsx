@@ -19,6 +19,7 @@ import {
 import { CharacterSummary, ChatSession, Message, RegexRule, SessionTree } from "../lib/api";
 import { activeMessages as getActiveMessages, siblingsFor } from "../lib/tree";
 import { useAppStore } from "../state/useAppStore";
+import { AutoSizeTextarea } from "./AutoSizeTextarea";
 import { ForestTreeView } from "./ForestTreeView";
 import { RegexMessage } from "./RegexMessage";
 
@@ -35,7 +36,7 @@ type Props = {
   onRegenerate: (messageId: string) => void;
   onSelectMessage: (messageId: string) => Promise<void>;
   onCreateSwipe: (message: Message) => Promise<void>;
-  onForkEdit: (message: Message, content: string) => Promise<void>;
+  onForkEdit: (message: Message, content: string, thinkingContent: string) => Promise<void>;
   onToggleLeft: () => void;
   onToggleRight: () => void;
   themePreference: "light" | "dark" | "system";
@@ -106,6 +107,14 @@ export function getMessagePresentation(message: Pick<Message, "role" | "status">
   };
 }
 
+export function messageEditDraft(message: Pick<Message, "id" | "content" | "thinking_content">) {
+  return {
+    messageId: message.id,
+    value: message.content,
+    thinkingValue: message.thinking_content
+  };
+}
+
 export function ChatWorkspace({
   tree,
   activeSession,
@@ -142,7 +151,7 @@ export function ChatWorkspace({
     const value = activeSession?.preset?.regex_rules;
     return Array.isArray(value) ? value as RegexRule[] : [];
   }, [activeSession?.preset]);
-  const contentRevision = activeMessages.map((message) => `${message.id}:${message.content.length}:${message.status}`).join("|");
+  const contentRevision = activeMessages.map((message) => `${message.id}:${message.content.length}:${message.thinking_content.length}:${message.status}`).join("|");
   const nextThemeLabel = themePreference === "system" ? "亮色" : themePreference === "light" ? "暗色" : "跟随系统";
   const currentThemeLabel = themePreference === "system" ? "跟随系统" : themePreference === "light" ? "亮色" : "暗色";
 
@@ -185,13 +194,13 @@ export function ChatWorkspace({
 
   function startEdit(message: Message) {
     if (!sessionId) return;
-    setEdit(sessionId, { messageId: message.id, value: message.content });
+    setEdit(sessionId, messageEditDraft(message));
   }
 
   async function saveEdit(message: Message) {
     if (!sessionId || !edit) return;
     try {
-      await onForkEdit(message, edit.value);
+      await onForkEdit(message, edit.value, edit.thinkingValue);
       setEdit(sessionId, undefined);
       setInteractionError(null);
     } catch (cause) {
@@ -305,7 +314,10 @@ export function ChatWorkspace({
                 )}
                 {isEditing ? (
                   <div className="editor-box">
-                    <label className="form-field"><span>编辑消息内容</span><textarea value={edit.value} onChange={(event) => setEdit(sessionId, { ...edit, value: event.target.value })} /></label>
+                    <label className="form-field"><span>编辑消息正文</span><AutoSizeTextarea value={edit.value} onChange={(event) => setEdit(sessionId, { ...edit, value: event.target.value })} /></label>
+                    {(message.role === "assistant" || message.thinking_content) && (
+                      <label className="form-field"><span>编辑 Thinking（可留空）</span><AutoSizeTextarea value={edit.thinkingValue} onChange={(event) => setEdit(sessionId, { ...edit, thinkingValue: event.target.value })} /></label>
+                    )}
                     <p className="editor-hint">保存会创建新的 sibling/swipe；原消息及其后代保持不变。</p>
                     <div className="inline-actions">
                       <button className="primary-button" onClick={() => saveEdit(message)}>保存为新 swipe</button>

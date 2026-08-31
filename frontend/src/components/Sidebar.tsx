@@ -112,6 +112,7 @@ export function Sidebar({
   const [selectedCharacter, setSelectedCharacter] = useState("");
   const [selectedWorldbooks, setSelectedWorldbooks] = useState<string[]>([]);
   const [selectedFolderId, setSelectedFolderId] = useState("");
+  const [sessionEditorOpen, setSessionEditorOpen] = useState(false);
   const [chubPath, setChubPath] = useState("");
   const [busy, setBusy] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -394,9 +395,26 @@ export function Sidebar({
         folder_id: selectedFolderId || null,
         preset: { user_name: "User", auto_greeting: true, worldbook_ids: selectedWorldbooks }
       });
+      resetSessionEditor();
     } catch {
       // Mutation error is rendered next to the create button by AppShell.
     }
+  }
+
+  function createSessionDraft() {
+    setSessionTitle("");
+    setSelectedCharacter("");
+    setSelectedWorldbooks([]);
+    setSelectedFolderId("");
+    setSessionEditorOpen(true);
+  }
+
+  function resetSessionEditor() {
+    setSessionEditorOpen(false);
+    setSessionTitle("");
+    setSelectedCharacter("");
+    setSelectedWorldbooks([]);
+    setSelectedFolderId("");
   }
 
   function selectCharacter(characterId: string) {
@@ -433,11 +451,20 @@ export function Sidebar({
   }
 
   function renderSessionRow(session: ChatSession) {
+    const character = characters.find((item) => item.id === session.character_id);
     return (
       <div key={session.id} className={session.id === selectedSessionId ? "session-row selected" : "session-row"}>
         <button className="session-title-btn" onClick={() => onSelectSession(session.id)}>
-          {session.pinned && <Star size={12} className="pin-icon" />}
-          <span>{session.title}</span>
+          <span className="session-character-avatar" aria-hidden="true">
+            {character?.avatar_data_url
+              ? <img src={character.avatar_data_url} alt="" />
+              : <span>{(character?.name || session.title || "?").slice(0, 1)}</span>}
+          </span>
+          <span className="session-title-copy">
+            <span className="session-title-text">{session.title}</span>
+            <span className="session-character-name">{character?.name || "角色不可用"}</span>
+          </span>
+          {session.pinned && <Star size={13} className="pin-icon" aria-label="已置顶" />}
         </button>
         <div className="session-actions">
           <button className="icon-button-sm" title={session.pinned ? "取消置顶" : "置顶"} onClick={() => togglePin(session)}>
@@ -515,70 +542,20 @@ export function Sidebar({
               placeholder="搜索会话..."
             />
           </div>
-          <button
-            className={showArchived ? "icon-button active-toggle" : "icon-button"}
-            title={showArchived ? "隐藏归档" : "显示归档"}
-            onClick={onToggleArchived}
-          >
-            <Archive size={14} />
-          </button>
-        </div>
-
-        {/* New session form */}
-        <div className="compact-form">
-          <label className="form-field"><span>扮演角色（必选）</span><select required value={selectedCharacter} onChange={(event) => selectCharacter(event.target.value)}>
-            <option value="">请选择角色</option>
-            {characters.map((character) => <option key={character.id} value={character.id}>{character.name}</option>)}
-          </select><small>决定角色设定、开场白和头像；必须选择后才能创建会话。</small></label>
-          <label className="form-field"><span>会话标题（可选）</span><input value={sessionTitle} onChange={(event) => setSessionTitle(event.target.value)} placeholder="默认使用角色名" /><small>留空时使用所选角色名；手动填写可覆盖。</small></label>
-          <fieldset className="compact-check-list">
-            <legend>绑定多个世界书（可留空）</legend>
-            {worldbooks.map((book) => (
-              <label key={book.id}>
-                <input
-                  type="checkbox"
-                  checked={selectedWorldbooks.includes(book.id)}
-                  onChange={() => setSelectedWorldbooks((current) => current.includes(book.id) ? current.filter((id) => id !== book.id) : [...current, book.id])}
-                />
-                {book.name}
-              </label>
-            ))}
-            {!worldbooks.length && <span className="muted">暂无世界书</span>}
-          </fieldset>
-          <label className="form-field"><span>保存位置</span><select value={selectedFolderId} onChange={(event) => setSelectedFolderId(event.target.value)}>
-            <option value="">不放入文件夹</option>
-            {folders.map((f) => (
-              <option key={f.id} value={f.id}>{f.name}</option>
-            ))}
-          </select></label>
-          <button className="primary-button" disabled={creatingSession || !selectedCharacter} onClick={submitSession}>
-            <Plus size={16} />
-            {creatingSession ? "创建中…" : "新建会话"}
-          </button>
-          {createSessionError && <p className="field-error" role="alert">创建会话失败：{createSessionError}</p>}
-        </div>
-
-        {/* Folder management */}
-        <div className="folder-toolbar">
-          {showFolderInput ? (
-            <div className="inline-folder-input">
-              <input
-                aria-label="新文件夹名称"
-                value={newFolderName}
-                onChange={(e) => setNewFolderName(e.target.value)}
-                placeholder="文件夹名称"
-                onKeyDown={(e) => e.key === "Enter" && createFolder()}
-                autoFocus
-              />
-              <button className="primary-button" disabled={!newFolderName.trim()} onClick={createFolder}>OK</button>
-              <button className="icon-button" onClick={() => { setShowFolderInput(false); setNewFolderName(""); }}>x</button>
-            </div>
-          ) : (
-            <button className="secondary-button" onClick={() => setShowFolderInput(true)}>
-              <FolderPlus size={14} />
-              新建文件夹
+          <div className="session-toolbar-actions">
+            <button
+              className={showArchived ? "icon-button active-toggle" : "icon-button"}
+              type="button"
+              title={showArchived ? "隐藏归档" : "显示归档"}
+              aria-label={showArchived ? "隐藏归档会话" : "显示归档会话"}
+              onClick={onToggleArchived}
+            >
+              <Archive size={14} />
             </button>
-          )}
+            <button className="icon-button" type="button" title="新建会话" aria-label="新建会话" onClick={createSessionDraft}>
+              <Plus size={16} />
+            </button>
+          </div>
         </div>
 
         {/* Session list with folders */}
@@ -602,6 +579,69 @@ export function Sidebar({
             </p>
           )}
         </div>
+
+        {/* Folder management */}
+        <div className="folder-toolbar">
+          {showFolderInput ? (
+            <div className="inline-folder-input">
+              <input
+                aria-label="新文件夹名称"
+                value={newFolderName}
+                onChange={(e) => setNewFolderName(e.target.value)}
+                placeholder="文件夹名称"
+                onKeyDown={(e) => e.key === "Enter" && createFolder()}
+                autoFocus
+              />
+              <button className="primary-button" disabled={!newFolderName.trim()} onClick={createFolder}>OK</button>
+              <button className="icon-button" title="取消新建文件夹" aria-label="取消新建文件夹" onClick={() => { setShowFolderInput(false); setNewFolderName(""); }}><X size={14} /></button>
+            </div>
+          ) : (
+            <button className="secondary-button" onClick={() => setShowFolderInput(true)}>
+              <FolderPlus size={14} />
+              新建文件夹
+            </button>
+          )}
+        </div>
+
+        {/* New session form */}
+        {sessionEditorOpen && (
+          <div className="compact-form session-editor">
+            <div className="form-caption">
+              <strong>新建会话</strong>
+              <button className="icon-button" type="button" title="取消新建会话" aria-label="取消新建会话" onClick={resetSessionEditor}><X size={15} /></button>
+            </div>
+            <label className="form-field"><span>扮演角色（必选）</span><select required value={selectedCharacter} onChange={(event) => selectCharacter(event.target.value)}>
+              <option value="">请选择角色</option>
+              {characters.map((character) => <option key={character.id} value={character.id}>{character.name}</option>)}
+            </select><small>决定角色设定、开场白和头像；必须选择后才能创建会话。</small></label>
+            <label className="form-field"><span>会话标题（可选）</span><input value={sessionTitle} onChange={(event) => setSessionTitle(event.target.value)} placeholder="默认使用角色名" /><small>留空时使用所选角色名；手动填写可覆盖。</small></label>
+            <fieldset className="compact-check-list">
+              <legend>绑定多个世界书（可留空）</legend>
+              {worldbooks.map((book) => (
+                <label key={book.id}>
+                  <input
+                    type="checkbox"
+                    checked={selectedWorldbooks.includes(book.id)}
+                    onChange={() => setSelectedWorldbooks((current) => current.includes(book.id) ? current.filter((id) => id !== book.id) : [...current, book.id])}
+                  />
+                  {book.name}
+                </label>
+              ))}
+              {!worldbooks.length && <span className="muted">暂无世界书</span>}
+            </fieldset>
+            <label className="form-field"><span>保存位置</span><select value={selectedFolderId} onChange={(event) => setSelectedFolderId(event.target.value)}>
+              <option value="">不放入文件夹</option>
+              {folders.map((f) => (
+                <option key={f.id} value={f.id}>{f.name}</option>
+              ))}
+            </select></label>
+            <button className="primary-button" disabled={creatingSession || !selectedCharacter} onClick={submitSession}>
+              <Plus size={16} />
+              {creatingSession ? "创建中…" : "创建会话"}
+            </button>
+            {createSessionError && <p className="field-error" role="alert">创建会话失败：{createSessionError}</p>}
+          </div>
+        )}
       </CollapsibleSection>
 
       <CollapsibleSection

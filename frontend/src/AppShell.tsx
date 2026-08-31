@@ -277,19 +277,19 @@ export default function AppShell() {
     queryClient.setQueryData<SessionTree | undefined>(["tree", sessionId], (current) => mergeStreamingMessages(current, next));
   }
 
-  async function handleCreateSwipe(message: Message, content = message.content) {
+  async function handleCreateSwipe(message: Message, content = message.content, thinkingContent = message.thinking_content) {
     const next = await api.createSwipe(message.id, {
       role: message.role,
       speaker: message.speaker,
       content,
-      thinking_content: message.thinking_content,
+      thinking_content: thinkingContent,
       status: "complete"
     });
     queryClient.setQueryData(["tree", message.session_id], next);
   }
 
-  async function handleForkEdit(message: Message, content: string) {
-    await handleCreateSwipe(message, content);
+  async function handleForkEdit(message: Message, content: string, thinkingContent: string) {
+    await handleCreateSwipe(message, content, thinkingContent);
   }
 
   const queryError = treeQuery.error || sessionsQuery.error || profilesQuery.error || charactersQuery.error || worldbooksQuery.error;

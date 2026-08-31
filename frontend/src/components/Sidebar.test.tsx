@@ -29,7 +29,7 @@ describe("formatTokenLimit", () => {
 });
 
 describe("Sidebar defaults", () => {
-  it("keeps the Profile editor hidden and requires a character-oriented session form", () => {
+  it("keeps creation editors hidden so the session list remains primary", () => {
     const html = renderToStaticMarkup(
       <Sidebar
         profiles={[]}
@@ -52,8 +52,50 @@ describe("Sidebar defaults", () => {
     expect(html).toContain("当前 Profile");
     expect(html).toContain("新建 Profile");
     expect(html).not.toContain("Profile 名称");
-    expect(html).toContain("扮演角色（必选）");
-    expect(html).toContain("会话标题（可选）");
+    expect(html).toContain("新建会话");
+    expect(html).not.toContain("扮演角色（必选）");
+    expect(html).not.toContain("会话标题（可选）");
     expect(html).not.toContain("生成模型 Profile");
+  });
+
+  it("renders the bound character avatar and larger two-line session identity", () => {
+    const html = renderToStaticMarkup(
+      <Sidebar
+        profiles={[]}
+        activeProfileId=""
+        onActiveProfileChange={() => undefined}
+        characters={[{
+          id: "character-1",
+          name: "Alice",
+          avatar_data_url: "data:image/webp;base64,avatar",
+          tags: [],
+          creator: "",
+          character_version: ""
+        }]}
+        worldbooks={[]}
+        sessions={[{
+          id: "session-1",
+          title: "Moonlit Path",
+          character_id: "character-1",
+          folder_id: null,
+          pinned: false,
+          archived: false,
+          preset: {}
+        }]}
+        selectedSessionId="session-1"
+        showArchived={false}
+        onSelectSession={() => undefined}
+        creatingSession={false}
+        createSessionError={null}
+        onCreateSession={async () => { throw new Error("not called during server render"); }}
+        onRefresh={async () => undefined}
+        onToggleArchived={() => undefined}
+      />
+    );
+
+    expect(html).toContain("session-character-avatar");
+    expect(html).toContain("data:image/webp;base64,avatar");
+    expect(html).toContain("Moonlit Path");
+    expect(html).toContain("Alice");
   });
 });

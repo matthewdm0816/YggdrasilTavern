@@ -5,8 +5,8 @@ type AppState = {
   setSelectedSessionId: (id: string | null) => void;
   drafts: Record<string, string>;
   setDraft: (sessionId: string, value: string) => void;
-  edits: Record<string, { messageId: string; value: string } | undefined>;
-  setEdit: (sessionId: string, edit?: { messageId: string; value: string }) => void;
+  edits: Record<string, { messageId: string; value: string; thinkingValue: string } | undefined>;
+  setEdit: (sessionId: string, edit?: { messageId: string; value: string; thinkingValue: string }) => void;
 };
 
 export const useAppStore = create<AppState>((set) => ({

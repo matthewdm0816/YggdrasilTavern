@@ -189,7 +189,7 @@ or:
 .\scripts\stop.ps1
 ```
 
-The stop script terminates processes listening on the configured backend and frontend ports. Pass matching port arguments if you deliberately changed them.
+The launcher records process IDs, start times, and executable paths in `.yggdrasil-runtime/`. The stop script verifies those records before stopping the recorded launchers and their children. Missing or stale records are reported without stopping other processes. Pass matching port arguments if you changed them. Manage manually started services and services from older launchers through their original process controls.
 
 ### LAN access and HTTPS
 
@@ -236,7 +236,7 @@ Frontend, in a second terminal:
 
 ```powershell
 cd frontend
-npm install
+npm ci
 npm run dev -- --host 127.0.0.1 --port 5173
 ```
 
@@ -288,6 +288,7 @@ Frontend:
 ```powershell
 cd frontend
 npm test
+npm run contract:check
 npm run build
 ```
 
@@ -295,17 +296,34 @@ npm run build
 
 ```text
 backend/
-  alembic/                 Database migrations
-  app/api/                 FastAPI routes
-  app/services/            Tree, Prompt, provider, import, and token services
-  tests/                   Backend and migration tests
+  alembic/                         Database migrations
+  app/api/                         Resource-specific routes and stream encoding
+  app/services/generation.py       Generation lifecycle and durable partial output
+  app/services/prompt_builder.py   Input loading and standalone prompt compilation
+  app/services/provider_protocols/ Protocol adapters and shared HTTP transport
+  app/database.py                  Application-owned engines and request sessions
+  app/database_schema.py           Migration, legacy adoption, and restart recovery
+  tests/                           Backend, concurrency, and migration tests
 frontend/
-  src/components/          Chat workspace, Inspector, resource editors, renderers
-  src/lib/                 API client, tree, Prompt, and Regex helpers
-  src/state/               Per-session UI state
-scripts/                   Windows start/stop and uv environment scripts
-treechat.db                Local database created at runtime; ignored by Git
+  src/features/chat/               Per-session generation, selection, and tree cache
+  src/components/                  Workspace and focused resource/configuration UI
+  src/lib/api/                     HTTP clients, stream parser, and API types
+  scripts/api-contract.mjs         OpenAPI type generation and verification
+  src/state/                       Per-session drafts and message edits
+scripts/                           Windows launchers and process ownership tracking
+.github/workflows/verify.yml        Continuous integration checks
+treechat.db                        Runtime database; ignored by Git
 ```
+
+## Module boundaries and verification
+
+- HTTP routes accept requests and encode responses. The generation service coordinates tree operations, prompt compilation, provider calls, and persistence. The application maps service errors to HTTP responses.
+- Prompt compilation consumes detached input snapshots and can run after the database session closes. Preview and generation use the same compilation and input-budget path.
+- Anthropic Messages, OpenAI Chat Completions, and OpenAI Responses have separate request/event adapters with shared HTTP transport and error handling.
+- The application factory owns or accepts a database dependency. Configuration loading and OpenAPI export do not open a database. SQLite enforces one in-progress generation per session while allowing independent sessions.
+- A single frontend cache boundary reconciles server trees with streamed content. Generation controls, selection ordering, and errors are isolated by session. Invalid stream data and missing terminal events produce explicit errors.
+- Run `npm run contract:generate` after backend schema changes, then review the generated diff. `npm run contract:check` verifies that the committed API types match the current OpenAPI schema.
+- CI runs backend tests, API contract verification, frontend tests, and builds. A separate Windows check verifies launcher process ownership; run `./scripts/tests/runtime-processes.test.ps1` from the repository root to check it locally.
 
 ## Current boundaries
 

@@ -1,0 +1,43 @@
+name: Verify
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
+      - name: Install Python dependencies
+        run: uv sync --locked --python 3.12
+      - name: Test backend
+        run: uv run --no-sync pytest
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Check generated API contract
+        working-directory: frontend
+        run: npm run contract:check
+      - name: Test frontend
+        working-directory: frontend
+        run: npm test
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+  windows-processes:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Test launcher process ownership
+        shell: pwsh
+        run: ./scripts/tests/runtime-processes.test.ps1

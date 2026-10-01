@@ -13,6 +13,7 @@ param(
 $ErrorActionPreference = "Stop"
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 Add-Type -AssemblyName System.Net.Http
+. "$PSScriptRoot\runtime-processes.ps1"
 
 if ($BackendPort -eq $FrontendPort) {
   throw "BackendPort and FrontendPort must be different."
@@ -47,7 +48,7 @@ function Test-TcpPort($Port) {
   }
 }
 
-function Test-Http($Url, [switch]$AllowUntrustedCertificate) {
+function Test-Http($Url, [switch]$AllowUntrustedCertificate, [string]$Service) {
   $handler = [System.Net.Http.HttpClientHandler]::new()
   $client = $null
   $response = $null
@@ -61,7 +62,16 @@ function Test-Http($Url, [switch]$AllowUntrustedCertificate) {
     $client = [System.Net.Http.HttpClient]::new($handler)
     $client.Timeout = [TimeSpan]::FromSeconds(2)
     $response = $client.GetAsync($Url).GetAwaiter().GetResult()
-    return [int]$response.StatusCode -ge 200 -and [int]$response.StatusCode -lt 500
+    if (-not $response.IsSuccessStatusCode) { return $false }
+    $body = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+    if ($Service -eq "backend") {
+      $health = $body | ConvertFrom-Json -ErrorAction Stop
+      return $health.status -eq "ok" -and $health.application -eq "YggdrasilTavern"
+    }
+    if ($Service -eq "frontend") {
+      return $body -match '<title>\s*YggdrasilTavern\s*</title>'
+    }
+    throw "An explicit service identity is required for the readiness check."
   } catch {
     return $false
   } finally {
@@ -127,7 +137,7 @@ function Read-LanCredentials {
   }
 }
 
-function Start-BackgroundCommand($Name, $WorkingDirectory, $Command, $LogPath, [hashtable]$EnvironmentVariables = @{}) {
+function Start-BackgroundCommand($Name, $Port, $WorkingDirectory, $Command, $LogPath, [hashtable]$EnvironmentVariables = @{}) {
   $psi = [System.Diagnostics.ProcessStartInfo]::new()
   $psi.FileName = "powershell.exe"
   $psi.Arguments = "-NoProfile -ExecutionPolicy Bypass -Command `"$Command`""
@@ -145,18 +155,25 @@ function Start-BackgroundCommand($Name, $WorkingDirectory, $Command, $LogPath, [
     if (-not $process.Start()) {
       throw "Failed to start $Name."
     }
+    try {
+      Register-ServiceProcess $RepoRoot $Name $Port $process
+    } catch {
+      $process.Kill()
+      throw "Failed to record the $Name process; launcher was stopped: $($_.Exception.Message)"
+    }
     Write-Host "Started $Name (pid $($process.Id)); log: $LogPath"
   } finally {
     foreach ($key in @($EnvironmentVariables.Keys)) {
       $psi.EnvironmentVariables.Remove([string]$key)
     }
     $EnvironmentVariables.Clear()
+    if ($null -ne $process) { $process.Dispose() }
   }
 }
 
 function Wait-ForHttp($Url, $Name, [switch]$AllowUntrustedCertificate) {
   for ($i = 0; $i -lt 30; $i++) {
-    if (Test-Http $Url -AllowUntrustedCertificate:$AllowUntrustedCertificate) {
+    if (Test-Http $Url -Service $Name -AllowUntrustedCertificate:$AllowUntrustedCertificate) {
       Write-Host "$Name is ready: $Url"
       return
     }
@@ -224,12 +241,14 @@ if (-not (Test-Path "$RepoRoot\backend\.env")) {
 if (-not $SkipInstall) {
   Write-Host "Syncing Python environment with uv..."
   uv sync --python 3.12
+  if ($LASTEXITCODE -ne 0) { throw "Python environment synchronization failed." }
 
   if (-not (Test-Path "$RepoRoot\frontend\node_modules")) {
     Write-Host "Installing frontend dependencies..."
     Push-Location "$RepoRoot\frontend"
     try {
-      npm install
+      npm ci
+      if ($LASTEXITCODE -ne 0) { throw "Frontend dependency installation failed." }
     } finally {
       Pop-Location
     }
@@ -254,11 +273,13 @@ $uvEnvironmentScript = ConvertTo-PowerShellLiteral "$PSScriptRoot\uv-env.ps1"
 $BackendCommand = ". $uvEnvironmentScript; uv run uvicorn app.main:app --app-dir backend --host $BackendHost --port $BackendPort *> backend\server.log"
 $CanReuseExistingServers = -not $Lan -and -not $UseHttps
 
-if ($CanReuseExistingServers -and (Test-Http "$BackendUrl/api/health")) {
+if ($CanReuseExistingServers -and (Test-Http "$BackendUrl/api/health" -Service "backend")) {
   Write-Host "Backend already running: $BackendUrl"
 } else {
+  if (Test-TcpPort $BackendPort) { throw "Backend port $BackendPort is occupied by a service that did not pass the YggdrasilTavern health check." }
   Start-BackgroundCommand `
     -Name "backend" `
+    -Port $BackendPort `
     -WorkingDirectory $RepoRoot `
     -Command $BackendCommand `
     -LogPath "$RepoRoot\backend\server.log" `
@@ -273,11 +294,13 @@ if ($UseHttps) {
   $FrontendEnvironment["YGGDRASIL_HTTPS_KEY_FILE"] = $HttpsPrivateKey
 }
 
-if ($CanReuseExistingServers -and (Test-Http $FrontendUrl)) {
+if ($CanReuseExistingServers -and (Test-Http $FrontendUrl -Service "frontend")) {
   Write-Host "Frontend already running: $FrontendUrl"
 } else {
+  if (Test-TcpPort $FrontendPort) { throw "Frontend port $FrontendPort is occupied by a service that did not pass the YggdrasilTavern health check." }
   Start-BackgroundCommand `
     -Name "frontend" `
+    -Port $FrontendPort `
     -WorkingDirectory "$RepoRoot\frontend" `
     -Command "npm run dev -- --host $FrontendHost --port $FrontendPort *> dev.log" `
     -LogPath "$RepoRoot\frontend\dev.log" `

@@ -189,7 +189,7 @@ cd YggdrasilTavern
 .\scripts\stop.ps1
 ```
 
-停止脚本会终止正在监听所配置前后端端口的进程。如果手动更改了端口，停止时也需要传入相同端口参数。
+启动脚本在 `.yggdrasil-runtime/` 中记录本次启动的进程编号、启动时间和可执行文件路径。停止脚本核对记录后终止对应进程及其子进程；没有记录或记录已过期时会明确报告并保留其他进程。如果更改了端口，停止时也需要传入相同端口参数。手动启动和旧启动器创建的服务使用其原有进程管理方式。
 
 ### 局域网访问与 HTTPS
 
@@ -236,7 +236,7 @@ uv run uvicorn app.main:app --app-dir backend --reload --host 127.0.0.1 --port 8
 
 ```powershell
 cd frontend
-npm install
+npm ci
 npm run dev -- --host 127.0.0.1 --port 5173
 ```
 
@@ -288,6 +288,7 @@ uv run alembic -c backend\alembic.ini upgrade head
 ```powershell
 cd frontend
 npm test
+npm run contract:check
 npm run build
 ```
 
@@ -295,17 +296,34 @@ npm run build
 
 ```text
 backend/
-  alembic/                 数据库迁移
-  app/api/                 FastAPI 路由
-  app/services/            树、Prompt、Provider、导入和 token 服务
-  tests/                   后端与迁移测试
+  alembic/                        数据库迁移
+  app/api/                        按资源拆分的 HTTP 接口与流式事件编码
+  app/services/generation.py      生成流程、部分内容保存和终态处理
+  app/services/prompt_builder.py  提示词数据读取与独立编译函数
+  app/services/provider_protocols/ 各模型协议转换与共用网络传输
+  app/database.py                 每个应用独立的数据库连接与请求会话
+  app/database_schema.py          数据库迁移、旧库接管和中断恢复
+  tests/                          后端、生成并发和迁移测试
 frontend/
-  src/components/          聊天工作台、Inspector、资源编辑器和渲染组件
-  src/lib/                 API client、树、Prompt 和 Regex helpers
-  src/state/               每个 session 的 UI 状态
-scripts/                   Windows 启停与 uv 环境脚本
-treechat.db                运行时创建的本地数据库；Git 已忽略
+  src/features/chat/              每个会话的生成、取消、分支选择和树缓存协调
+  src/components/                 工作台与按功能拆分的资源、配置编辑组件
+  src/lib/api/                    请求客户端、流解析和接口类型
+  scripts/api-contract.mjs        根据后端 OpenAPI 生成和检查前端类型
+  src/state/                      每个会话的草稿和消息编辑状态
+scripts/                          Windows 启停、进程身份记录和环境脚本
+.github/workflows/verify.yml       持续集成检查
+treechat.db                       运行时创建的本地数据库；Git 已忽略
 ```
+
+## 模块边界与验证
+
+- HTTP 接口接收请求并编码响应；生成服务协调聊天树、提示词编译、模型调用和保存操作。业务错误由应用入口统一转换为 HTTP 响应。
+- 提示词编译器使用读取阶段生成的数据副本，可以在数据库连接关闭后运行。预览和生成共用相同编译及长度限制流程。
+- 模型接入按 Anthropic Messages、OpenAI Chat Completions 和 OpenAI Responses 分别转换请求与事件，共用 HTTP 传输和错误处理。
+- 数据库通过应用工厂传入，读取配置和导出接口说明不会打开数据库。SQLite 在数据库层限制同一会话只能有一条进行中的生成；不同会话可以分别生成。
+- 前端树缓存统一处理服务端快照与流式内容，并按会话保存生成控制、分支请求顺序和错误。流式解析会报告无效数据及缺失终态。
+- `npm run contract:generate` 依据后端 OpenAPI 更新前端接口类型；`npm run contract:check` 检查生成文件是否与当前接口一致。后端字段改变后需要重新生成并审查差异。
+- 持续集成运行后端测试、接口类型检查、前端测试和构建；独立 Windows 检查验证启动器只停止自己记录的进程。也可以在仓库根目录执行 `./scripts/tests/runtime-processes.test.ps1`。
 
 ## 当前边界
 

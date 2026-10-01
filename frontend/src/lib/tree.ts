@@ -26,25 +26,37 @@ function freshestStreamText(remote: string, local: string, field: string, messag
   return local.length >= remote.length ? local : remote;
 }
 
+function reconcileMessage(local: Message | undefined, remote: Message): Message {
+  if (!local) return remote;
+  if (local.status !== "streaming" && remote.status === "streaming") return local;
+  if (local.status === "streaming" && remote.status !== "streaming") return remote;
+  if (local.status !== "streaming" && remote.status !== "streaming") {
+    return local.updated_at > remote.updated_at ? local : remote;
+  }
+  return {
+    ...remote,
+    content: freshestStreamText(remote.content, local.content, "content", remote.id),
+    thinking_content: freshestStreamText(remote.thinking_content, local.thinking_content, "thinking_content", remote.id),
+    token_count: Math.max(remote.token_count, local.token_count),
+    thinking_token_count: Math.max(remote.thinking_token_count, local.thinking_token_count),
+    cached_tokens: Math.max(remote.cached_tokens, local.cached_tokens),
+    provider_metadata: { ...remote.provider_metadata, ...local.provider_metadata },
+    usage: { ...remote.usage, ...local.usage },
+    generation_run: remote.generation_run || local.generation_run
+  };
+}
+
 export function mergeStreamingMessages(current: SessionTree | undefined, incoming: SessionTree): SessionTree {
   if (!current || current.session.id !== incoming.session.id) return incoming;
   const currentById = new Map(current.messages.map((message) => [message.id, message]));
+  const incomingIds = new Set(incoming.messages.map((message) => message.id));
   return {
     ...incoming,
-    messages: incoming.messages.map((remote) => {
-      const local = currentById.get(remote.id);
-      if (!local || remote.status !== "streaming" || local.status !== "streaming") return remote;
-      return {
-        ...remote,
-        content: freshestStreamText(remote.content, local.content, "content", remote.id),
-        thinking_content: freshestStreamText(remote.thinking_content, local.thinking_content, "thinking_content", remote.id),
-        token_count: Math.max(remote.token_count, local.token_count),
-        thinking_token_count: Math.max(remote.thinking_token_count, local.thinking_token_count),
-        cached_tokens: Math.max(remote.cached_tokens, local.cached_tokens),
-        provider_metadata: { ...remote.provider_metadata, ...local.provider_metadata },
-        usage: { ...remote.usage, ...local.usage },
-        generation_run: remote.generation_run || local.generation_run
-      };
-    })
+    // There is no message deletion API. An absent local message means this
+    // server snapshot started before the local message was created.
+    messages: [
+      ...incoming.messages.map((remote) => reconcileMessage(currentById.get(remote.id), remote)),
+      ...current.messages.filter((local) => !incomingIds.has(local.id))
+    ]
   };
 }

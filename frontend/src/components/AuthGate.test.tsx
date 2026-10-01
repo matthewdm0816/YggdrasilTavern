@@ -36,6 +36,17 @@ describe("authenticated API transport", () => {
       const url = String(input);
       calls.push({ url, options });
       if (url.includes("/export")) return jsonResponse({ detail: "download denied" }, 401);
+      if (url.includes("/generate/stream")) {
+        const message = {
+          id: "message-id", session_id: "session-id", parent_id: null, selected_child_id: null,
+          role: "assistant", speaker: "Assistant", content: "", thinking_content: "",
+          status: "complete", token_count: 0, thinking_token_count: 0, cached_tokens: 0,
+          sort_order: 0, provider_metadata: {}, usage: {}, created_at: "", updated_at: ""
+        };
+        return new Response("event: message_completed\ndata: " + JSON.stringify(message) + "\n\n", {
+          headers: { "Content-Type": "text/event-stream" }
+        });
+      }
       return jsonResponse({ enabled: false, authenticated: true, username: null });
     });
     vi.stubGlobal("fetch", fetchMock);

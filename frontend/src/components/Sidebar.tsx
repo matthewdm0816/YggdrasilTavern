@@ -1,8 +1,8 @@
-import { ChangeEvent, useEffect, useState } from "react";
-import { Archive, ArchiveRestore, BookOpen, ChevronDown, ChevronRight, CloudDownload, Eye, EyeOff, Folder, FolderPlus, Link, MessageSquarePlus, Pencil, Pin, PinOff, Plus, RefreshCcw, Search, Server, Star, Trash2, Upload, UserRound, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Archive, ArchiveRestore, ChevronDown, ChevronRight, CloudDownload, Eye, EyeOff, Folder, FolderPlus, MessageSquarePlus, Pencil, Pin, PinOff, Plus, RefreshCcw, Search, Server, Star, Trash2, X } from "lucide-react";
 import { api, APIProfile, CharacterSummary, ChatSession, ProviderType, RemoteModelInfo, SessionFolder, WorldBook } from "../lib/api";
 import { CollapsibleSection } from "./CollapsibleSection";
-import { CharacterManager, WorldbookManager } from "./ResourceEditors";
+import { SidebarResources } from "./SidebarResources";
 
 type Props = {
   profiles: APIProfile[];
@@ -16,7 +16,7 @@ type Props = {
   onSelectSession: (id: string) => void;
   creatingSession: boolean;
   createSessionError: string | null;
-  onCreateSession: (payload: Partial<ChatSession>) => Promise<ChatSession>;
+  onCreateSession: (payload: Parameters<typeof api.createSession>[0]) => Promise<ChatSession>;
   onRefresh: () => Promise<void>;
   onToggleArchived: () => void;
   onCloseMobile?: () => void;
@@ -113,7 +113,6 @@ export function Sidebar({
   const [selectedWorldbooks, setSelectedWorldbooks] = useState<string[]>([]);
   const [selectedFolderId, setSelectedFolderId] = useState("");
   const [sessionEditorOpen, setSessionEditorOpen] = useState(false);
-  const [chubPath, setChubPath] = useState("");
   const [busy, setBusy] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [folders, setFolders] = useState<SessionFolder[]>([]);
@@ -167,7 +166,7 @@ export function Sidebar({
     try {
       await api.deleteFolder(folderId);
       await loadFolders();
-      onRefresh();
+      await onRefresh();
     } catch (exc) {
       onError?.(exc instanceof Error ? exc.message : String(exc));
     } finally {
@@ -187,7 +186,7 @@ export function Sidebar({
   async function togglePin(session: ChatSession) {
     try {
       await api.updateSession(session.id, { pinned: !session.pinned });
-      onRefresh();
+      await onRefresh();
     } catch (exc) {
       onError?.(exc instanceof Error ? exc.message : String(exc));
     }
@@ -196,7 +195,7 @@ export function Sidebar({
   async function toggleArchive(session: ChatSession) {
     try {
       await api.updateSession(session.id, { archived: !session.archived });
-      onRefresh();
+      await onRefresh();
     } catch (exc) {
       onError?.(exc instanceof Error ? exc.message : String(exc));
     }
@@ -205,7 +204,7 @@ export function Sidebar({
   async function moveSessionToFolder(sessionId: string, folderId: string | null) {
     try {
       await api.updateSession(sessionId, { folder_id: folderId });
-      onRefresh();
+      await onRefresh();
     } catch (exc) {
       onError?.(exc instanceof Error ? exc.message : String(exc));
     }
@@ -224,25 +223,6 @@ export function Sidebar({
 
   function sessionsInFolder(folderId: string) {
     return filteredSessions.filter((s) => s.folder_id === folderId);
-  }
-
-  async function importFile(event: ChangeEvent<HTMLInputElement>, kind: "character" | "worldbook") {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    onError?.("");
-    setBusy(true);
-    try {
-      if (kind === "character") await api.importCharacter(file);
-      else await api.importWorldbook(file);
-      onRefresh();
-    } catch (exc) {
-      const label = kind === "character" ? "角色卡" : "世界书";
-      const detail = exc instanceof Error ? exc.message : String(exc);
-      onError?.(`导入${label}「${file.name}」失败：${detail}`);
-    } finally {
-      setBusy(false);
-      event.target.value = "";
-    }
   }
 
   function resetProfileEditor() {
@@ -329,50 +309,7 @@ export function Sidebar({
       if (activeProfileId === item.id) {
         onActiveProfileChange(fallbackProfileIdAfterDelete(profiles, item.id));
       }
-      onRefresh();
-    } catch (exc) {
-      onError?.(exc instanceof Error ? exc.message : String(exc));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function createBlankCharacter() {
-    setBusy(true);
-    try {
-      await api.createCharacter({
-        name: "Assistant",
-        first_mes: "*对方看向你，等待你的第一句话。*",
-        description: "一个可自定义的 roleplay 角色。"
-      });
-      onRefresh();
-    } catch (exc) {
-      onError?.(exc instanceof Error ? exc.message : String(exc));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function createBlankWorldbook() {
-    setBusy(true);
-    try {
-      await api.createWorldbook({ name: "新世界书", description: "关键词触发的世界设定。", entries: [] });
-      onRefresh();
-    } catch (exc) {
-      onError?.(exc instanceof Error ? exc.message : String(exc));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function importFromChub(kind: "character" | "worldbook") {
-    if (!chubPath.trim()) return;
-    setBusy(true);
-    try {
-      if (kind === "character") await api.importChubCharacter(chubPath.trim());
-      else await api.importChubWorldbook(chubPath.trim());
-      setChubPath("");
-      onRefresh();
+      await onRefresh();
     } catch (exc) {
       onError?.(exc instanceof Error ? exc.message : String(exc));
     } finally {
@@ -719,67 +656,7 @@ export function Sidebar({
         )}
       </CollapsibleSection>
 
-      <CollapsibleSection
-        contentId="sidebar-chub-import-content"
-        title="Chub.ai 导入"
-        icon={<Link size={16} />}
-        storageKey="yggdrasil-tavern.sidebar.chub-import.expanded"
-      >
-        <div className="chub-import">
-          <label className="form-field"><span>Chub 路径</span><input
-              value={chubPath}
-              onChange={(event) => setChubPath(event.target.value)}
-            /><small>填写 characters/user/slug 或 lorebooks/user/slug。</small></label>
-          <div className="inline-actions">
-            <button className="secondary-button" disabled={busy || !chubPath.trim()} onClick={() => importFromChub("character")}>
-              导入角色
-            </button>
-            <button className="secondary-button" disabled={busy || !chubPath.trim()} onClick={() => importFromChub("worldbook")}>
-              导入世界书
-            </button>
-          </div>
-        </div>
-      </CollapsibleSection>
-
-      <CollapsibleSection
-        contentId="sidebar-characters-content"
-        title="角色卡"
-        icon={<UserRound size={16} />}
-        storageKey="yggdrasil-tavern.sidebar.characters.expanded"
-      >
-        <div>
-          <button className="secondary-button" onClick={createBlankCharacter}>
-            <Plus size={15} />
-            空角色
-          </button>
-          <label className="file-button">
-            <Upload size={15} />
-            导入 JSON/PNG
-            <input type="file" disabled={busy} accept=".json,.png,application/json,image/png" onChange={(event) => importFile(event, "character")} />
-          </label>
-          <CharacterManager characters={characters} onChanged={onRefresh} onError={onError} />
-        </div>
-      </CollapsibleSection>
-
-      <CollapsibleSection
-        contentId="sidebar-worldbooks-content"
-        title="世界书"
-        icon={<BookOpen size={16} />}
-        storageKey="yggdrasil-tavern.sidebar.worldbooks.expanded"
-      >
-        <div>
-          <button className="secondary-button" onClick={createBlankWorldbook}>
-            <Plus size={15} />
-            空世界书
-          </button>
-          <label className="file-button">
-            <Upload size={15} />
-            导入 JSON
-            <input type="file" disabled={busy} accept=".json,application/json" onChange={(event) => importFile(event, "worldbook")} />
-          </label>
-          <WorldbookManager worldbooks={worldbooks} onChanged={onRefresh} onError={onError} />
-        </div>
-      </CollapsibleSection>
+      <SidebarResources characters={characters} worldbooks={worldbooks} onChanged={onRefresh} onError={onError} />
     </aside>
   );
 }

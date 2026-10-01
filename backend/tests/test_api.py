@@ -40,6 +40,7 @@ def test_api_crud_tree_and_mock_stream(monkeypatch):
     app = create_app(init_on_startup=False)
     app.dependency_overrides[get_db] = override_db
     client = TestClient(app)
+    assert client.get("/api/health").json() == {"status": "ok", "application": "YggdrasilTavern"}
 
     leaked_secret = "sk-should-never-appear-in-validation"
     invalid = client.post(

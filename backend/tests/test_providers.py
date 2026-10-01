@@ -1,6 +1,9 @@
+import json
 import httpx
 import pytest
 
+from app import schemas
+from app.services import providers
 from app.models import APIProfile
 from app.services.providers import (
     _api_key,
@@ -232,3 +235,88 @@ async def test_refresh_models_reports_unsupported_remote_endpoint(monkeypatch):
     )
     with pytest.raises(Exception, match="不支持远端模型列表"):
         await refresh_models(profile)
+
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("provider_type", "expected_path", "expected_limit_key", "expected_text"),
+    [
+        ("anthropic_messages", "/v1/messages", "max_tokens", "anthropic"),
+        ("openai_chat_completions", "/v1/chat/completions", "max_completion_tokens", "chat"),
+        ("openai_responses", "/v1/responses", "max_output_tokens", "responses"),
+    ],
+)
+async def test_protocol_dispatch_preserves_request_shape_and_stream_events(
+    monkeypatch, provider_type, expected_path, expected_limit_key, expected_text
+):
+    profile = APIProfile(
+        name="Protocol test",
+        provider_type=provider_type,
+        base_url="https://example.test",
+        model="model-x",
+        api_key="test-key",
+        default_params={},
+        input_token_limit=100,
+        output_token_limit=17,
+        model_catalog=[],
+    )
+    context = schemas.ContextPreviewOut(
+        system="Leading system",
+        messages=[schemas.PromptMessage(role="user", content="Question")],
+        activated_lore=[],
+        compiled_blocks=[
+            schemas.CompiledPromptBlock(
+                slot_id="main", slot_kind="main", slot_name="Main",
+                source="test", role="system", content="Leading system", token_count=2,
+            ),
+            schemas.CompiledPromptBlock(
+                slot_id="history", slot_kind="history", slot_name="History",
+                source="test", role="user", content="Question", token_count=2,
+            ),
+            schemas.CompiledPromptBlock(
+                slot_id="post_history", slot_kind="post_history", slot_name="Post",
+                source="test", role="system", content="Trailing instruction", token_count=2,
+            ),
+        ],
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == expected_path
+        body = json.loads(request.content)
+        assert body["model"] == "model-x"
+        assert body[expected_limit_key] == 17
+        assert body["stream"] is True
+        if provider_type == "anthropic_messages":
+            assert request.headers["x-api-key"] == "test-key"
+            assert body["system"] == "Leading system"
+            assert body["messages"] == [
+                {"role": "user", "content": "Question\n\n[System instruction]\nTrailing instruction"}
+            ]
+            sse = (
+                'data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"anthropic"}}\n\n'
+                'data: {"type":"message_stop"}\n\n'
+            )
+        elif provider_type == "openai_chat_completions":
+            assert request.headers["authorization"] == "Bearer test-key"
+            assert [item["role"] for item in body["messages"]] == ["system", "user", "system"]
+            assert body["stream_options"] == {"include_usage": True}
+            sse = 'data: {"choices":[{"delta":{"content":"chat"},"finish_reason":"stop"}]}\n\n'
+        else:
+            assert request.headers["authorization"] == "Bearer test-key"
+            assert body["instructions"] == "Leading system"
+            assert [item["role"] for item in body["input"]] == ["user", "system"]
+            sse = (
+                'data: {"type":"response.output_text.delta","delta":"responses"}\n\n'
+                'data: {"type":"response.completed"}\n\n'
+            )
+        return httpx.Response(200, text=sse, headers={"content-type": "text/event-stream"})
+
+    transport = httpx.MockTransport(handler)
+    real_async_client = httpx.AsyncClient
+    monkeypatch.setattr(
+        "app.services.providers.httpx.AsyncClient",
+        lambda **kwargs: real_async_client(transport=transport, **kwargs),
+    )
+    events = [event async for event in providers.stream_completion(profile, context)]
+    assert [(event.kind, event.delta) for event in events if event.kind == "text"] == [("text", expected_text)]

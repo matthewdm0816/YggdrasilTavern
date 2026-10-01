@@ -8,20 +8,36 @@ from fastapi.responses import JSONResponse
 from .api.router import router
 from .auth import AuthenticationMiddleware, router as auth_router
 from .config import Settings, get_settings
-from .database import init_db
+from .database import Database
+from .services.errors import ApplicationError
 
 
-def create_app(init_on_startup: bool = True, settings: Settings | None = None) -> FastAPI:
+def create_app(
+    init_on_startup: bool = True,
+    settings: Settings | None = None,
+    database: Database | None = None,
+) -> FastAPI:
     settings = settings or get_settings()
+    owns_database = database is None
+    database = database or Database(settings.database_url)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        if init_on_startup:
-            init_db()
-        yield
+        try:
+            if init_on_startup:
+                database.initialize()
+            yield
+        finally:
+            if owns_database:
+                database.dispose()
 
     app = FastAPI(title="YggdrasilTavern API", version="0.1.0", lifespan=lifespan)
     app.state.settings = settings
+    app.state.database = database
+
+    @app.exception_handler(ApplicationError)
+    async def application_error(_request: Request, exc: ApplicationError) -> JSONResponse:
+        return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
 
     @app.exception_handler(RequestValidationError)
     async def validation_error_without_submitted_values(

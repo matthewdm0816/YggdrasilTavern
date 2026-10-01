@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from copy import deepcopy
 from dataclasses import dataclass
 from typing import Iterable, List, Optional, Sequence
 
@@ -14,7 +15,7 @@ from .prompt_config import (
     unique_worldbook_ids,
 )
 from .token_counter import count_text_tokens
-from .token_limits import ResolvedTokenLimits
+from .token_limits import ResolvedTokenLimits, resolve_profile_token_limits
 from .tree import active_path
 
 
@@ -41,7 +42,7 @@ class LoreCandidate:
     match_whole_words: bool = False
 
 
-def expand_macros(text: str, character: Optional[models.Character], user_name: str, original: str = "") -> str:
+def expand_macros(text: str, character: Optional[models.Character | PromptCharacter], user_name: str, original: str = "") -> str:
     if not text:
         return ""
     char_name = character.name if character else "Assistant"
@@ -89,7 +90,7 @@ def _candidate_from_entry(entry: models.WorldBookEntry) -> LoreCandidate:
     )
 
 
-def _candidates_from_character_book(character: Optional[models.Character]) -> List[LoreCandidate]:
+def _candidates_from_character_book(character: Optional[models.Character | PromptCharacter]) -> List[LoreCandidate]:
     if not character or not character.character_book:
         return []
     raw_entries = character.character_book.get("entries", [])
@@ -183,7 +184,7 @@ def _matches_any(keys: Iterable[str], text: str, candidate: LoreCandidate) -> bo
 
 def activate_lore(
     candidates: Iterable[LoreCandidate],
-    messages: List[models.Message],
+    messages: List[models.Message | PromptMessage],
     *,
     scan_depth: int,
     budget: int,
@@ -215,28 +216,135 @@ def activate_lore(
     return activated
 
 
-def build_context(
+@dataclass(frozen=True)
+class PromptMessage:
+    id: str
+    role: str
+    speaker: str
+    content: str
+
+
+@dataclass(frozen=True)
+class PromptCharacter:
+    id: str
+    name: str
+    description: str
+    personality: str
+    scenario: str
+    first_mes: str
+    mes_example: str
+    system_prompt: str
+    post_history_instructions: str
+    alternate_greetings: tuple[str, ...]
+    character_book: Optional[dict]
+
+
+@dataclass(frozen=True)
+class LoadedWorldBook:
+    id: str
+    scan_depth: int
+    token_budget: int
+    candidates: tuple[LoreCandidate, ...]
+
+
+@dataclass(frozen=True)
+class PromptInputs:
+    character: Optional[PromptCharacter]
+    preset: dict
+    path: tuple[PromptMessage, ...]
+    worldbook_ids: tuple[str, ...]
+    worldbooks: tuple[LoadedWorldBook, ...]
+    worldbook_ids_error: Optional[str]
+    slots: tuple[schemas.PromptSlot, ...]
+    prompt_config_revision: int
+    prompt_config_error: Optional[str]
+
+
+def load_context_inputs(
     db: Session,
     session: models.ChatSession,
     path_override: Optional[List[models.Message]] = None,
-) -> schemas.ContextPreviewOut:
-    character = session.character
-    preset = session.preset or {}
-    user_name = str(preset.get("user_name") or "User")
-    path = path_override if path_override is not None else active_path(db, session)
-    diagnostics: List[schemas.PromptDiagnostic] = []
+) -> PromptInputs:
+    """Read every database-backed input once before prompt compilation."""
 
+    source_character = session.character
+    character = (
+        PromptCharacter(
+            id=source_character.id,
+            name=source_character.name,
+            description=source_character.description,
+            personality=source_character.personality,
+            scenario=source_character.scenario,
+            first_mes=source_character.first_mes,
+            mes_example=source_character.mes_example,
+            system_prompt=source_character.system_prompt,
+            post_history_instructions=source_character.post_history_instructions,
+            alternate_greetings=tuple(source_character.alternate_greetings or []),
+            character_book=deepcopy(source_character.character_book),
+        )
+        if source_character is not None
+        else None
+    )
+    preset = deepcopy(session.preset or {})
+    source_path = path_override if path_override is not None else active_path(db, session)
+    path = tuple(
+        PromptMessage(id=message.id, role=message.role, speaker=message.speaker, content=message.content)
+        for message in source_path
+    )
+    worldbook_ids_error: Optional[str] = None
     try:
         worldbook_ids = unique_worldbook_ids(session.worldbook_id, preset)
     except ValueError as exc:
         worldbook_ids = [session.worldbook_id] if session.worldbook_id else []
-        diagnostics.append(schemas.PromptDiagnostic(level="error", code="invalid_worldbook_ids", message=str(exc)))
+        worldbook_ids_error = str(exc)
+    worldbooks: list[LoadedWorldBook] = []
+    for worldbook_id in worldbook_ids:
+        worldbook = db.get(models.WorldBook, worldbook_id)
+        if worldbook is None:
+            continue
+        worldbooks.append(
+            LoadedWorldBook(
+                id=worldbook.id,
+                scan_depth=worldbook.scan_depth,
+                token_budget=worldbook.token_budget,
+                candidates=tuple(_candidate_from_entry(entry) for entry in worldbook.entries),
+            )
+        )
+    slots, prompt_config_revision, _, prompt_config_error = global_prompt_state(db)
+    return PromptInputs(
+        character=character,
+        preset=preset,
+        path=path,
+        worldbook_ids=tuple(worldbook_ids),
+        worldbooks=tuple(worldbooks),
+        worldbook_ids_error=worldbook_ids_error,
+        slots=tuple(slot.model_copy(deep=True) for slot in slots),
+        prompt_config_revision=prompt_config_revision,
+        prompt_config_error=prompt_config_error,
+    )
+
+
+def compile_context(inputs: PromptInputs) -> schemas.ContextPreviewOut:
+    """Compile a prompt from captured inputs without querying or mutating storage."""
+
+    character = inputs.character
+    preset = inputs.preset
+    user_name = str(preset.get("user_name") or "User")
+    path = list(inputs.path)
+    diagnostics: List[schemas.PromptDiagnostic] = []
+    if inputs.worldbook_ids_error:
+        diagnostics.append(
+            schemas.PromptDiagnostic(
+                level="error", code="invalid_worldbook_ids", message=inputs.worldbook_ids_error
+            )
+        )
 
     activated_lore: List[LoreCandidate] = []
     loaded_worldbook_ids: List[str] = []
-    for worldbook_id in worldbook_ids:
-        worldbook = db.get(models.WorldBook, worldbook_id)
-        if not worldbook:
+    worldbooks_by_id = {worldbook.id: worldbook for worldbook in inputs.worldbooks}
+    for worldbook_id in inputs.worldbook_ids:
+        worldbook = worldbooks_by_id.get(worldbook_id)
+        if worldbook is None:
             diagnostics.append(
                 schemas.PromptDiagnostic(
                     level="error",
@@ -246,11 +354,14 @@ def build_context(
             )
             continue
         loaded_worldbook_ids.append(worldbook.id)
-        candidates = [_candidate_from_entry(entry) for entry in worldbook.entries]
         activated_lore.extend(
-            activate_lore(candidates, path, scan_depth=worldbook.scan_depth, budget=worldbook.token_budget)
+            activate_lore(
+                worldbook.candidates,
+                path,
+                scan_depth=worldbook.scan_depth,
+                budget=worldbook.token_budget,
+            )
         )
-
     # An embedded character book is an independent source with its own conservative budget.
     activated_lore.extend(
         activate_lore(_candidates_from_character_book(character), path, scan_depth=8, budget=4000)
@@ -261,13 +372,14 @@ def build_context(
     lore_after = [item.content for item in activated_lore if item.position not in {"before_char", "before_char_defs", "0"}]
     original_system = str(preset.get("system_prompt") or DEFAULT_SYSTEM)
 
-    slots, prompt_config_revision, _, prompt_config_error = global_prompt_state(db)
-    if prompt_config_error:
+    slots = inputs.slots
+    prompt_config_revision = inputs.prompt_config_revision
+    if inputs.prompt_config_error:
         diagnostics.append(
             schemas.PromptDiagnostic(
                 level="error",
                 code="invalid_global_prompt_config",
-                message=prompt_config_error,
+                message=inputs.prompt_config_error,
             )
         )
     try:
@@ -380,6 +492,30 @@ def build_context(
         estimated_input_tokens=estimated_input_tokens,
     )
 
+def build_context(
+    db: Session,
+    session: models.ChatSession,
+    path_override: Optional[List[models.Message]] = None,
+) -> schemas.ContextPreviewOut:
+    """Compatibility entry point used by the API and existing callers."""
+
+    return compile_context(load_context_inputs(db, session, path_override))
+
+
+def build_limited_context(
+    db: Session,
+    session: models.ChatSession,
+    profile: models.APIProfile,
+    *,
+    path_override: Optional[List[models.Message]] = None,
+) -> schemas.ContextPreviewOut:
+    limits = resolve_profile_token_limits(profile)
+    return apply_context_token_limit(
+        build_context(db, session, path_override=path_override),
+        model=profile.model,
+        limits=limits,
+    )
+
 
 def apply_context_token_limit(
     context: schemas.ContextPreviewOut,
@@ -459,7 +595,7 @@ def apply_context_token_limit(
     )
 
 
-def _world_info_text(contents: Sequence[str], character: Optional[models.Character], user_name: str) -> str:
+def _world_info_text(contents: Sequence[str], character: Optional[models.Character | PromptCharacter], user_name: str) -> str:
     if not contents:
         return ""
     return "[World Info]\n" + "\n\n".join(expand_macros(item, character, user_name) for item in contents)

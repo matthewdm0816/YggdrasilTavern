@@ -1,14 +1,41 @@
+"""Provider facade: profile configuration, discovery, and adapter dispatch.
+
+Public imports remain here for API callers and existing integrations.
+"""
+
 from __future__ import annotations
 
-import json
 import os
-from dataclasses import dataclass, field
 from typing import Any, AsyncIterator, Dict, List, Optional
 
 import httpx
-from fastapi import HTTPException
 
 from .. import models, schemas
+from .errors import ApplicationError
+from .provider_protocols import anthropic, openai_chat, openai_responses
+from .provider_protocols.anthropic import (
+    _anthropic_messages,
+    extract_anthropic_delta,
+    extract_anthropic_thinking_delta,
+    extract_anthropic_usage,
+)
+from .provider_protocols.common import _ordered_prompt_messages, _split_leading_system
+from .provider_protocols.openai_chat import (
+    _openai_messages,
+    extract_openai_chat_delta,
+    extract_openai_chat_thinking_delta,
+)
+from .provider_protocols.openai_responses import (
+    extract_openai_responses_delta,
+    extract_openai_responses_thinking_delta,
+)
+from .provider_protocols.transport import (
+    ProviderStreamEvent,
+    _safe_provider_error,
+    _stream_sse,
+    _stream_terminal_state,
+    extract_usage,
+)
 from .token_limits import apply_provider_output_limit, resolve_profile_token_limits
 
 
@@ -26,15 +53,6 @@ DEFAULT_PATHS = {
 
 THINKING_LEVEL_PARAM = "_thinking_level"
 THINKING_LEVELS = {"auto", "off", "low", "medium", "high", "xhigh", "max"}
-
-
-@dataclass
-class ProviderStreamEvent:
-    kind: str
-    delta: str = ""
-    usage: Dict[str, Any] = field(default_factory=dict)
-    raw: Dict[str, Any] = field(default_factory=dict)
-
 
 def endpoint_for(profile: models.APIProfile) -> str:
     base = (profile.base_url or DEFAULT_BASE_URLS[profile.provider_type]).rstrip("/")
@@ -64,23 +82,8 @@ def _api_key(profile: models.APIProfile) -> str:
     if not key and profile.api_key_env:
         key = (os.getenv(profile.api_key_env) or "").strip()
     if not key:
-        raise HTTPException(status_code=400, detail="此 API Profile 尚未配置 API Key")
+        raise ApplicationError(status_code=400, detail="此 API Profile 尚未配置 API Key")
     return key
-
-
-def _safe_provider_error(status_code: int, *, discovering_models: bool = False) -> str:
-    if status_code == 401:
-        return "API Key 无效或已失效，请在 API Profile 中重新填写"
-    if status_code == 403:
-        return "API Key 没有访问该服务或模型的权限"
-    if status_code == 404 and discovering_models:
-        return "该服务可能不支持远端模型列表；仍可手动填写模型名称"
-    if status_code == 404:
-        return "接口路径不存在，请检查 Base URL、API 协议和自定义请求路径"
-    if status_code == 429:
-        return "请求过于频繁或额度不足，请稍后重试并检查账户额度"
-    return f"远端服务返回 HTTP {status_code}"
-
 
 def apply_thinking_level(provider_type: str, params: Dict[str, Any]) -> Dict[str, Any]:
     """Translate the UI's provider-neutral thinking level into API parameters.
@@ -95,14 +98,14 @@ def apply_thinking_level(provider_type: str, params: Dict[str, Any]) -> Dict[str
     raw_level = translated.pop(THINKING_LEVEL_PARAM, "auto")
     level = "auto" if raw_level is None else str(raw_level).strip().lower()
     if level not in THINKING_LEVELS:
-        raise HTTPException(status_code=400, detail=f"未知的 Thinking Level：{raw_level}")
+        raise ApplicationError(status_code=400, detail=f"未知的 Thinking Level：{raw_level}")
     if level == "auto":
         return translated
 
     if provider_type == "openai_responses":
         reasoning = translated.get("reasoning")
         if reasoning is not None and not isinstance(reasoning, dict):
-            raise HTTPException(status_code=400, detail="default_params.reasoning 必须是对象")
+            raise ApplicationError(status_code=400, detail="default_params.reasoning 必须是对象")
         translated["reasoning"] = {**(reasoning or {}), "effort": "none" if level == "off" else level}
         return translated
 
@@ -115,7 +118,7 @@ def apply_thinking_level(provider_type: str, params: Dict[str, Any]) -> Dict[str
             translated["thinking"] = {"type": "disabled"}
             output_config = translated.get("output_config")
             if output_config is not None and not isinstance(output_config, dict):
-                raise HTTPException(status_code=400, detail="default_params.output_config 必须是对象")
+                raise ApplicationError(status_code=400, detail="default_params.output_config 必须是对象")
             if isinstance(output_config, dict) and "effort" in output_config:
                 output_config = dict(output_config)
                 output_config.pop("effort", None)
@@ -127,18 +130,18 @@ def apply_thinking_level(provider_type: str, params: Dict[str, Any]) -> Dict[str
 
         temperature = translated.get("temperature")
         if temperature is not None and temperature != 1:
-            raise HTTPException(
+            raise ApplicationError(
                 status_code=400,
                 detail="Anthropic 开启思考时 Temperature 必须留空或设为 1",
             )
         output_config = translated.get("output_config")
         if output_config is not None and not isinstance(output_config, dict):
-            raise HTTPException(status_code=400, detail="default_params.output_config 必须是对象")
+            raise ApplicationError(status_code=400, detail="default_params.output_config 必须是对象")
         translated["thinking"] = {"type": "adaptive"}
         translated["output_config"] = {**(output_config or {}), "effort": level}
         return translated
 
-    raise HTTPException(status_code=400, detail=f"Unsupported provider type: {provider_type}")
+    raise ApplicationError(status_code=400, detail=f"Unsupported provider type: {provider_type}")
 
 
 def _optional_positive_int(value: Any) -> Optional[int]:
@@ -214,7 +217,7 @@ async def refresh_models(profile: models.APIProfile) -> List[schemas.RemoteModel
     elif profile.provider_type in {"openai_chat_completions", "openai_responses"}:
         headers = {"Authorization": f"Bearer {key}"}
     else:
-        raise HTTPException(status_code=400, detail=f"Unsupported provider type: {profile.provider_type}")
+        raise ApplicationError(status_code=400, detail=f"Unsupported provider type: {profile.provider_type}")
 
     url = models_endpoint_for(profile)
     try:
@@ -222,23 +225,23 @@ async def refresh_models(profile: models.APIProfile) -> List[schemas.RemoteModel
             query = {"limit": 1000} if profile.provider_type == "anthropic_messages" else None
             response = await client.get(url, headers=headers, params=query)
     except httpx.HTTPError as exc:
-        raise HTTPException(status_code=502, detail=f"无法连接接口地址，请检查 Base URL：{exc}") from exc
+        raise ApplicationError(status_code=502, detail=f"无法连接接口地址，请检查 Base URL：{exc}") from exc
 
     if response.status_code >= 400:
-        raise HTTPException(
+        raise ApplicationError(
             status_code=502,
             detail=_safe_provider_error(response.status_code, discovering_models=True),
         )
     try:
         payload = response.json()
     except ValueError as exc:
-        raise HTTPException(status_code=502, detail="Remote model discovery returned invalid JSON") from exc
+        raise ApplicationError(status_code=502, detail="Remote model discovery returned invalid JSON") from exc
 
     raw_models: Any = payload.get("data") if isinstance(payload, dict) else None
     if raw_models is None and isinstance(payload, dict):
         raw_models = payload.get("models")
     if not isinstance(raw_models, list):
-        raise HTTPException(status_code=502, detail="Remote model discovery response has no model list")
+        raise ApplicationError(status_code=502, detail="Remote model discovery response has no model list")
 
     discovered: List[schemas.RemoteModelInfo] = []
     seen: set[str] = set()
@@ -249,296 +252,31 @@ async def refresh_models(profile: models.APIProfile) -> List[schemas.RemoteModel
             seen.add(normalized.id)
     return discovered
 
-
-def extract_anthropic_delta(payload: Dict[str, Any]) -> str:
-    if payload.get("type") != "content_block_delta":
-        return ""
-    delta = payload.get("delta") or {}
-    if delta.get("type") == "text_delta":
-        return str(delta.get("text") or "")
-    return ""
-
-
-def extract_anthropic_thinking_delta(payload: Dict[str, Any]) -> str:
-    if payload.get("type") != "content_block_delta":
-        return ""
-    delta = payload.get("delta") or {}
-    if delta.get("type") == "thinking_delta":
-        return str(delta.get("thinking") or "")
-    return ""
-
-
-def extract_anthropic_usage(payload: Dict[str, Any]) -> Dict[str, Any]:
-    usage = payload.get("usage")
-    if not isinstance(usage, dict):
-        message = payload.get("message")
-        usage = message.get("usage") if isinstance(message, dict) else None
-    if not isinstance(usage, dict):
-        return {}
-
-    normalized = dict(usage)
-    if payload.get("type") == "message_start":
-        # Anthropic emits provisional output usage before any content. A client
-        # cancellation may prevent the final cumulative message_delta usage,
-        # so never expose the start value as a terminal output count.
-        for key in (
-            "output_tokens",
-            "completion_tokens",
-            "reasoning_tokens",
-            "output_tokens_details",
-            "completion_tokens_details",
-        ):
-            normalized.pop(key, None)
-    return normalized
-
-
-def extract_openai_chat_delta(payload: Dict[str, Any]) -> str:
-    choices = payload.get("choices") or []
-    if not choices:
-        return ""
-    delta = choices[0].get("delta") or {}
-    return str(delta.get("content") or "")
-
-
-def extract_openai_chat_thinking_delta(payload: Dict[str, Any]) -> str:
-    choices = payload.get("choices") or []
-    if not choices:
-        return ""
-    delta = choices[0].get("delta") or {}
-    for key in ("reasoning_content", "reasoning", "thinking"):
-        value = delta.get(key)
-        if isinstance(value, str) and value:
-            return value
-    return ""
-
-
-def extract_openai_responses_delta(payload: Dict[str, Any]) -> str:
-    if payload.get("type") == "response.output_text.delta":
-        return str(payload.get("delta") or "")
-    return ""
-
-
-def extract_openai_responses_thinking_delta(payload: Dict[str, Any]) -> str:
-    event_type = str(payload.get("type") or "")
-    if "reasoning" not in event_type and "thinking" not in event_type:
-        return ""
-    for key in ("delta", "text", "summary_text"):
-        value = payload.get(key)
-        if isinstance(value, str) and value:
-            return value
-    return ""
-
-
-def extract_usage(payload: Dict[str, Any]) -> Dict[str, Any]:
-    merged: Dict[str, Any] = {}
-    usage = payload.get("usage")
-    if isinstance(usage, dict):
-        merged.update(usage)
-    response = payload.get("response")
-    if isinstance(response, dict) and isinstance(response.get("usage"), dict):
-        merged.update(response["usage"])
-    choices = payload.get("choices")
-    if isinstance(choices, list):
-        for choice in choices:
-            if not isinstance(choice, dict):
-                continue
-            choice_usage = choice.get("usage")
-            if isinstance(choice_usage, dict):
-                merged.update(choice_usage)
-            delta = choice.get("delta")
-            if isinstance(delta, dict) and isinstance(delta.get("usage"), dict):
-                merged.update(delta["usage"])
-    return merged
-
-
-def _stream_terminal_state(payload: Dict[str, Any]) -> tuple[bool, Optional[str]]:
-    event_type = str(payload.get("type") or "")
-    if event_type in {"message_stop", "response.completed", "response.done"}:
-        return True, None
-    if event_type in {"error", "response.failed", "response.incomplete"}:
-        error = payload.get("error") or payload.get("response") or payload
-        return True, f"Provider stream reported {event_type}: {error}"
-    choices = payload.get("choices")
-    if isinstance(choices, list) and any(
-        isinstance(choice, dict) and choice.get("finish_reason") is not None for choice in choices
-    ):
-        return True, None
-    return False, None
-
-
-async def _stream_sse(
-    *,
-    url: str,
-    headers: Dict[str, str],
-    payload: Dict[str, Any],
-    text_extractor,
-    thinking_extractor,
-    usage_extractor=extract_usage,
+async def stream_completion(
+    profile: models.APIProfile,
+    context: schemas.ContextPreviewOut,
 ) -> AsyncIterator[ProviderStreamEvent]:
-    timeout = httpx.Timeout(connect=30.0, read=None, write=30.0, pool=30.0)
-    saw_terminal = False
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        async with client.stream("POST", url, headers=headers, json=payload) as response:
-            if response.status_code >= 400:
-                await response.aread()
-                raise HTTPException(
-                    status_code=response.status_code,
-                    detail=_safe_provider_error(response.status_code),
-                )
-            async for line in response.aiter_lines():
-                if not line or line.startswith(":") or line.startswith("event:"):
-                    continue
-                if not line.startswith("data:"):
-                    continue
-                data = line[5:].strip()
-                if not data or data == "[DONE]":
-                    if data == "[DONE]":
-                        saw_terminal = True
-                        break
-                    continue
-                try:
-                    parsed = json.loads(data)
-                except json.JSONDecodeError as exc:
-                    raise RuntimeError(f"Provider returned invalid SSE JSON: {data[:200]}") from exc
-                terminal, terminal_error = _stream_terminal_state(parsed)
-                if terminal_error:
-                    raise RuntimeError(terminal_error)
-                saw_terminal = saw_terminal or terminal
-                thinking_delta = thinking_extractor(parsed)
-                if thinking_delta:
-                    yield ProviderStreamEvent(kind="thinking", delta=thinking_delta, raw=parsed)
-                text_delta = text_extractor(parsed)
-                if text_delta:
-                    yield ProviderStreamEvent(kind="text", delta=text_delta, raw=parsed)
-                usage = usage_extractor(parsed)
-                if usage:
-                    yield ProviderStreamEvent(kind="usage", usage=usage, raw=parsed)
-    if not saw_terminal:
-        raise RuntimeError("Provider stream ended before a completion marker")
-
-
-def _ordered_prompt_messages(context: schemas.ContextPreviewOut) -> List[Dict[str, str]]:
-    if context.compiled_blocks:
-        return [
-            {"role": block.role, "content": block.content}
-            for block in context.compiled_blocks
-            if block.content.strip()
-        ]
-    messages = [{"role": "system", "content": context.system}] if context.system else []
-    messages.extend({"role": message.role, "content": message.content} for message in context.messages)
-    return messages
-
-
-def _openai_messages(context: schemas.ContextPreviewOut) -> List[Dict[str, str]]:
-    return _ordered_prompt_messages(context)
-
-
-def _split_leading_system(context: schemas.ContextPreviewOut) -> tuple[str, List[Dict[str, str]]]:
-    leading: List[str] = []
-    remaining: List[Dict[str, str]] = []
-    in_prefix = True
-    for message in _ordered_prompt_messages(context):
-        if in_prefix and message["role"] == "system":
-            leading.append(message["content"])
-            continue
-        in_prefix = False
-        remaining.append(message)
-    return "\n\n".join(leading), remaining
-
-
-def _anthropic_messages(context: schemas.ContextPreviewOut) -> List[Dict[str, str]]:
-    _, ordered = _split_leading_system(context)
-    messages: List[Dict[str, str]] = []
-    seen_user = False
-    for raw in ordered:
-        role = raw["role"]
-        content = raw["content"]
-        if role == "system":
-            # Anthropic only permits top-level system content. Preserve a post-history
-            # system slot's order by representing it as a user instruction.
-            role = "user"
-            content = f"[System instruction]\n{content}"
-        if role not in {"user", "assistant"}:
-            continue
-        if role == "user":
-            seen_user = True
-        if role == "assistant" and not seen_user:
-            messages.append({"role": "user", "content": "The scene begins. Continue naturally."})
-            seen_user = True
-        if messages and messages[-1]["role"] == role:
-            messages[-1]["content"] += "\n\n" + content
-        else:
-            messages.append({"role": role, "content": content})
-    if not messages:
-        messages.append({"role": "user", "content": "Begin the roleplay."})
-    return messages
-
-
-async def stream_completion(profile: models.APIProfile, context: schemas.ContextPreviewOut) -> AsyncIterator[ProviderStreamEvent]:
     limits = resolve_profile_token_limits(profile)
     params = apply_thinking_level(profile.provider_type, dict(profile.default_params or {}))
     params = apply_provider_output_limit(profile.provider_type, params, limits)
     url = endpoint_for(profile)
     key = _api_key(profile)
 
-    if profile.provider_type == "anthropic_messages":
-        anthropic_version = str(params.pop("anthropic_version", "2023-06-01"))
-        anthropic_system, _ = _split_leading_system(context)
-        payload = {
-            **params,
-            "model": profile.model,
-            "system": anthropic_system,
-            "messages": _anthropic_messages(context),
-            "stream": True,
-        }
-        headers = {
-            "x-api-key": key,
-            "anthropic-version": anthropic_version,
-            "content-type": "application/json",
-        }
-        async for event in _stream_sse(
-            url=url,
-            headers=headers,
-            payload=payload,
-            text_extractor=extract_anthropic_delta,
-            thinking_extractor=extract_anthropic_thinking_delta,
-            usage_extractor=extract_anthropic_usage,
-        ):
-            yield event
-        return
-
-    if profile.provider_type == "openai_chat_completions":
-        payload = {**params, "model": profile.model, "messages": _openai_messages(context), "stream": True}
-        payload.setdefault("stream_options", {"include_usage": True})
-        headers = {"Authorization": f"Bearer {key}", "content-type": "application/json"}
-        async for event in _stream_sse(
-            url=url,
-            headers=headers,
-            payload=payload,
-            text_extractor=extract_openai_chat_delta,
-            thinking_extractor=extract_openai_chat_thinking_delta,
-        ):
-            yield event
-        return
-
-    if profile.provider_type == "openai_responses":
-        instructions, response_input = _split_leading_system(context)
-        payload = {
-            **params,
-            "model": profile.model,
-            "instructions": instructions,
-            "input": response_input,
-            "stream": True,
-        }
-        headers = {"Authorization": f"Bearer {key}", "content-type": "application/json"}
-        async for event in _stream_sse(
-            url=url,
-            headers=headers,
-            payload=payload,
-            text_extractor=extract_openai_responses_delta,
-            thinking_extractor=extract_openai_responses_thinking_delta,
-        ):
-            yield event
-        return
-
-    raise HTTPException(status_code=400, detail=f"Unsupported provider type: {profile.provider_type}")
+    adapters = {
+        "anthropic_messages": anthropic.prepare_request,
+        "openai_chat_completions": openai_chat.prepare_request,
+        "openai_responses": openai_responses.prepare_request,
+    }
+    prepare_request = adapters.get(profile.provider_type)
+    if prepare_request is None:
+        raise ApplicationError(status_code=400, detail=f"Unsupported provider type: {profile.provider_type}")
+    request = prepare_request(profile, context, params, key)
+    async for event in _stream_sse(
+        url=url,
+        headers=request.headers,
+        payload=request.payload,
+        text_extractor=request.text_extractor,
+        thinking_extractor=request.thinking_extractor,
+        usage_extractor=request.usage_extractor,
+    ):
+        yield event

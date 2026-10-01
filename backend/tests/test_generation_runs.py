@@ -1,17 +1,24 @@
 from __future__ import annotations
 
 import asyncio
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from threading import Barrier, Event
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app import models
-from app.database import Base, get_db
+from app import models, schemas
+from app.api.generation import GenerationStreamingResponse
+from app.database import Base, Database, get_db
 from app.main import create_app
-from app.services import providers
+from app.services import generation as generation_service, providers
+from app.services.errors import ApplicationError
+from app.services.generation import start_generation
 from app.services.token_counter import count_text_tokens
+from app.services.tree import create_message
 
 
 def make_client():
@@ -179,7 +186,8 @@ def test_completed_stream_keeps_final_cumulative_provider_usage(monkeypatch):
 
     with client.stream("POST", f"/api/sessions/{session['id']}/generate/stream", json={}) as response:
         body = "".join(response.iter_text())
-    assert "message_completed" in body
+    assert body.startswith("event: message_created\ndata: ")
+    assert "\n\nevent: message_completed\ndata: " in body
 
     with testing_session() as db:
         run = db.scalars(select(models.GenerationRun)).one()
@@ -353,3 +361,205 @@ def test_preview_and_generation_share_the_same_trimmed_active_path(monkeypatch):
         limits = run.parameters["_yggdrasil_token_limits"]
         assert limits["effective_input_tokens"] == 1024
         assert limits["effective_output_tokens"] == 128
+
+
+
+def test_streaming_run_rejects_same_session_without_changing_tree_and_allows_another(monkeypatch):
+    client, testing_session = make_client()
+    _profile, first_session = create_profile_and_session(client)
+    _other_profile, other_session = create_profile_and_session(client)
+    client.post(
+        f"/api/sessions/{first_session['id']}/messages",
+        json={"role": "user", "content": "first conversation"},
+    )
+    client.post(
+        f"/api/sessions/{other_session['id']}/messages",
+        json={"role": "user", "content": "other conversation"},
+    )
+    before = client.get(f"/api/sessions/{first_session['id']}/tree").json()
+    with testing_session() as db:
+        db.add(
+            models.GenerationRun(
+                session_id=first_session["id"],
+                provider_type="openai_responses",
+                model="mock-model",
+                prompt_hash="0" * 64,
+                status="streaming",
+            )
+        )
+        db.commit()
+
+    refused = client.post(f"/api/sessions/{first_session['id']}/generate/stream", json={})
+    assert refused.status_code == 409
+    assert "已有进行中的生成" in refused.json()["detail"]
+    after = client.get(f"/api/sessions/{first_session['id']}/tree").json()
+    assert after["active_path_ids"] == before["active_path_ids"]
+    assert [message["id"] for message in after["messages"]] == [message["id"] for message in before["messages"]]
+    with testing_session() as db:
+        assert len(list(db.scalars(select(models.GenerationRun)))) == 1
+
+    async def other_stream(profile, context):
+        yield providers.ProviderStreamEvent(kind="text", delta="unrelated session works")
+
+    monkeypatch.setattr(providers, "stream_completion", other_stream)
+    with client.stream("POST", f"/api/sessions/{other_session['id']}/generate/stream", json={}) as response:
+        assert "message_completed" in "".join(response.iter_text())
+
+
+@pytest.mark.parametrize("terminal_status", ["complete", "failed", "cancelled"])
+def test_terminal_generation_allows_next_run(monkeypatch, terminal_status):
+    client, testing_session = make_client()
+    _profile, session = create_profile_and_session(client)
+    client.post(
+        f"/api/sessions/{session['id']}/messages",
+        json={"role": "user", "content": "start"},
+    )
+
+    async def first_stream(profile, context):
+        yield providers.ProviderStreamEvent(kind="text", delta="first partial")
+        if terminal_status == "failed":
+            raise RuntimeError("first provider failed")
+        if terminal_status == "cancelled":
+            raise asyncio.CancelledError()
+
+    monkeypatch.setattr(providers, "stream_completion", first_stream)
+    if terminal_status == "cancelled":
+        try:
+            with client.stream("POST", f"/api/sessions/{session['id']}/generate/stream", json={}) as response:
+                "".join(response.iter_text())
+        except asyncio.CancelledError:
+            pass
+    else:
+        with client.stream("POST", f"/api/sessions/{session['id']}/generate/stream", json={}) as response:
+            body = "".join(response.iter_text())
+        assert ("message_completed" if terminal_status == "complete" else "first provider failed") in body
+
+    with testing_session() as db:
+        first_run = db.scalars(select(models.GenerationRun)).one()
+        assert first_run.status == terminal_status
+
+    async def next_stream(profile, context):
+        yield providers.ProviderStreamEvent(kind="text", delta="second complete")
+
+    monkeypatch.setattr(providers, "stream_completion", next_stream)
+    with client.stream("POST", f"/api/sessions/{session['id']}/generate/stream", json={}) as response:
+        assert "message_completed" in "".join(response.iter_text())
+
+    with testing_session() as db:
+        runs = list(db.scalars(select(models.GenerationRun)))
+        assert len(runs) == 2
+        assert {run.status for run in runs} == {terminal_status, "complete"}
+
+
+@pytest.mark.asyncio
+async def test_response_cancelled_before_first_event_releases_generation_slot(monkeypatch):
+    client, testing_session = make_client()
+    _profile, session = create_profile_and_session(client)
+    client.post(
+        f"/api/sessions/{session['id']}/messages",
+        json={"role": "user", "content": "start"},
+    )
+
+    with testing_session() as db:
+        handle = await start_generation(session["id"], schemas.GenerateRequest(), db)
+        response = GenerationStreamingResponse(handle)
+
+        async def receive():
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        async def send(message):
+            assert message["type"] == "http.response.start"
+            raise asyncio.CancelledError()
+
+        with pytest.raises(asyncio.CancelledError):
+            await response(
+                {"type": "http", "asgi": {"spec_version": "2.4"}, "method": "POST", "path": "/api/generate"},
+                receive,
+                send,
+            )
+
+        run = db.get(models.GenerationRun, handle.run_id)
+        message = db.get(models.Message, handle.output_message_id)
+        assert run is not None and run.status == "interrupted"
+        assert run.completed_at is not None
+        assert message is not None and message.status == "interrupted"
+
+    async def next_stream(profile, context):
+        yield providers.ProviderStreamEvent(kind="text", delta="next reply")
+
+    monkeypatch.setattr(providers, "stream_completion", next_stream)
+    with client.stream("POST", f"/api/sessions/{session['id']}/generate/stream", json={}) as response:
+        assert "message_completed" in "".join(response.iter_text())
+
+
+def test_simultaneous_starts_roll_back_losing_message(tmp_path, monkeypatch):
+    database = Database(f"sqlite:///{(tmp_path / 'generation-race.db').as_posix()}")
+    Base.metadata.create_all(database.engine)
+    with database.open_session() as db:
+        character = models.Character(name="Race", first_mes="")
+        profile = models.APIProfile(
+            name="Race profile",
+            provider_type="openai_responses",
+            base_url="https://example.test",
+            model="mock-model",
+            api_key="test-key",
+            default_params={},
+        )
+        db.add_all([character, profile])
+        db.flush()
+        session = models.ChatSession(
+            title="Race",
+            character_id=character.id,
+            api_profile_id=profile.id,
+            preset={},
+        )
+        db.add(session)
+        db.commit()
+        session_id = session.id
+        create_message(db, session, parent_id=None, role="user", content="race")
+
+    barrier = Barrier(2)
+    release_started_run = Event()
+    original_active_path = generation_service.active_path
+
+    def synchronized_path(db, session):
+        barrier.wait(timeout=10)
+        return original_active_path(db, session)
+
+    monkeypatch.setattr(generation_service, "active_path", synchronized_path)
+
+    def start_one():
+        with database.open_session() as db:
+            try:
+                handle = asyncio.run(
+                    generation_service.start_generation(session_id, schemas.GenerateRequest(), db)
+                )
+            except ApplicationError as exc:
+                db.rollback()
+                return ("refused", exc.status_code)
+            try:
+                if not release_started_run.wait(timeout=10):
+                    raise TimeoutError("Concurrent request did not finish before release")
+                return ("started", 0)
+            finally:
+                asyncio.run(handle.aclose())
+
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            futures = [pool.submit(start_one), pool.submit(start_one)]
+            try:
+                next(as_completed(futures, timeout=15))
+            finally:
+                release_started_run.set()
+            results = [future.result(timeout=15) for future in futures]
+
+        assert sorted(results) == [("refused", 409), ("started", 0)]
+        with database.open_session() as db:
+            runs = list(db.scalars(select(models.GenerationRun)))
+            messages = list(db.scalars(select(models.Message)))
+            assert len(runs) == 1
+            assert runs[0].status == "interrupted"
+            assert len(messages) == 2
+            assert len([message for message in messages if message.role == "assistant"]) == 1
+    finally:
+        database.dispose()

@@ -2,25 +2,25 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from fastapi import HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from .. import models
+from .errors import ApplicationError
 from .token_counter import count_text_tokens
 
 
 def get_session_or_404(db: Session, session_id: str) -> models.ChatSession:
     session = db.get(models.ChatSession, session_id)
     if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
+        raise ApplicationError(status_code=404, detail="Session not found")
     return session
 
 
 def get_message_or_404(db: Session, message_id: str) -> models.Message:
     message = db.get(models.Message, message_id)
     if not message:
-        raise HTTPException(status_code=404, detail="Message not found")
+        raise ApplicationError(status_code=404, detail="Message not found")
     return message
 
 
@@ -114,9 +114,9 @@ def ancestor_path(
     seen: set[str] = set()
     while current is not None:
         if current.id in seen:
-            raise HTTPException(status_code=409, detail="Message tree contains a parent cycle")
+            raise ApplicationError(status_code=409, detail="Message tree contains a parent cycle")
         if current.session_id != message.session_id:
-            raise HTTPException(status_code=409, detail="Message parent belongs to another session")
+            raise ApplicationError(status_code=409, detail="Message parent belongs to another session")
         seen.add(current.id)
         reverse_path.append(current)
         current = db.get(models.Message, current.parent_id) if current.parent_id else None
@@ -129,11 +129,11 @@ def _select_path(db: Session, session: models.ChatSession, path: List[models.Mes
         return
     root = path[0]
     if root.parent_id is not None or root.session_id != session.id:
-        raise HTTPException(status_code=409, detail="Selected message does not have a valid session root")
+        raise ApplicationError(status_code=409, detail="Selected message does not have a valid session root")
     session.active_root_child_id = root.id
     for parent, child in zip(path, path[1:]):
         if child.parent_id != parent.id or child.session_id != session.id:
-            raise HTTPException(status_code=409, detail="Selected message has an invalid ancestor chain")
+            raise ApplicationError(status_code=409, detail="Selected message has an invalid ancestor chain")
         parent.selected_child_id = child.id
 
 
@@ -163,7 +163,7 @@ def create_message(
     if parent_id:
         parent = get_message_or_404(db, parent_id)
         if parent.session_id != session.id:
-            raise HTTPException(status_code=400, detail="Parent message belongs to another session")
+            raise ApplicationError(status_code=400, detail="Parent message belongs to another session")
 
     message = models.Message(
         session_id=session.id,

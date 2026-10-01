@@ -7,7 +7,7 @@ from sqlalchemy.pool import StaticPool
 from app import models, schemas
 from app.database import Base, get_db
 from app.main import create_app
-from app.services.prompt_builder import build_context
+from app.services.prompt_builder import build_context, compile_context, load_context_inputs
 from app.services.prompt_config import (
     BUILTIN_SLOT_KINDS,
     apply_outgoing_regex,
@@ -351,3 +351,36 @@ def test_character_list_is_lightweight_and_detail_keeps_original_avatar():
     assert "avatar_original_data_url" not in summary
     detail = client.get(f"/api/characters/{character['id']}").json()
     assert detail["avatar_original_data_url"].endswith("original")
+
+
+
+def test_prompt_inputs_compile_after_database_session_is_closed():
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine, expire_on_commit=False) as db:
+        character = models.Character(name="Luna", description="Original character")
+        book = models.WorldBook(name="Lore", scan_depth=8, token_budget=100)
+        book.entries = [models.WorldBookEntry(content="Original lore", constant=True)]
+        db.add_all([character, book])
+        db.flush()
+        session = models.ChatSession(
+            title="snapshot",
+            character_id=character.id,
+            worldbook_id=book.id,
+            preset={"user_name": "Owner"},
+        )
+        db.add(session)
+        db.commit()
+        create_message(db, session, parent_id=None, role="user", content="Original message")
+        expected = build_context(db, session)
+        inputs = load_context_inputs(db, session)
+        character.description = "Changed after capture"
+        book.entries[0].content = "Changed after capture"
+        db.commit()
+
+    engine.dispose()
+    compiled = compile_context(inputs)
+    assert compiled == expected
+    assert "Original character" in compiled.system
+    assert compiled.activated_lore[0].content == "Original lore"
+    assert [block.content for block in compiled.compiled_blocks if block.is_history] == ["Original message"]

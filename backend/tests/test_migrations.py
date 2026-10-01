@@ -5,6 +5,9 @@ from pathlib import Path
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, inspect, text
+from sqlalchemy.orm import Session
+
+from app import models
 
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
@@ -78,3 +81,46 @@ def test_generation_integrity_migration_accepts_runtime_drift_columns(tmp_path, 
     assert {"input_token_limit", "output_token_limit", "model_catalog"}.issubset(
         {column["name"] for column in inspector.get_columns("api_profiles")}
     )
+
+
+def test_single_generation_migration_preserves_overlapping_partial_messages(tmp_path, monkeypatch):
+    database_path = tmp_path / "overlapping.db"
+    database_url = f"sqlite:///{database_path.as_posix()}"
+    config = alembic_config(database_url, monkeypatch)
+    command.upgrade(config, "0005_profile_token_limits")
+    engine = create_engine(database_url)
+    try:
+        with Session(engine, expire_on_commit=False) as db:
+            session = models.ChatSession(title="Overlapping")
+            other = models.ChatSession(title="Independent")
+            db.add_all([session, other])
+            db.flush()
+            messages = [models.Message(
+                session_id=session.id, role="assistant", status="streaming", content=content,
+            ) for content in ("First partial", "Second partial")]
+            db.add_all(messages)
+            db.flush()
+            runs = [models.GenerationRun(
+                session_id=session.id, output_message_id=message.id, status="streaming",
+                provider_type="openai_responses", model="test", prompt_hash="test",
+            ) for message in messages]
+            independent = models.GenerationRun(
+                session_id=other.id, status="streaming", provider_type="openai_responses",
+                model="test", prompt_hash="test",
+            )
+            db.add_all([*runs, independent])
+            db.commit()
+            message_ids = [message.id for message in messages]
+            run_ids = [run.id for run in runs]
+            independent_id = independent.id
+        command.upgrade(config, "head")
+        with Session(engine) as db:
+            preserved = [db.get(models.Message, message_id) for message_id in message_ids]
+            assert [message.content for message in preserved] == ["First partial", "Second partial"]
+            assert all(message.status == "interrupted" for message in preserved)
+            assert all(db.get(models.GenerationRun, run_id).status == "interrupted" for run_id in run_ids)
+            assert db.get(models.GenerationRun, independent_id).status == "streaming"
+        assert any(index["name"] == "uq_generation_runs_streaming_session" and index["unique"]
+                   for index in inspect(engine).get_indexes("generation_runs"))
+    finally:
+        engine.dispose()

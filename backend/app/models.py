@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
@@ -227,6 +227,13 @@ class Message(TimestampMixin, Base):
 
 class GenerationRun(TimestampMixin, Base):
     __tablename__ = "generation_runs"
+    __table_args__ = (
+        Index(
+            "uq_generation_runs_streaming_session", "session_id", unique=True,
+            sqlite_where=text("status = 'streaming'"),
+            postgresql_where=text("status = 'streaming'"),
+        ).ddl_if(dialect=("sqlite", "postgresql")),
+    )
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=uuid_str)
     session_id: Mapped[str] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False, index=True)

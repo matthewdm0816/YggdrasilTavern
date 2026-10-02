@@ -240,8 +240,20 @@ export function ForestTreeView({ tree, onClose, onSelectMessage }: Props) {
 
   useEffect(() => {
     const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const background = document.getElementById("root");
+    const wasInert = background?.inert || false;
+    if (background) background.inert = true;
     closeButtonRef.current?.focus();
     function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Tab") {
+        const dialog = closeButtonRef.current?.closest(".forest-tree-dialog");
+        const controls = Array.from(dialog?.querySelectorAll<HTMLElement>("button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex='0']") || [])
+          .filter((item) => item.getClientRects().length > 0);
+        const first = controls[0], last = controls[controls.length - 1];
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+        return;
+      }
       if (event.key !== "Escape") return;
       event.preventDefault();
       onClose();
@@ -249,6 +261,7 @@ export function ForestTreeView({ tree, onClose, onSelectMessage }: Props) {
     document.addEventListener("keydown", closeOnEscape);
     return () => {
       document.removeEventListener("keydown", closeOnEscape);
+      if (background) background.inert = wasInert;
       previouslyFocused?.focus();
     };
   }, [onClose]);

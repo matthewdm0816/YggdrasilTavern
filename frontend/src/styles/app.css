@@ -1,43 +1,3 @@
-:root {
-  color-scheme: light;
-  --bg: #f4f2ee;
-  --pane: #fffdf9;
-  --pane-strong: #f8faf5;
-  --line: #d7d4cc;
-  --text: #24231f;
-  --muted: #6d6a61;
-  --green: #2f6f5e;
-  --green-dark: #225246;
-  --red: #9d3a34;
-  --amber: #b56b1c;
-  --blue: #315f8a;
-  --shadow: 0 12px 32px rgba(35, 31, 25, 0.08);
-  --surface: #fff;
-  --surface-hover: #f0ede5;
-  --surface-selected: #edf6f1;
-  --chat-bg: #fbfaf6;
-  --surface-soft: #f6f8f3;
-  --chip-bg: #f3f0e8;
-  --warning-bg: #fffaf2;
-  --warning-text: #4d4032;
-  --danger-bg: #fff8f2;
-  --veil-bg: #e9edf0;
-  --code-bg: #22251f;
-  --code-text: #f7f5eb;
-  --skeleton-low: #ebe8e0;
-  --skeleton-high: #f7f5ef;
-  --glass-bg: rgba(255, 253, 249, 0.96);
-  --reveal-bg: rgba(255, 255, 255, 0.8);
-  --checker-a: #eee;
-  --checker-b: #fff;
-  --on-accent: #fff;
-  --accent-text: #225246;
-  --overlay-bg: rgba(22, 25, 22, 0.55);
-  --modal-shadow: 0 25px 80px rgba(0, 0, 0, 0.26);
-  --drawer-shadow: 0 18px 60px rgba(0, 0, 0, 0.28);
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-}
-
 /* Authentication gate */
 .auth-gate {
   display: grid;
@@ -204,45 +164,6 @@
   .auth-logout-error {
     top: calc(106px + env(safe-area-inset-top));
   }
-}
-
-:root[data-theme="dark"] {
-  color-scheme: dark;
-  --bg: #0f1310;
-  --pane: #161b17;
-  --pane-strong: #1b211c;
-  --line: #364038;
-  --text: #edf1ec;
-  --muted: #a6afa8;
-  --green: #2f6f5e;
-  --green-dark: #245749;
-  --red: #f39a93;
-  --amber: #e4ad69;
-  --blue: #8ab7dc;
-  --shadow: 0 12px 32px rgba(0, 0, 0, 0.38);
-  --surface: #1b211d;
-  --surface-hover: #252d27;
-  --surface-selected: #20372f;
-  --chat-bg: #111613;
-  --surface-soft: #202722;
-  --chip-bg: #252c27;
-  --warning-bg: #2e261a;
-  --warning-text: #dcc39c;
-  --danger-bg: #301f1e;
-  --veil-bg: #20292d;
-  --code-bg: #0b0e0c;
-  --code-text: #edf2eb;
-  --skeleton-low: #202722;
-  --skeleton-high: #303832;
-  --glass-bg: rgba(22, 27, 23, 0.96);
-  --reveal-bg: rgba(27, 33, 29, 0.9);
-  --checker-a: #2b332d;
-  --checker-b: #1d231f;
-  --on-accent: #fff;
-  --accent-text: #7ec8ad;
-  --overlay-bg: rgba(4, 7, 5, 0.68);
-  --modal-shadow: 0 25px 80px rgba(0, 0, 0, 0.58);
-  --drawer-shadow: 0 18px 60px rgba(0, 0, 0, 0.52);
 }
 
 * {

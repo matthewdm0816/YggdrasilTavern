@@ -1,19 +1,17 @@
-import { FormEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ChevronLeft,
   ChevronRight,
+  Copy,
   CopyPlus,
   Edit3,
   GitBranch,
-  Monitor,
-  Moon,
-  PanelLeftClose,
-  PanelRightClose,
+  Menu,
+  GitFork,
   RefreshCcw,
   Send,
   Sparkles,
   Square,
-  Sun,
   X
 } from "lucide-react";
 import { CharacterSummary, ChatSession, Message, RegexRule, SessionTree } from "../lib/api";
@@ -22,6 +20,7 @@ import { useAppStore } from "../state/useAppStore";
 import { AutoSizeTextarea } from "./AutoSizeTextarea";
 import { ForestTreeView } from "./ForestTreeView";
 import { RegexMessage } from "./RegexMessage";
+import { ActionMenu } from "./ActionMenu";
 
 type Props = {
   tree?: SessionTree;
@@ -39,8 +38,14 @@ type Props = {
   onForkEdit: (message: Message, content: string, thinkingContent: string) => Promise<void>;
   onToggleLeft: () => void;
   onToggleRight: () => void;
-  themePreference: "light" | "dark" | "system";
-  onToggleTheme: () => void;
+  leftOpen: boolean;
+  rightOpen: boolean;
+  treeViewOpen: boolean;
+  onOpenTree: () => void;
+  onCloseTree: () => void;
+  appearanceControls: ReactNode;
+  modelPicker: ReactNode;
+  canGenerate: boolean;
 };
 
 function usageNumber(usage: Record<string, unknown>, ...keys: string[]): number {
@@ -131,16 +136,31 @@ export function ChatWorkspace({
   onForkEdit,
   onToggleLeft,
   onToggleRight,
-  themePreference,
-  onToggleTheme
+  leftOpen,
+  rightOpen,
+  treeViewOpen,
+  onOpenTree,
+  onCloseTree,
+  appearanceControls,
+  modelPicker,
+  canGenerate
 }: Props) {
   const sessionId = activeSession?.id || tree?.session.id || "";
   const draft = useAppStore((state) => sessionId ? state.drafts[sessionId] || "" : "");
   const setDraft = useAppStore((state) => state.setDraft);
   const edit = useAppStore((state) => sessionId ? state.edits[sessionId] : undefined);
   const setEdit = useAppStore((state) => state.setEdit);
-  const [interactionError, setInteractionError] = useState<string | null>(null);
-  const [treeViewOpen, setTreeViewOpen] = useState(false);
+  const [interactionErrors, setInteractionErrors] = useState<Record<string, string | null>>({});
+  const interactionError = interactionErrors[sessionId] || null;
+  function setInteractionError(detail: string | null) {
+    setInteractionErrors((current) => ({ ...current, [sessionId]: detail }));
+  }
+  const pendingSubmissions = useRef(new Set<string>());
+  const pendingEdits = useRef(new Set<string>());
+  const [submittingSessions, setSubmittingSessions] = useState<Record<string, boolean>>({});
+  const [savingEditSessions, setSavingEditSessions] = useState<Record<string, boolean>>({});
+  const submitting = Boolean(submittingSessions[sessionId]);
+  const savingEdit = Boolean(savingEditSessions[sessionId]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const shouldFollowRef = useRef(true);
   const pendingRevealRef = useRef<string | null>(null);
@@ -152,8 +172,6 @@ export function ChatWorkspace({
     return Array.isArray(value) ? value as RegexRule[] : [];
   }, [activeSession?.preset]);
   const contentRevision = activeMessages.map((message) => `${message.id}:${message.content.length}:${message.thinking_content.length}:${message.status}`).join("|");
-  const nextThemeLabel = themePreference === "system" ? "亮色" : themePreference === "light" ? "暗色" : "跟随系统";
-  const currentThemeLabel = themePreference === "system" ? "跟随系统" : themePreference === "light" ? "亮色" : "暗色";
 
   useLayoutEffect(() => {
     shouldFollowRef.current = true;
@@ -180,15 +198,22 @@ export function ChatWorkspace({
   async function submit(event: FormEvent) {
     event.preventDefault();
     const content = draft.trim();
-    if (!sessionId || !content || streaming) return;
+    if (!sessionId || !content || streaming || !canGenerate || pendingSubmissions.current.has(sessionId)) return;
+    pendingSubmissions.current.add(sessionId);
+    setSubmittingSessions((current) => ({ ...current, [sessionId]: true }));
     setInteractionError(null);
     setDraft(sessionId, "");
     try {
       await onSend(content);
       shouldFollowRef.current = true;
     } catch (cause) {
-      setDraft(sessionId, content);
-      setInteractionError(cause instanceof Error ? cause.message : String(cause));
+      const existingDraft = useAppStore.getState().drafts[sessionId];
+      if (!existingDraft) setDraft(sessionId, content);
+      const detail = cause instanceof Error ? cause.message : String(cause);
+      setInteractionError(existingDraft ? "发送失败：" + detail + "。当前草稿已保留；未发送的内容：" + content : detail);
+    } finally {
+      pendingSubmissions.current.delete(sessionId);
+      setSubmittingSessions((current) => ({ ...current, [sessionId]: false }));
     }
   }
 
@@ -198,13 +223,20 @@ export function ChatWorkspace({
   }
 
   async function saveEdit(message: Message) {
-    if (!sessionId || !edit) return;
+    if (!sessionId || !edit || pendingEdits.current.has(sessionId)) return;
+    const submitted = edit;
+    if (submitted.value === message.content && submitted.thinkingValue === message.thinking_content) return;
+    pendingEdits.current.add(sessionId);
+    setSavingEditSessions((current) => ({ ...current, [sessionId]: true }));
     try {
-      await onForkEdit(message, edit.value, edit.thinkingValue);
-      setEdit(sessionId, undefined);
+      await onForkEdit(message, submitted.value, submitted.thinkingValue);
+      if (useAppStore.getState().edits[sessionId] === submitted) setEdit(sessionId, undefined);
       setInteractionError(null);
     } catch (cause) {
-      setInteractionError(cause instanceof Error ? cause.message : String(cause));
+      setInteractionError("消息分支保存失败：" + (cause instanceof Error ? cause.message : String(cause)));
+    } finally {
+      pendingEdits.current.delete(sessionId);
+      setSavingEditSessions((current) => ({ ...current, [sessionId]: false }));
     }
   }
 
@@ -240,40 +272,40 @@ export function ChatWorkspace({
     });
   }
 
+  async function copyMessage(message: Message) {
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error("浏览器未提供剪贴板访问，请在 HTTPS 或本机地址下使用复制功能。");
+      await navigator.clipboard.writeText(message.content);
+      setInteractionError(null);
+    } catch (cause) {
+      setInteractionError("复制消息失败：" + (cause instanceof Error ? cause.message : String(cause)));
+    }
+  }
+
+  async function duplicateMessage(message: Message) {
+    try {
+      await onCreateSwipe(message);
+      setInteractionError(null);
+    } catch (cause) {
+      setInteractionError("创建消息分支失败：" + (cause instanceof Error ? cause.message : String(cause)));
+    }
+  }
+
   return (
     <section className="chat-pane">
       <header className="chat-header">
-        <button className="icon-button desktop-pane-toggle" title="折叠/展开左栏" onClick={onToggleLeft}><PanelLeftClose size={17} /></button>
+        <div className="chat-header-start">
+          <button className="icon-button" type="button" title="会话与资源" aria-label="会话与资源" aria-expanded={leftOpen} onClick={onToggleLeft}><Menu size={20} /></button>
+        </div>
         <div className="session-title-block">
-          <p className="eyebrow">Active Session</p>
-          <h2>{activeSession?.title || "还没有会话"}</h2>
+          <h2 title={activeSession?.title || "还没有会话"}>{activeSession?.title || "还没有会话"}</h2>
         </div>
         <div className="chat-actions">
-          {character?.avatar_data_url && <img className="avatar" src={character.avatar_data_url} alt={character.name} />}
-          <button
-            className="secondary-button tree-view-trigger"
-            type="button"
-            title="打开完整聊天森林"
-            disabled={!tree}
-            onClick={() => setTreeViewOpen(true)}
-          >
-            <GitBranch size={16} /><span>Tree View</span>
-          </button>
-          <button
-            className="icon-button theme-toggle"
-            type="button"
-            title={`当前主题：${currentThemeLabel}；点击切换到${nextThemeLabel}`}
-            aria-label={`当前主题：${currentThemeLabel}；切换到${nextThemeLabel}`}
-            onClick={onToggleTheme}
-          >
-            {themePreference === "system" ? <Monitor size={17} /> : themePreference === "light" ? <Sun size={17} /> : <Moon size={17} />}
-          </button>
-          {streaming ? (
-            <button className="secondary-button danger-button" title="停止生成" aria-label="停止生成" onClick={onStop}><Square size={14} />停止</button>
-          ) : (
-            <button className="secondary-button" title="继续生成" aria-label="继续生成" disabled={!tree} onClick={onGenerate}><Sparkles size={16} />继续</button>
-          )}
-          <button className="icon-button desktop-pane-toggle" title="折叠/展开右栏" onClick={onToggleRight}><PanelRightClose size={17} /></button>
+          <button className="icon-button" type="button" title="当前路径分支与会话设置" aria-label="当前路径分支与会话设置" aria-expanded={rightOpen} onClick={onToggleRight}><GitFork size={19} /></button>
+          <ActionMenu label="聊天与外观选项">
+            <button type="button" data-close-menu disabled={!tree} onClick={onOpenTree}><GitBranch size={16} />浏览完整聊天树</button>
+            {appearanceControls}
+          </ActionMenu>
         </div>
       </header>
 
@@ -305,7 +337,7 @@ export function ChatWorkspace({
                 <img className="message-avatar" src={character.avatar_data_url} alt="" aria-hidden="true" />
               )}
               <article className={presentation.rowClassName} aria-busy={presentation.isStreaming}>
-                <div className="message-meta"><strong>{message.speaker || message.role}</strong><span aria-live="polite">{presentation.statusLabel}</span></div>
+                <div className="message-meta"><strong>{message.speaker || message.role}</strong>{message.status !== "complete" && <span aria-live="polite">{({ streaming: "正在生成", cancelled: "已停止", failed: "生成失败", interrupted: "已中断" } as Record<string, string>)[message.status] || presentation.statusLabel}</span>}</div>
                 {message.thinking_content && (
                   <details className="thinking-box" open={message.status === "streaming"}>
                     <summary>Thinking · {message.thinking_token_count || "估算中"} tokens</summary>
@@ -314,13 +346,13 @@ export function ChatWorkspace({
                 )}
                 {isEditing ? (
                   <div className="editor-box">
-                    <label className="form-field"><span>编辑消息正文</span><AutoSizeTextarea value={edit.value} onChange={(event) => setEdit(sessionId, { ...edit, value: event.target.value })} /></label>
+                    <label className="form-field"><span>编辑消息正文</span><AutoSizeTextarea disabled={savingEdit} value={edit.value} onChange={(event) => setEdit(sessionId, { ...edit, value: event.target.value })} /></label>
                     {(message.role === "assistant" || message.thinking_content) && (
-                      <label className="form-field"><span>编辑 Thinking（可留空）</span><AutoSizeTextarea value={edit.thinkingValue} onChange={(event) => setEdit(sessionId, { ...edit, thinkingValue: event.target.value })} /></label>
+                      <label className="form-field"><span>编辑 Thinking（可留空）</span><AutoSizeTextarea disabled={savingEdit} value={edit.thinkingValue} onChange={(event) => setEdit(sessionId, { ...edit, thinkingValue: event.target.value })} /></label>
                     )}
-                    <p className="editor-hint">保存会创建新的 sibling/swipe；原消息及其后代保持不变。</p>
+                    <p className="editor-hint">保存会在同一父消息下创建一个新分支，原消息及其后续消息保持不变。</p>
                     <div className="inline-actions">
-                      <button className="primary-button" onClick={() => saveEdit(message)}>保存为新 swipe</button>
+                      <button className="primary-button" disabled={savingEdit || streaming || (edit.value === message.content && edit.thinkingValue === message.thinking_content)} onClick={() => saveEdit(message)}>{savingEdit ? "保存中…" : "保存为新分支"}</button>
                       <button className="icon-button" title="取消" onClick={() => setEdit(sessionId, undefined)}><X size={16} /></button>
                     </div>
                   </div>
@@ -328,47 +360,56 @@ export function ChatWorkspace({
                   <RegexMessage content={message.content} role={message.role} rules={regexRules} />
                 ) : message.status === "streaming" ? <p className="message-content">…</p> : null}
                 {message.error && <p className="message-error">{message.error}</p>}
-                <div className="message-toolbar">
-                  {inputTokens > 0 && <span className="token-pill">输入 {inputTokens} tok</span>}
-                  <span
-                    className="token-pill"
-                    title={tokenDisplay.outputEstimated ? "Provider 未返回可信的最终用量；根据已保存正文与 Thinking 估算" : "Provider 返回的最终输出用量"}
-                  >输出{tokenDisplay.outputEstimated ? "约 " : " "}{outputTokens || 0} tok</span>
-                  {cachedTokens > 0 && <span className="token-pill cache">缓存输入 {cachedTokens} tok</span>}
-                  {speed > 0 && <span className="token-pill">{speed.toFixed(1)} tok/s</span>}
-                  <button className="icon-button" title="上一个 swipe" disabled={!previous} onClick={() => previous && selectSwipeFromToolbar(previous.id)}><ChevronLeft size={16} /></button>
-                  <span className="swipe-counter">{index + 1}/{siblings.length}</span>
-                  <button className="icon-button" title="下一个 swipe" disabled={!next} onClick={() => next && selectSwipeFromToolbar(next.id)}><ChevronRight size={16} /></button>
-                  <button className="icon-button" title="复制为新 swipe" onClick={() => onCreateSwipe(message)}><CopyPlus size={16} /></button>
-                  <button className="icon-button" title="编辑并创建新 swipe" onClick={() => startEdit(message)}><Edit3 size={16} /></button>
-                  {message.role === "assistant" && (
-                    <button className="icon-button" title="重新生成此 swipe" disabled={streaming} onClick={() => onRegenerate(message.id)}><RefreshCcw size={16} /></button>
-                  )}
-                </div>
+                <footer className="message-footer">
+                  {message.role === "assistant" && <small className="message-usage"
+                    title={tokenDisplay.outputEstimated ? "根据已保存的正文和思考内容估算用量" : "模型服务返回的用量"}>
+                    {inputTokens > 0 && <span>输入 {inputTokens}</span>}
+                    <span>输出{tokenDisplay.outputEstimated ? "约 " : " "}{outputTokens || 0} tokens</span>
+                    {cachedTokens > 0 && <span>缓存 {cachedTokens}</span>}
+                    {speed > 0 && <span>{speed.toFixed(1)} tokens/s</span>}
+                  </small>}
+                  <div className="message-branch-actions" aria-label="消息分支切换">
+                    <button className="icon-button" type="button" title="上一个消息分支" aria-label="上一个消息分支" disabled={!previous} onClick={() => previous && selectSwipeFromToolbar(previous.id)}><ChevronLeft size={16} /></button>
+                    <span className="swipe-counter" aria-label={"第 " + (index + 1) + " 个，共 " + siblings.length + " 个消息分支"}>{index + 1}/{siblings.length}</span>
+                    <button className="icon-button" type="button" title="下一个消息分支" aria-label="下一个消息分支" disabled={!next} onClick={() => next && selectSwipeFromToolbar(next.id)}><ChevronRight size={16} /></button>
+                    <ActionMenu label="消息操作">
+                      <button type="button" data-close-menu disabled={!message.content} onClick={() => void copyMessage(message)}><Copy size={16} />复制正文</button>
+                      <button type="button" data-close-menu disabled={streaming} onClick={() => void duplicateMessage(message)}><CopyPlus size={16} />复制为新分支</button>
+                      <button type="button" data-close-menu disabled={streaming} onClick={() => startEdit(message)}><Edit3 size={16} />编辑为新分支</button>
+                      {message.role === "assistant" && <button type="button" data-close-menu disabled={streaming || submitting || !canGenerate} onClick={() => onRegenerate(message.id)}><RefreshCcw size={16} />重新生成此回复</button>}
+                    </ActionMenu>
+                  </div>
+                </footer>
               </article>
             </div>
           );
         })}
       </div>
 
-      {(interactionError || loadError) && <div className="composer-error" role="alert">{interactionError || loadError}</div>}
-      <form className="composer" onSubmit={submit}>
-        <label className="composer-field"><span>发送消息</span><textarea
-            value={draft}
-            onChange={(event) => sessionId && setDraft(sessionId, event.target.value)}
-            placeholder="输入内容；发送后自动生成角色回复"
-            disabled={!tree || streaming}
-          /></label>
-        {streaming ? (
-          <button className="send-button composer-stop-button" type="button" title="停止生成" aria-label="停止生成" onClick={onStop}><Square size={17} /></button>
-        ) : (
-          <button className="send-button" disabled={!tree || !draft.trim()} title="发送" aria-label="发送"><Send size={18} /></button>
-        )}
-      </form>
+      <div className="composer-area">
+        {(interactionError || loadError) && <div className="composer-error" role="alert">{interactionError || loadError}</div>}
+        <div className="composer-tools">
+          {modelPicker}
+          <button className="secondary-button continue-generation" type="button" title="从当前路径继续生成回复" disabled={!tree || streaming || submitting || !canGenerate} onClick={onGenerate}><Sparkles size={15} /><span>继续</span></button>
+        </div>
+        <form className="composer" onSubmit={submit}>
+          <label className="composer-field"><span className="sr-only">发送消息</span><textarea
+              value={draft}
+              onChange={(event) => sessionId && setDraft(sessionId, event.target.value)}
+              placeholder="输入消息…"
+              disabled={!tree || streaming || submitting}
+            /></label>
+          {streaming ? (
+            <button className="send-button composer-stop-button" type="button" title="停止生成" aria-label="停止生成" onClick={onStop}><Square size={17} /></button>
+          ) : (
+            <button className="send-button" disabled={!tree || !draft.trim() || !canGenerate || submitting} title="发送" aria-label="发送"><Send size={18} /></button>
+          )}
+        </form>
+      </div>
       {treeViewOpen && tree && (
         <ForestTreeView
           tree={tree}
-          onClose={() => setTreeViewOpen(false)}
+          onClose={onCloseTree}
           onSelectMessage={selectMessageAndReveal}
         />
       )}

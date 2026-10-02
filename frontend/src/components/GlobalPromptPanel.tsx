@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp, GitFork, Globe2, GripVertical, Plus, Save, ToggleLeft, ToggleRight, Trash2 } from "lucide-react";
 import { api, PromptSlot } from "../lib/api";
 import { defaultPromptSlots, promptSlotsFromPreset } from "../lib/prompt";
+import { reconcileSavedPromptSlots, samePromptSlots } from "../features/chat/globalPromptDraft";
 import { CollapsibleSection } from "./CollapsibleSection";
 
 type Props = { onError?: (message: string) => void };
@@ -23,6 +24,11 @@ export function GlobalPromptPanel({ onError }: Props) {
   const [slots, setSlots] = useState<PromptSlot[]>(defaultSlots);
   const [promptRevision, setPromptRevision] = useState(0);
   const [savingPrompt, setSavingPrompt] = useState(false);
+  const savingPromptRef = useRef(false);
+  const [savedSlots, setSavedSlots] = useState<PromptSlot[]>(defaultSlots);
+  const savedSlotsRef = useRef<PromptSlot[]>(defaultSlots);
+  const [saveFeedback, setSaveFeedback] = useState<{ saved: boolean; error?: string } | null>(null);
+  const hasPromptChanges = !samePromptSlots(slots, savedSlots);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const globalPromptQuery = useQuery({
     queryKey: ["global-prompt-config"],
@@ -32,7 +38,11 @@ export function GlobalPromptPanel({ onError }: Props) {
   });
   useEffect(() => {
     if (!globalPromptQuery.data) return;
-    setSlots(normalizeSlots(globalPromptQuery.data.prompt_slots));
+    const incoming = normalizeSlots(globalPromptQuery.data.prompt_slots);
+    const previousBaseline = savedSlotsRef.current;
+    setSlots((current) => samePromptSlots(current, previousBaseline) ? incoming : current);
+    setSavedSlots(incoming);
+    savedSlotsRef.current = incoming;
     setPromptRevision(globalPromptQuery.data.revision);
   }, [globalPromptQuery.data]);
 
@@ -52,19 +62,36 @@ export function GlobalPromptPanel({ onError }: Props) {
   }
 
   async function saveGlobalPrompt() {
+    if (!hasPromptChanges || globalPromptQuery.isPending || globalPromptQuery.error || savingPromptRef.current) return;
+    const submitted = slots;
+    savingPromptRef.current = true;
     setSavingPrompt(true);
+    setSaveFeedback(null);
     try {
       const saved = await api.updateGlobalPromptConfig({
-        prompt_slots: slots,
+        prompt_slots: submitted,
         expected_revision: promptRevision
       });
-      queryClient.setQueryData(["global-prompt-config"], saved);
-      setSlots(normalizeSlots(saved.prompt_slots));
+      const incoming = normalizeSlots(saved.prompt_slots);
+      setSlots((current) => reconcileSavedPromptSlots(current, submitted, incoming));
+      setSavedSlots(incoming);
+      savedSlotsRef.current = incoming;
       setPromptRevision(saved.revision);
-      await queryClient.invalidateQueries({ queryKey: ["context-preview"] });
+      queryClient.setQueryData(["global-prompt-config"], saved);
+      setSaveFeedback({ saved: true });
+      try {
+        await queryClient.invalidateQueries({ queryKey: ["context-preview"] }, { throwOnError: true });
+      } catch (cause) {
+        const message = `全局 Prompt 已保存，但刷新上下文失败：${cause instanceof Error ? cause.message : String(cause)}`;
+        setSaveFeedback({ saved: true, error: message });
+        onError?.(message);
+      }
     } catch (cause) {
-      onError?.(cause instanceof Error ? cause.message : String(cause));
+      const message = `全局 Prompt 保存失败：${cause instanceof Error ? cause.message : String(cause)}`;
+      setSaveFeedback({ saved: false, error: message });
+      onError?.(message);
     } finally {
+      savingPromptRef.current = false;
       setSavingPrompt(false);
     }
   }
@@ -149,7 +176,10 @@ export function GlobalPromptPanel({ onError }: Props) {
           ))}
         </div>
         <button className="secondary-button full-button" onClick={() => setSlots((current) => [...current, { id: id("slot"), kind: "custom", name: "自定义 Prompt", enabled: true, role: "system", content: "" }])}><Plus size={15} />添加自定义 Prompt</button>
-        <button className="primary-button full-button" disabled={savingPrompt || globalPromptQuery.isPending} onClick={saveGlobalPrompt}><Save size={16} />{savingPrompt ? "保存中…" : "保存全局 Prompt"}</button>
+        <button type="button" className={`${hasPromptChanges ? "primary-button" : "secondary-button"} full-button`} disabled={!hasPromptChanges || savingPrompt || globalPromptQuery.isPending || Boolean(globalPromptQuery.error)} onClick={() => void saveGlobalPrompt()}><Save size={16} />{savingPrompt ? "保存中…" : "保存全局 Prompt"}</button>
+        <p className="save-feedback" role="status" aria-live="polite">{savingPrompt ? "正在保存提交的全局 Prompt…" : hasPromptChanges ? (saveFeedback?.saved ? "上次修改已保存，当前还有未保存修改。" : "有未保存修改。") : saveFeedback?.saved ? "全局 Prompt 已保存。" : "全局 Prompt 未修改。"}</p>
+        {saveFeedback?.error && <p className="field-error" role="alert">{saveFeedback.error}</p>}
+
       </CollapsibleSection>
 
   );

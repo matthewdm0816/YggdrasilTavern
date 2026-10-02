@@ -16,3 +16,8 @@ treechat.db
 *.db-wal
 *.db-shm
 .env
+
+# Local browser validation artifacts and test caches
+.playwright-cli/
+.vite/
+output/playwright/

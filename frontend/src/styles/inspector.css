@@ -1,0 +1,41 @@
+.nearby-branch-group {
+  margin: 12px 0;
+}
+
+.nearby-branch-group h3 {
+  margin: 0 0 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.nearby-branch-group .branch-node {
+  padding: 8px 10px;
+}
+
+.nearby-branch-group .branch-node p {
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  line-height: 1.5;
+}
+
+.nearby-branch-group .branch-node.active {
+  box-shadow: inset 3px 0 0 var(--green);
+}
+
+.inspector-save-area {
+  padding-bottom: 14px;
+}
+
+.save-feedback {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 7px 0 0;
+}
+
+.inspector-close {
+  flex-shrink: 0;
+}

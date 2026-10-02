@@ -1,10 +1,11 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Eye, GitFork, Plus, RefreshCcw, Save, ToggleLeft, ToggleRight, Trash2, X } from "lucide-react";
-import { useEffect, useMemo, useState, type SetStateAction } from "react";
+import { useEffect, useMemo, useRef, useState, type SetStateAction } from "react";
 import { api, RegexRule, RegexTarget, SessionTree, WorldBook } from "../lib/api";
-import { markSettingsSaved, reconcileSettingsDrafts, resetSettingsDraft, settingsConflict, settingsFromTree, updateSettingsDraft, type SessionSettingsDrafts } from "../features/chat/sessionSettingsDraft";
+import { markSettingsSaved, reconcileSettingsDrafts, resetSettingsDraft, settingsConflict, settingsDirty, settingsFromTree, updateSettingsDraft, type SessionSettingsDrafts } from "../features/chat/sessionSettingsDraft";
 import { validateRegex } from "../lib/regex";
-import { sortMessages } from "../lib/tree";
+import { nearbyBranchGroups } from "../features/chat/nearbyBranches";
+import "../styles/inspector.css";
 import { CollapsibleSection } from "./CollapsibleSection";
 import { GlobalPromptPanel } from "./GlobalPromptPanel";
 import { ContextPreviewPanel } from "./ContextPreviewPanel";
@@ -14,11 +15,15 @@ type Props = {
   selectedSessionId: string | null;
   activeProfileId: string;
   worldbooks: WorldBook[];
-  onSessionUpdated?: () => Promise<void>;
+  onSessionUpdated?: (sessionId: string) => Promise<void>;
+  onOpenTree?: () => void;
   onSelectMessage: (messageId: string) => Promise<void>;
   onCloseMobile?: () => void;
   onError?: (message: string) => void;
 };
+
+type SaveFeedback = { status: "saving" | "saved" | "error"; error?: string };
+type BranchFeedback = { selecting: boolean; error?: string };
 
 const targets: Array<{ value: RegexTarget; label: string; help: string }> = [
   { value: "display", label: "聊天显示", help: "只改变你看到的文本，不改原消息。" },
@@ -38,19 +43,29 @@ function id(prefix: string): string {
   return typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${prefix}-${Date.now()}-${Math.random()}`;
 }
 
- export function WorkspaceInspector({ tree, selectedSessionId, activeProfileId, worldbooks, onSessionUpdated, onSelectMessage, onCloseMobile, onError }: Props) {
+export function WorkspaceInspector({ tree, selectedSessionId, activeProfileId, worldbooks, onSessionUpdated, onOpenTree, onSelectMessage, onCloseMobile, onError }: Props) {
 
   const [settingsDrafts, setSettingsDrafts] = useState<SessionSettingsDrafts>({});
-  const [savingSession, setSavingSession] = useState(false);
+  const queryClient = useQueryClient();
+  const [saveFeedbackBySession, setSaveFeedbackBySession] = useState<Record<string, SaveFeedback>>({});
+  const [branchFeedbackBySession, setBranchFeedbackBySession] = useState<Record<string, BranchFeedback>>({});
+  const savingSessions = useRef(new Set<string>());
+  const selectingSessions = useRef(new Set<string>());
   const currentTree = tree?.session.id === selectedSessionId ? tree : undefined;
   const currentDraft = selectedSessionId ? settingsDrafts[selectedSessionId] : undefined;
   const remoteSettings = currentTree ? settingsFromTree(currentTree) : undefined;
   const regexRules = currentDraft?.value.regexRules || remoteSettings?.regexRules || [];
   const worldbookIds = currentDraft?.value.worldbookIds || remoteSettings?.worldbookIds || [];
   const hasSettingsConflict = currentDraft ? settingsConflict(currentDraft) : false;
+  const hasSettingsChanges = currentDraft ? settingsDirty(currentDraft) : false;
+  const saveFeedback = selectedSessionId ? saveFeedbackBySession[selectedSessionId] : undefined;
+  const savingSession = saveFeedback?.status === "saving";
+  const branchFeedback = selectedSessionId ? branchFeedbackBySession[selectedSessionId] : undefined;
+  const allNearbyGroups = useMemo(() => nearbyBranchGroups(currentTree), [currentTree]);
+  const nearbyGroups = allNearbyGroups.slice(0, 6);
 
   const previewQuery = useQuery({
-    queryKey: ["context-preview", selectedSessionId, activeProfileId, tree?.active_path_ids.join(":")],
+    queryKey: ["context-preview", selectedSessionId, activeProfileId, currentTree?.active_path_ids.join(":")],
     queryFn: () => api.contextPreview(selectedSessionId!, activeProfileId),
     enabled: Boolean(selectedSessionId)
   });
@@ -95,56 +110,105 @@ function id(prefix: string): string {
   }
 
   async function saveSessionConfiguration() {
-    if (!currentTree || !selectedSessionId || invalidRegexCount || hasSettingsConflict) return;
-    setSavingSession(true);
+    if (!currentTree || !selectedSessionId || !currentDraft || !hasSettingsChanges || invalidRegexCount || hasSettingsConflict || savingSessions.current.has(selectedSessionId)) return;
+    const sessionId = selectedSessionId;
+    const sessionName = currentTree.session.title || sessionId;
+    const submitted = currentDraft.value;
+    savingSessions.current.add(sessionId);
+    setSaveFeedbackBySession((current) => ({ ...current, [sessionId]: { status: "saving" } }));
     try {
       const sessionPreset = { ...currentTree.session.preset };
       delete sessionPreset.prompt_slots;
-      await api.updateSession(selectedSessionId, {
-        worldbook_id: worldbookIds[0] || null,
+      const saved = await api.updateSession(sessionId, {
+        worldbook_id: submitted.worldbookIds[0] || null,
         preset: {
           ...sessionPreset,
-          worldbook_ids: worldbookIds,
-          regex_rules: regexRules
+          worldbook_ids: submitted.worldbookIds,
+          regex_rules: submitted.regexRules
         }
       });
-      setSettingsDrafts((current) => markSettingsSaved(current, selectedSessionId));
-      await onSessionUpdated?.();
-      await previewQuery.refetch();
+      const savedSettings = settingsFromTree({ ...currentTree, session: saved });
+      setSettingsDrafts((current) => markSettingsSaved(current, sessionId, submitted, savedSettings));
+      try {
+        await onSessionUpdated?.(sessionId);
+        await queryClient.invalidateQueries({ queryKey: ["context-preview", sessionId] }, { throwOnError: true });
+        setSaveFeedbackBySession((current) => ({ ...current, [sessionId]: { status: "saved" } }));
+      } catch (cause) {
+        const message = `会话“${sessionName}”的设置已保存，但刷新会话或上下文失败：${cause instanceof Error ? cause.message : String(cause)}`;
+        setSaveFeedbackBySession((current) => ({ ...current, [sessionId]: { status: "saved", error: message } }));
+        onError?.(message);
+      }
     } catch (cause) {
-      onError?.(cause instanceof Error ? cause.message : String(cause));
+      const message = `会话“${sessionName}”的设置保存失败：${cause instanceof Error ? cause.message : String(cause)}`;
+      setSaveFeedbackBySession((current) => ({ ...current, [sessionId]: { status: "error", error: message } }));
+      onError?.(message);
     } finally {
-      setSavingSession(false);
+      savingSessions.current.delete(sessionId);
     }
   }
 
-  function renderBranch(parentId: string | null, depth = 0): React.ReactNode {
-    if (!tree) return null;
-    return sortMessages(tree.messages.filter((message) => message.parent_id === parentId)).map((message) => {
-      const active = tree.active_path_ids.includes(message.id);
-      return (
-        <div key={message.id}>
-          <button
-            className={active ? "branch-node active" : "branch-node"}
-            style={{ paddingLeft: 10 + depth * 16 }}
-            onClick={() => void onSelectMessage(message.id).catch((cause) => onError?.(cause instanceof Error ? cause.message : String(cause)))}
-            title="切换到此节点所在分支"
-          >
-            <span>{message.role === "assistant" ? "A" : message.role === "user" ? "U" : "S"}</span>
-            <p>{message.content || "空消息"}</p>
-          </button>
-          {renderBranch(message.id, depth + 1)}
-        </div>
-      );
-    });
+  async function selectBranch(messageId: string) {
+    if (!selectedSessionId || !currentTree || selectingSessions.current.has(selectedSessionId)) return;
+    const sessionId = selectedSessionId;
+    const sessionName = currentTree.session.title || sessionId;
+    selectingSessions.current.add(sessionId);
+    setBranchFeedbackBySession((current) => ({ ...current, [sessionId]: { selecting: true } }));
+    try {
+      await onSelectMessage(messageId);
+      setBranchFeedbackBySession((current) => ({ ...current, [sessionId]: { selecting: false } }));
+    } catch (cause) {
+      const message = `会话“${sessionName}”切换分支失败：${cause instanceof Error ? cause.message : String(cause)}`;
+      setBranchFeedbackBySession((current) => ({ ...current, [sessionId]: { selecting: false, error: message } }));
+      onError?.(message);
+    } finally {
+      selectingSessions.current.delete(sessionId);
+    }
   }
 
   return (
     <aside className="right-pane">
       <header className="pane-header">
-        <div><p className="eyebrow">Inspector</p><h2>Prompt、Regex 与分支</h2></div>
-        <div className="pane-header-actions"><button className="icon-button" title="刷新当前会话上下文" aria-label="刷新当前会话上下文" disabled={!selectedSessionId} onClick={() => previewQuery.refetch()}><RefreshCcw size={17} /></button>{onCloseMobile && <button className="icon-button mobile-pane-close" title="关闭 Inspector" aria-label="关闭 Inspector" onClick={onCloseMobile}><X size={17} /></button>}</div>
+        <div><p className="eyebrow">当前会话</p><h2>分支与设置</h2></div>
+        <div className="pane-header-actions"><button className="icon-button" title="刷新当前会话上下文" aria-label="刷新当前会话上下文" disabled={!selectedSessionId} onClick={() => previewQuery.refetch()}><RefreshCcw size={17} /></button>{onCloseMobile && <button className="icon-button inspector-close" title="关闭分支与设置" aria-label="关闭分支与设置" onClick={onCloseMobile}><X size={17} /></button>}</div>
       </header>
+
+      <CollapsibleSection
+        contentId="inspector-nearby-branches-content"
+        title="附近分叉"
+        icon={<GitFork size={16} />}
+        storageKey="yggdrasil-tavern.inspector.nearby-branches.expanded"
+        className="inspector-section nearby-branches-section"
+        defaultExpanded
+      >
+        <p className="section-help">沿当前聊天路径显示可切换的消息分支。点击消息即可切换；完整树可搜索和浏览全部分支。</p>
+        {nearbyGroups.map((group) => (
+          <section className="nearby-branch-group" key={group.parentId || "root"}>
+            <h3>{group.parentId === null ? "开场分支" : `第 ${group.messagePosition} 条消息的分支`}</h3>
+            <div className="branch-map">
+              {group.branches.map((message) => (
+                <button
+                  type="button"
+                  key={message.id}
+                  className={group.activeMessageId === message.id ? "branch-node active" : "branch-node"}
+                  aria-current={group.activeMessageId === message.id ? "true" : undefined}
+                  disabled={branchFeedback?.selecting}
+                  onClick={() => void selectBranch(message.id)}
+                  title={message.content || "空消息"}
+                >
+                  <span>{message.role === "assistant" ? "A" : message.role === "user" ? "U" : "S"}</span>
+                  <p>{message.content || "空消息"}</p>
+                </button>
+              ))}
+            </div>
+          </section>
+        ))}
+        {!currentTree && <p className="muted">选择会话后显示附近分叉。</p>}
+        {currentTree && !nearbyGroups.length && <p className="muted">当前路径暂无分叉。消息旁的分支按钮仍可创建或切换回复。</p>}
+        {allNearbyGroups.length > nearbyGroups.length && <p className="section-help">已显示最近的 {nearbyGroups.length} 处分叉；较早的分叉可在完整树中查看。</p>}
+        {branchFeedback?.selecting && <p className="save-feedback" role="status">正在切换分支…</p>}
+        {branchFeedback?.error && <p className="field-error" role="alert">{branchFeedback.error}</p>}
+        {onOpenTree && <button type="button" className="secondary-button full-button" disabled={!currentTree} onClick={onOpenTree}><GitFork size={15} />打开完整树</button>}
+      </CollapsibleSection>
 
       <GlobalPromptPanel onError={onError} />
 
@@ -218,18 +282,18 @@ function id(prefix: string): string {
           <button className="secondary-button" type="button" onClick={() => setSettingsDrafts((current) => resetSettingsDraft(current, selectedSessionId))}>重新加载服务器配置</button>
         </div>
       )}
-      <button className="primary-button inspector-save" disabled={!currentTree || savingSession || invalidRegexCount > 0 || hasSettingsConflict} onClick={saveSessionConfiguration}><Save size={16} />{savingSession ? "保存中…" : "保存当前会话 Regex 与世界书"}</button>
-
-      <CollapsibleSection
-        contentId="inspector-branch-map-content"
-        title="分支地图"
-        icon={<GitFork size={16} />}
-        storageKey="yggdrasil-tavern.inspector.branch-map.expanded"
-        className="inspector-section"
-        defaultExpanded
-      >
-        <div className="branch-map">{tree ? renderBranch(null) : <p className="muted">暂无会话树。</p>}</div>
-      </CollapsibleSection>
+      <div className="inspector-save-area">
+        <button
+          type="button"
+          className={`${hasSettingsChanges ? "primary-button" : "secondary-button"} inspector-save`}
+          disabled={!currentTree || !hasSettingsChanges || savingSession || invalidRegexCount > 0 || hasSettingsConflict}
+          onClick={() => void saveSessionConfiguration()}
+        ><Save size={16} />{savingSession ? "保存中…" : "保存会话设置"}</button>
+        <p className="save-feedback" role="status" aria-live="polite">
+          {savingSession ? "正在保存提交的设置…" : hasSettingsChanges ? (saveFeedback?.status === "saved" ? "上次修改已保存，当前还有未保存修改。" : "有未保存修改。") : saveFeedback?.status === "saved" ? "会话设置已保存。" : currentTree ? "会话设置未修改。" : "请先选择会话。"}
+        </p>
+        {saveFeedback?.error && <p className="field-error" role="alert">{saveFeedback.error}</p>}
+      </div>
 
       <ContextPreviewPanel selectedSessionId={selectedSessionId} previewQuery={previewQuery} />
     </aside>

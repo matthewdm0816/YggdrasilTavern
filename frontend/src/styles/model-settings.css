@@ -1,0 +1,186 @@
+.sidebar-settings-button {
+  width: calc(100% - 24px);
+  justify-content: flex-start;
+  margin: 8px 12px;
+}
+
+.model-settings-dialog {
+  width: min(680px, calc(100vw - 32px));
+  max-width: 680px;
+  max-height: min(88dvh, 900px);
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg, 14px);
+  color: var(--text);
+  background: var(--pane);
+  box-shadow: var(--modal-shadow);
+  overflow: auto;
+}
+
+.model-settings-dialog::backdrop {
+  background: var(--overlay-bg);
+}
+
+.model-settings-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--line);
+  background: var(--pane);
+}
+
+.model-settings-header h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.model-settings-header p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.model-settings-content {
+  padding: 20px 24px 24px;
+}
+
+.model-settings-content .profile-selector-row {
+  flex-wrap: wrap;
+}
+
+.model-settings-content .profile-selector-actions {
+  align-self: end;
+  margin-bottom: 3px;
+}
+
+.model-settings-content .profile-editor {
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.model-settings-notice {
+  margin: 0 0 14px;
+  color: var(--accent-text);
+  font-size: 13px;
+}
+
+.composer-model-picker {
+  min-width: 0;
+}
+
+.composer-model-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.composer-model-choice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: min(100%, 550px);
+}
+
+.composer-model-choice > span {
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.composer-model-choice select {
+  min-width: 0;
+  max-width: 100%;
+  padding: 6px 26px 6px 8px;
+  border-color: transparent;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+}
+
+.composer-model-choice select:hover,
+.composer-model-choice select:focus-visible {
+  border-color: var(--line);
+  background: var(--surface);
+}
+
+.composer-model-settings {
+  flex-shrink: 0;
+}
+
+.composer-model-error {
+  margin: 6px 0;
+}
+
+@media (max-width: 640px) {
+  .model-settings-dialog {
+    width: calc(100vw - 20px);
+    max-height: calc(100dvh - 32px);
+  }
+
+  .model-settings-header {
+    padding: 16px;
+  }
+
+  .model-settings-content {
+    padding: 16px;
+  }
+
+  .model-settings-content .profile-selector-row > .form-field {
+    flex-basis: 100%;
+  }
+
+  .composer-model-choice {
+    flex: 1;
+  }
+
+  .composer-model-choice select {
+    width: 100%;
+    font-size: 12px;
+  }
+}
+
+/* Keep the session identity readable in the compact resource sidebar. */
+.left-pane .session-title-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.left-pane .session-title-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  max-height: 2.5em;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.left-pane .session-actions {
+  flex: 0 0 auto;
+  opacity: 1;
+}
+
+.left-pane .session-actions-menu {
+  width: 30px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  background: transparent;
+}
+
+.session-folder-menu {
+  padding: 6px 4px 2px;
+}
+
+.session-folder-menu select {
+  width: 100%;
+}

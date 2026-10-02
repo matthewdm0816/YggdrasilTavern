@@ -1,16 +1,16 @@
-import { useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertCircle, GitFork, Menu, X } from "lucide-react";
-import { api, ChatSession } from "./lib/api";
+import { AlertCircle, X } from "lucide-react";
+import { api, APIProfile, ChatSession } from "./lib/api";
 import { useAppStore } from "./state/useAppStore";
 import { useChatController } from "./features/chat/useChatController";
 import { Sidebar } from "./components/Sidebar";
 import { ChatWorkspace } from "./components/ChatWorkspace";
 import { WorkspaceInspector } from "./components/WorkspaceInspector";
+import { ModelPicker } from "./components/ModelPicker";
+import { useMediaQuery } from "./lib/useMediaQuery";
+import { useTheme } from "./features/theme";
 
-type ThemePreference = "light" | "dark" | "system";
-
-const THEME_STORAGE_KEY = "yggdrasil-tavern.theme";
 const ACTIVE_PROFILE_STORAGE_KEY = "yggdrasil-tavern.active-api-profile";
 
 function loadActiveProfileId(): string {
@@ -22,17 +22,6 @@ function loadActiveProfileId(): string {
   }
 }
 
-function loadThemePreference(): ThemePreference {
-  try {
-    const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
-    if (stored === "light" || stored === "dark" || stored === "system") return stored;
-    if (stored !== null) console.error("Ignoring invalid saved theme preference: " + stored);
-  } catch (cause) {
-    console.error("Unable to read the saved theme preference from localStorage.", cause);
-  }
-  return "system";
-}
-
 export default function AppShell() {
   const queryClient = useQueryClient();
   const selectedSessionId = useAppStore((state) => state.selectedSessionId);
@@ -41,8 +30,16 @@ export default function AppShell() {
   const [showArchived, setShowArchived] = useState(false);
   const [mobilePanel, setMobilePanel] = useState<"left" | "right" | null>(null);
   const [leftCollapsed, setLeftCollapsed] = useState(false);
-  const [rightCollapsed, setRightCollapsed] = useState(false);
-  const [themePreference, setThemePreference] = useState<ThemePreference>(loadThemePreference);
+  const isMobile = useMediaQuery("(max-width: 920px)");
+  const isWide = useMediaQuery("(min-width: 1440px)");
+  const [rightPreference, setRightPreference] = useState<boolean | null>(null);
+  const rightOpen = rightPreference ?? isWide;
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [pickerBusy, setPickerBusy] = useState(false);
+  const [settingsBusy, setSettingsBusy] = useState(false);
+  const modelChanging = pickerBusy || settingsBusy;
+  const [treeViewOpen, setTreeViewOpen] = useState(false);
+  const theme = useTheme();
   const [activeProfileId, setActiveProfileId] = useState(loadActiveProfileId);
 
   const profilesQuery = useQuery({ queryKey: ["profiles"], queryFn: api.profiles });
@@ -76,27 +73,42 @@ export default function AppShell() {
     }
   }, [activeProfileId]);
 
-  useLayoutEffect(() => {
-    const systemTheme = window.matchMedia("(prefers-color-scheme: dark)");
-    const applyTheme = () => {
-      const resolvedTheme = themePreference === "system"
-        ? (systemTheme.matches ? "dark" : "light")
-        : themePreference;
-      document.documentElement.dataset.theme = resolvedTheme;
-      document.documentElement.style.colorScheme = resolvedTheme;
+  useEffect(() => { setMobilePanel(null); }, [isMobile]);
+
+  const drawer = isMobile ? mobilePanel : !isWide && rightOpen ? "right" : null;
+  useEffect(() => {
+    if (!drawer) return;
+    const pane = document.querySelector<HTMLElement>(drawer === "left" ? ".left-pane" : ".right-pane");
+    const previous = document.activeElement as HTMLElement | null;
+    const getFocusable = () => Array.from(pane?.querySelectorAll<HTMLElement>("button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex='0']") || [])
+      .filter((element) => element.getClientRects().length > 0);
+    const frame = requestAnimationFrame(() => getFocusable()[0]?.focus());
+    const keyboard = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return;
+      if (event.key === "Escape") {
+        if (document.querySelector("dialog[open], .action-menu, .forest-tree-dialog")) return;
+        if (isMobile) setMobilePanel(null); else setRightPreference(false);
+      }
+      if (event.key === "Tab" && !document.querySelector("dialog[open], .action-menu, .forest-tree-dialog")) {
+        const items = getFocusable();
+        const first = items[0], last = items[items.length - 1];
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+      }
     };
+    document.addEventListener("keydown", keyboard);
+    return () => { cancelAnimationFrame(frame); document.removeEventListener("keydown", keyboard); previous?.focus(); };
+  }, [drawer, isMobile]);
 
-    applyTheme();
-    try {
-      window.localStorage.setItem(THEME_STORAGE_KEY, themePreference);
-    } catch (cause) {
-      console.error("Unable to persist the selected theme preference to localStorage.", cause);
-    }
+  const profileUpdated = (profile: APIProfile) => {
+    queryClient.setQueryData<APIProfile[]>(["profiles"], (current) => current?.some((item) => item.id === profile.id)
+      ? current.map((item) => item.id === profile.id ? profile : item) : [...(current || []), profile]);
+  };
 
-    if (themePreference !== "system") return undefined;
-    systemTheme.addEventListener("change", applyTheme);
-    return () => systemTheme.removeEventListener("change", applyTheme);
-  }, [themePreference]);
+  const openSettings = () => { setMobilePanel(null); setSettingsOpen(true); };
+  const openTree = useCallback(() => { setMobilePanel(null); setTreeViewOpen(true); }, []);
+  const closeTree = useCallback(() => setTreeViewOpen(false), []);
+  const closeInspector = () => { setMobilePanel(null); setRightPreference(false); };
 
   const createSession = useMutation({
     mutationFn: api.createSession,
@@ -120,18 +132,19 @@ export default function AppShell() {
     "app-shell",
     mobilePanel ? "mobile-panel-" + mobilePanel : "",
     leftCollapsed ? "left-collapsed" : "",
-    rightCollapsed ? "right-collapsed" : ""
+    !rightOpen ? "right-collapsed" : "",
+    !isMobile && !isWide && rightOpen ? "inspector-overlay" : ""
   ].filter(Boolean).join(" ");
 
   return (
     <main className={shellClass}>
-      <nav className="mobile-toolbar" aria-label="移动端面板">
-        <button className="icon-button" aria-label="打开会话与资源" onClick={() => setMobilePanel(mobilePanel === "left" ? null : "left")}><Menu size={20} /></button>
-        <strong>{activeSession?.title || "YggdrasilTavern"}</strong>
-        <button className="icon-button" aria-label="打开分支与 Prompt" onClick={() => setMobilePanel(mobilePanel === "right" ? null : "right")}><GitFork size={20} /></button>
-      </nav>
-      {mobilePanel && <button className="mobile-scrim" aria-label="关闭面板" onClick={() => setMobilePanel(null)} />}
+      {drawer && <button className="workspace-scrim" aria-label="关闭面板" onClick={() => { setMobilePanel(null); if (!isMobile) setRightPreference(false); }} />}
       <Sidebar
+        onBusyChange={setSettingsBusy}
+        onProfileUpdated={profileUpdated}
+        settingsOpen={settingsOpen}
+        onCloseSettings={() => setSettingsOpen(false)}
+        onOpenSettings={openSettings}
         profiles={profilesQuery.data || []}
         activeProfileId={activeProfileId}
         onActiveProfileChange={setActiveProfileId}
@@ -154,7 +167,7 @@ export default function AppShell() {
           ]);
         }}
         onToggleArchived={() => setShowArchived(!showArchived)}
-        onCloseMobile={() => setMobilePanel(null)}
+        onCloseMobile={() => { setMobilePanel(null); if (!isMobile) setLeftCollapsed(true); }}
         onError={setError}
       />
       <ChatWorkspace
@@ -171,19 +184,33 @@ export default function AppShell() {
         onSelectMessage={chat.handleSelectMessage}
         onCreateSwipe={chat.handleCreateSwipe}
         onForkEdit={chat.handleForkEdit}
-        onToggleLeft={() => setLeftCollapsed((value) => !value)}
-        onToggleRight={() => setRightCollapsed((value) => !value)}
-        themePreference={themePreference}
-        onToggleTheme={() => setThemePreference((current) => current === "system" ? "light" : current === "light" ? "dark" : "system")}
+        onToggleLeft={() => isMobile ? setMobilePanel((value) => value === "left" ? null : "left") : setLeftCollapsed((value) => !value)}
+        onToggleRight={() => isMobile ? setMobilePanel((value) => value === "right" ? null : "right") : setRightPreference(!rightOpen)}
+        leftOpen={isMobile ? mobilePanel === "left" : !leftCollapsed}
+        rightOpen={isMobile ? mobilePanel === "right" : rightOpen}
+        treeViewOpen={treeViewOpen}
+        onOpenTree={openTree}
+        onCloseTree={closeTree}
+        canGenerate={Boolean(activeProfileId) && !modelChanging && !profilesQuery.isFetching}
+        appearanceControls={<>
+          <label className="form-field"><span>皮肤</span><select aria-label="皮肤" value={theme.themeId} onChange={(event) => theme.setThemeId(event.target.value)}>{theme.themes.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
+          <label className="form-field"><span>明暗模式</span><select aria-label="明暗模式" value={theme.mode} onChange={(event) => theme.setMode(event.target.value as "light" | "dark" | "system")}><option value="system">跟随系统</option><option value="light">亮色</option><option value="dark">暗色</option></select></label>
+          <button type="button" disabled={theme.loading} onClick={() => void theme.reloadThemes()}>{theme.loading ? "正在读取配置…" : "重读主题配置"}</button>
+          <button type="button" data-close-menu onClick={openSettings}>模型与连接设置</button>
+        </>}
+        modelPicker={<ModelPicker profiles={profilesQuery.data || []} activeProfileId={activeProfileId} onActiveProfileChange={setActiveProfileId}
+          onOpenSettings={openSettings} disabled={chat.streaming || profilesQuery.isFetching} onError={setError} onBusyChange={setPickerBusy} onProfileUpdated={profileUpdated}
+          onChanged={async () => { await queryClient.invalidateQueries({ queryKey: ["profiles"] }, { throwOnError: true }); }} />}
       />
       <WorkspaceInspector
         tree={tree}
         selectedSessionId={selectedSessionId}
         activeProfileId={activeProfileId}
         worldbooks={worldbooksQuery.data || []}
-        onSessionUpdated={() => chat.reloadTree()}
+        onSessionUpdated={(sessionId) => chat.reloadTree(sessionId)}
+        onOpenTree={openTree}
         onSelectMessage={chat.handleSelectMessage}
-        onCloseMobile={() => setMobilePanel(null)}
+        onCloseMobile={closeInspector}
         onError={setError}
       />
       {displayedError && (

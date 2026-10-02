@@ -1,0 +1,42 @@
+:root {
+  font-family: var(--font-ui);
+  font-size: var(--font-size-ui);
+}
+
+.message-content,
+.markdown-body {
+  font-family: var(--font-message);
+  font-size: var(--font-size-message);
+  line-height: var(--line-height-message);
+}
+
+.theme-error-notice {
+  position: fixed;
+  z-index: 110;
+  top: max(12px, env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: min(720px, calc(100% - 24px));
+  max-height: min(220px, 35dvh);
+  overflow: auto;
+  padding: 12px 14px;
+  border: 1px solid var(--color-danger);
+  border-radius: var(--radius-md);
+  background: var(--danger-bg);
+  color: var(--text);
+  box-shadow: var(--shadow);
+  font-size: 12px;
+}
+
+.theme-error-notice > svg { flex: 0 0 auto; color: var(--color-danger); }
+.theme-error-notice > div { flex: 1; min-width: 0; }
+.theme-error-notice p { margin: 4px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.theme-error-notice button { flex: 0 0 auto; font-size: 12px; white-space: nowrap; }
+
+@media (max-width: 600px) {
+  .theme-error-notice { flex-wrap: wrap; }
+  .theme-error-notice button { margin-left: 28px; }
+}

@@ -32,6 +32,8 @@ describe("Sidebar defaults", () => {
   it("keeps creation editors hidden so the session list remains primary", () => {
     const html = renderToStaticMarkup(
       <Sidebar
+        settingsOpen={false}
+        onCloseSettings={() => undefined}
         profiles={[]}
         activeProfileId=""
         onActiveProfileChange={() => undefined}
@@ -49,8 +51,8 @@ describe("Sidebar defaults", () => {
       />
     );
 
-    expect(html).toContain("当前 Profile");
-    expect(html).toContain("新建 Profile");
+    expect(html).toContain("模型与连接设置");
+    expect(html).not.toContain("当前连接配置");
     expect(html).not.toContain("Profile 名称");
     expect(html).toContain("新建会话");
     expect(html).not.toContain("扮演角色（必选）");
@@ -61,6 +63,8 @@ describe("Sidebar defaults", () => {
   it("renders the bound character avatar and larger two-line session identity", () => {
     const html = renderToStaticMarkup(
       <Sidebar
+        settingsOpen={false}
+        onCloseSettings={() => undefined}
         profiles={[]}
         activeProfileId=""
         onActiveProfileChange={() => undefined}

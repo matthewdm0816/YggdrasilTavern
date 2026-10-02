@@ -1,0 +1,232 @@
+{
+  "version": 1,
+  "defaultThemeId": "default",
+  "themes": [
+    {
+      "id": "default",
+      "label": "默认",
+      "description": "现有的暖白色与深绿色外观。",
+      "modes": {
+        "light": {
+          "colors": {
+            "background": "#f4f2ee",
+            "panel": "#fffdf9",
+            "panelStrong": "#f8faf5",
+            "border": "#d7d4cc",
+            "text": "#24231f",
+            "textMuted": "#6d6a61",
+            "primary": "#2f6f5e",
+            "primaryHover": "#225246",
+            "danger": "#9d3a34",
+            "warning": "#b56b1c",
+            "link": "#315f8a",
+            "surface": "#fff",
+            "surfaceHover": "#f0ede5",
+            "surfaceSelected": "#edf6f1",
+            "chatBackground": "#fbfaf6",
+            "surfaceSoft": "#f6f8f3",
+            "chipBackground": "#f3f0e8",
+            "warningBackground": "#fffaf2",
+            "warningText": "#4d4032",
+            "dangerBackground": "#fff8f2",
+            "veilBackground": "#e9edf0",
+            "codeBackground": "#22251f",
+            "codeText": "#f7f5eb",
+            "skeletonLow": "#ebe8e0",
+            "skeletonHigh": "#f7f5ef",
+            "glassBackground": "rgba(255, 253, 249, 0.96)",
+            "revealBackground": "rgba(255, 255, 255, 0.8)",
+            "checkerA": "#eee",
+            "checkerB": "#fff",
+            "buttonText": "#fff",
+            "accentText": "#225246",
+            "overlay": "rgba(22, 25, 22, 0.55)",
+            "userBorder": "#315f8a",
+            "assistantBorder": "#2f6f5e"
+          },
+          "shadows": {
+            "panel": "0 12px 32px rgba(35, 31, 25, 0.08)",
+            "modal": "0 25px 80px rgba(0, 0, 0, 0.26)",
+            "drawer": "0 18px 60px rgba(0, 0, 0, 0.28)"
+          }
+        },
+        "dark": {
+          "colors": {
+            "background": "#0f1310",
+            "panel": "#161b17",
+            "panelStrong": "#1b211c",
+            "border": "#364038",
+            "text": "#edf1ec",
+            "textMuted": "#a6afa8",
+            "primary": "#2f6f5e",
+            "primaryHover": "#245749",
+            "danger": "#f39a93",
+            "warning": "#e4ad69",
+            "link": "#8ab7dc",
+            "surface": "#1b211d",
+            "surfaceHover": "#252d27",
+            "surfaceSelected": "#20372f",
+            "chatBackground": "#111613",
+            "surfaceSoft": "#202722",
+            "chipBackground": "#252c27",
+            "warningBackground": "#2e261a",
+            "warningText": "#dcc39c",
+            "dangerBackground": "#301f1e",
+            "veilBackground": "#20292d",
+            "codeBackground": "#0b0e0c",
+            "codeText": "#edf2eb",
+            "skeletonLow": "#202722",
+            "skeletonHigh": "#303832",
+            "glassBackground": "rgba(22, 27, 23, 0.96)",
+            "revealBackground": "rgba(27, 33, 29, 0.9)",
+            "checkerA": "#2b332d",
+            "checkerB": "#1d231f",
+            "buttonText": "#fff",
+            "accentText": "#7ec8ad",
+            "overlay": "rgba(4, 7, 5, 0.68)",
+            "userBorder": "#8ab7dc",
+            "assistantBorder": "#2f6f5e"
+          },
+          "shadows": {
+            "panel": "0 12px 32px rgba(0, 0, 0, 0.38)",
+            "modal": "0 25px 80px rgba(0, 0, 0, 0.58)",
+            "drawer": "0 18px 60px rgba(0, 0, 0, 0.52)"
+          }
+        }
+      },
+      "typography": {
+        "fontUI": "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif",
+        "fontMessage": "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif",
+        "fontSizeUI": 14,
+        "fontSizeMessage": 15,
+        "lineHeightMessage": 1.65
+      },
+      "shape": {
+        "radiusSmall": 6,
+        "radiusMedium": 8,
+        "radiusLarge": 12
+      },
+      "spacing": {
+        "unit": 4
+      },
+      "layout": {
+        "sidebarWidth": 260,
+        "inspectorWidth": 320,
+        "messageMaxWidth": 760
+      }
+    },
+    {
+      "id": "purple",
+      "label": "紫色",
+      "description": "淡紫色与深紫色外观，配色和字体设置独立。",
+      "modes": {
+        "light": {
+          "colors": {
+            "background": "#f4f1fa",
+            "panel": "#fdfbff",
+            "panelStrong": "#f6f2fc",
+            "border": "#d9d1e9",
+            "text": "#2c2439",
+            "textMuted": "#756a85",
+            "primary": "#7651a7",
+            "primaryHover": "#5d3d88",
+            "danger": "#9d3a34",
+            "warning": "#b56b1c",
+            "link": "#6256a5",
+            "surface": "#ffffff",
+            "surfaceHover": "#eee8f8",
+            "surfaceSelected": "#ece2f7",
+            "chatBackground": "#f8f5fc",
+            "surfaceSoft": "#f4effa",
+            "chipBackground": "#eee8f6",
+            "warningBackground": "#fffaf2",
+            "warningText": "#4d4032",
+            "dangerBackground": "#fff8f2",
+            "veilBackground": "#e9edf0",
+            "codeBackground": "#282232",
+            "codeText": "#f7f2ff",
+            "skeletonLow": "#e8e1f0",
+            "skeletonHigh": "#f5f0fa",
+            "glassBackground": "rgba(253, 251, 255, 0.96)",
+            "revealBackground": "rgba(255, 255, 255, 0.85)",
+            "checkerA": "#e8e2f1",
+            "checkerB": "#ffffff",
+            "buttonText": "#fff",
+            "accentText": "#5d3d88",
+            "overlay": "rgba(31, 23, 42, 0.55)",
+            "userBorder": "#6256a5",
+            "assistantBorder": "#7651a7"
+          },
+          "shadows": {
+            "panel": "0 12px 32px rgba(35, 31, 25, 0.08)",
+            "modal": "0 25px 80px rgba(0, 0, 0, 0.26)",
+            "drawer": "0 18px 60px rgba(0, 0, 0, 0.28)"
+          }
+        },
+        "dark": {
+          "colors": {
+            "background": "#16121d",
+            "panel": "#1d1727",
+            "panelStrong": "#251e30",
+            "border": "#44364f",
+            "text": "#f0eaf7",
+            "textMuted": "#b7a8c8",
+            "primary": "#7752a8",
+            "primaryHover": "#664393",
+            "danger": "#f39a93",
+            "warning": "#e4ad69",
+            "link": "#b6a6ee",
+            "surface": "#251f30",
+            "surfaceHover": "#33283f",
+            "surfaceSelected": "#382849",
+            "chatBackground": "#191320",
+            "surfaceSoft": "#2a2235",
+            "chipBackground": "#33283f",
+            "warningBackground": "#2e261a",
+            "warningText": "#dcc39c",
+            "dangerBackground": "#301f1e",
+            "veilBackground": "#20292d",
+            "codeBackground": "#100d16",
+            "codeText": "#f2eaf9",
+            "skeletonLow": "#2a2235",
+            "skeletonHigh": "#40314e",
+            "glassBackground": "rgba(29, 23, 39, 0.96)",
+            "revealBackground": "rgba(37, 31, 48, 0.9)",
+            "checkerA": "#352a40",
+            "checkerB": "#251f30",
+            "buttonText": "#fff",
+            "accentText": "#c7a3f1",
+            "overlay": "rgba(11, 7, 17, 0.68)",
+            "userBorder": "#b6a6ee",
+            "assistantBorder": "#a880cf"
+          },
+          "shadows": {
+            "panel": "0 12px 32px rgba(0, 0, 0, 0.38)",
+            "modal": "0 25px 80px rgba(0, 0, 0, 0.58)",
+            "drawer": "0 18px 60px rgba(0, 0, 0, 0.52)"
+          }
+        }
+      },
+      "typography": {
+        "fontUI": "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif",
+        "fontMessage": "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif",
+        "fontSizeUI": 14,
+        "fontSizeMessage": 15,
+        "lineHeightMessage": 1.65
+      },
+      "shape": {
+        "radiusSmall": 8,
+        "radiusMedium": 12,
+        "radiusLarge": 16
+      },
+      "spacing": {
+        "unit": 4
+      },
+      "layout": {
+        "sidebarWidth": 260,
+        "inspectorWidth": 320,
+        "messageMaxWidth": 760
+      }
+    }
+  ]
+}

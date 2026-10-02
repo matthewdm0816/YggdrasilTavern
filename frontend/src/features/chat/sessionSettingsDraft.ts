@@ -64,8 +64,16 @@ export function resetSettingsDraft(current: SessionSettingsDrafts, sessionId: st
   return { ...current, [sessionId]: { base: draft.remote, value: draft.remote, remote: draft.remote } };
 }
 
-export function markSettingsSaved(current: SessionSettingsDrafts, sessionId: string): SessionSettingsDrafts {
+export function markSettingsSaved(
+  current: SessionSettingsDrafts,
+  sessionId: string,
+  submittedSettings: SessionSettings,
+  savedSettings: SessionSettings
+): SessionSettingsDrafts {
   const draft = current[sessionId];
   if (!draft) return current;
-  return { ...current, [sessionId]: { base: draft.value, value: draft.value, remote: draft.value } };
+  // Adopt normalized server values only while the form matches this request.
+  // A newer edit must remain visible and dirty against the saved baseline.
+  const value = sameSettings(draft.value, submittedSettings) ? savedSettings : draft.value;
+  return { ...current, [sessionId]: { ...draft, value, base: savedSettings, remote: savedSettings } };
 }

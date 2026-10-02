@@ -64,8 +64,14 @@ export function resetSettingsDraft(current: SessionSettingsDrafts, sessionId: st
   return { ...current, [sessionId]: { base: draft.remote, value: draft.remote, remote: draft.remote } };
 }
 
-export function markSettingsSaved(current: SessionSettingsDrafts, sessionId: string): SessionSettingsDrafts {
+export function markSettingsSaved(
+  current: SessionSettingsDrafts,
+  sessionId: string,
+  submitted: SessionSettings
+): SessionSettingsDrafts {
   const draft = current[sessionId];
   if (!draft) return current;
-  return { ...current, [sessionId]: { base: draft.value, value: draft.value, remote: draft.value } };
+  // Only this request's snapshot was saved. Later edits remain dirty even if
+  // the user switched sessions while the request was in flight.
+  return { ...current, [sessionId]: { base: submitted, value: draft.value, remote: submitted } };
 }

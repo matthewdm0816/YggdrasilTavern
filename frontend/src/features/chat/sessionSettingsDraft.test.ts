@@ -47,9 +47,53 @@ describe("session settings drafts", () => {
   it("marks a successful save as the new baseline before a refreshed server tree arrives", () => {
     let drafts = reconcileSettingsDrafts({}, tree("one", ["a"]));
     drafts = updateSettingsDraft(drafts, tree("one", ["a"]), (value) => ({ ...value, worldbookIds: ["saved"] }));
-    drafts = markSettingsSaved(drafts, "one");
+    drafts = markSettingsSaved(drafts, "one", drafts.one.value);
     expect(settingsDirty(drafts.one)).toBe(false);
     drafts = reconcileSettingsDrafts(drafts, tree("one", ["saved"]));
+    expect(settingsConflict(drafts.one)).toBe(false);
+  });
+
+  it("preserves edits made during a save and keeps another session's draft independent", () => {
+    const original = tree("one", ["original"]);
+    let drafts = reconcileSettingsDrafts({}, original);
+    drafts = updateSettingsDraft(drafts, original, (value) => ({ ...value, worldbookIds: ["submitted"] }));
+    const submitted = drafts.one.value;
+    drafts = updateSettingsDraft(drafts, original, (value) => ({
+      ...value,
+      worldbookIds: ["later"],
+      regexRules: [{ id: "later-rule", name: "Later edit", enabled: true, scope: "session", pattern: "old", flags: "g", replacement: "new", targets: ["display"], mode: "replace" }]
+    }));
+    drafts = reconcileSettingsDrafts(drafts, tree("two", ["other"]));
+    drafts = updateSettingsDraft(drafts, tree("two", ["other"]), (value) => ({ ...value, worldbookIds: ["other-edit"] }));
+    const later = drafts.one.value;
+    const other = drafts.two;
+
+    drafts = markSettingsSaved(drafts, "one", submitted);
+    drafts = reconcileSettingsDrafts(drafts, tree("one", submitted.worldbookIds));
+
+    expect(drafts.one.value).toEqual(later);
+    expect(drafts.one.base).toEqual(submitted);
+    expect(settingsDirty(drafts.one)).toBe(true);
+    expect(settingsConflict(drafts.one)).toBe(false);
+    expect(drafts.two).toBe(other);
+
+    drafts = markSettingsSaved(drafts, "one", later);
+    expect(settingsDirty(drafts.one)).toBe(false);
+    expect(settingsConflict(drafts.one)).toBe(false);
+  });
+
+  it("keeps reverting to the original value during a save as an unsaved edit", () => {
+    const original = tree("one", ["original"]);
+    let drafts = reconcileSettingsDrafts({}, original);
+    drafts = updateSettingsDraft(drafts, original, (value) => ({ ...value, worldbookIds: ["submitted"] }));
+    const submitted = drafts.one.value;
+    drafts = updateSettingsDraft(drafts, original, (value) => ({ ...value, worldbookIds: ["original"] }));
+
+    drafts = markSettingsSaved(drafts, "one", submitted);
+    drafts = reconcileSettingsDrafts(drafts, tree("one", submitted.worldbookIds));
+
+    expect(drafts.one.value.worldbookIds).toEqual(["original"]);
+    expect(settingsDirty(drafts.one)).toBe(true);
     expect(settingsConflict(drafts.one)).toBe(false);
   });
 });

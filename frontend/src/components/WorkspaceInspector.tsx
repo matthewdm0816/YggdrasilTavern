@@ -96,19 +96,20 @@ function id(prefix: string): string {
 
   async function saveSessionConfiguration() {
     if (!currentTree || !selectedSessionId || invalidRegexCount || hasSettingsConflict) return;
+    const submittedSettings = { worldbookIds, regexRules };
     setSavingSession(true);
     try {
       const sessionPreset = { ...currentTree.session.preset };
       delete sessionPreset.prompt_slots;
       await api.updateSession(selectedSessionId, {
-        worldbook_id: worldbookIds[0] || null,
+        worldbook_id: submittedSettings.worldbookIds[0] || null,
         preset: {
           ...sessionPreset,
-          worldbook_ids: worldbookIds,
-          regex_rules: regexRules
+          worldbook_ids: submittedSettings.worldbookIds,
+          regex_rules: submittedSettings.regexRules
         }
       });
-      setSettingsDrafts((current) => markSettingsSaved(current, selectedSessionId));
+      setSettingsDrafts((current) => markSettingsSaved(current, selectedSessionId, submittedSettings));
       await onSessionUpdated?.();
       await previewQuery.refetch();
     } catch (cause) {

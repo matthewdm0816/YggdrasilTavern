@@ -21,11 +21,7 @@ def migrate_schema(engine: Engine, database_url: str) -> None:
         # runtime shape up to the 0002 baseline, then let 0003 finish safely.
         Base.metadata.create_all(bind=engine)
         _ensure_sqlite_columns(engine)
-        config = _alembic_config(database_url)
-        with engine.begin() as connection:
-            config.attributes["connection"] = connection
-            command.stamp(config, "0002_message_tokens_thinking")
-            command.upgrade(config, "head")
+        _upgrade_schema(engine, database_url, baseline_revision="0002_message_tokens_thinking")
     else:
         raise RuntimeError("Existing database has no Alembic revision; migrate it explicitly before startup")
 
@@ -39,11 +35,53 @@ def _alembic_config(database_url: str) -> Config:
     return config
 
 
-def _upgrade_schema(engine: Engine, database_url: str) -> None:
+def _upgrade_schema(engine: Engine, database_url: str, *, baseline_revision: str | None = None) -> None:
     config = _alembic_config(database_url)
-    with engine.begin() as connection:
-        config.attributes["connection"] = connection
-        command.upgrade(config, "head")
+    with engine.connect() as connection:
+        sqlite = connection.dialect.name == "sqlite"
+        foreign_keys = None
+        if sqlite:
+            foreign_keys = connection.exec_driver_sql("PRAGMA foreign_keys").scalar_one()
+            connection.commit()
+        try:
+            if sqlite:
+                # Batch migrations drop and recreate referenced tables. With
+                # enforcement enabled, DROP TABLE would cascade-delete messages.
+                # SQLite only accepts this PRAGMA outside a transaction.
+                connection.exec_driver_sql("PRAGMA foreign_keys=OFF")
+                if connection.exec_driver_sql("PRAGMA foreign_keys").scalar_one() != 0:
+                    raise RuntimeError("Could not suspend SQLite foreign key checks for schema migration")
+                connection.commit()
+            with connection.begin():
+                if sqlite:
+                    # sqlite3's legacy transaction mode does not BEGIN for DDL.
+                    # Start explicitly so table rebuilds also roll back on error.
+                    connection.exec_driver_sql("BEGIN")
+                config.attributes["connection"] = connection
+                if baseline_revision is not None:
+                    command.stamp(config, baseline_revision)
+                command.upgrade(config, "head")
+                if sqlite:
+                    violations = connection.exec_driver_sql("PRAGMA foreign_key_check").fetchmany(10)
+                    if violations:
+                        details = "; ".join(
+                            f"table={table}, rowid={rowid}, parent={parent}, constraint={constraint}"
+                            for table, rowid, parent, constraint in violations
+                        )
+                        raise RuntimeError(f"SQLite migration foreign key check failed: {details}")
+        finally:
+            if foreign_keys is not None:
+                # Restore enforcement before returning this connection to the
+                # application's pool, including after any migration failure.
+                try:
+                    connection.rollback()
+                    connection.exec_driver_sql(f"PRAGMA foreign_keys={int(foreign_keys)}")
+                    if connection.exec_driver_sql("PRAGMA foreign_keys").scalar_one() != foreign_keys:
+                        raise RuntimeError("Could not restore SQLite foreign key checks after schema migration")
+                    connection.commit()
+                except Exception:
+                    connection.invalidate()
+                    raise
 
 
 def recover_interrupted_generations(engine: Engine) -> None:

@@ -1,8 +1,10 @@
 from pathlib import Path
 
 import pytest
+from alembic import command
+from alembic.config import Config
 from fastapi.testclient import TestClient
-from sqlalchemy import select
+from sqlalchemy import create_engine, inspect, select, text
 from sqlalchemy.exc import IntegrityError
 
 from app import models
@@ -126,5 +128,86 @@ def test_legacy_database_without_alembic_revision_is_adopted_without_duplicate_i
         database.initialize()
         with database.open_session() as db:
             assert db.scalars(select(models.Character)).one().name == "Legacy character"
+    finally:
+        database.dispose()
+
+
+def old_chat_database(path: Path, *, versioned: bool = True) -> Database:
+    """Build the actual 0002 schema, including a selected path and a sibling."""
+    url = f"sqlite:///{path.as_posix()}"
+    backend_root = Path(__file__).resolve().parents[1]
+    config = Config(str(backend_root / "alembic.ini"))
+    config.set_main_option("script_location", str(backend_root / "alembic"))
+    config.attributes["database_url"] = url
+    command.upgrade(config, "0002_message_tokens_thinking")
+    engine = create_engine(url)
+    try:
+        with engine.begin() as connection:
+            connection.execute(text("INSERT INTO sessions (id, title, preset) VALUES ('chat', 'Old chat', '{}')"))
+            connection.execute(text(
+                "INSERT INTO messages (id, session_id, parent_id, role, speaker, content, thinking_content, "
+                "status, sort_order, provider_metadata, usage) "
+                "VALUES (:id, 'chat', :parent, 'assistant', 'Character', :content, :thinking, "
+                "'complete', :sort_order, '{}', '{}')"
+            ), [
+                {"id": "root", "parent": None, "content": "Original greeting", "thinking": "", "sort_order": 0},
+                {"id": "chosen", "parent": "root", "content": "Selected reply", "thinking": "Keep this reasoning", "sort_order": 0},
+                {"id": "sibling", "parent": "root", "content": "Alternative reply", "thinking": "Other reasoning", "sort_order": 1},
+            ])
+            connection.execute(text("UPDATE sessions SET active_root_child_id = 'root' WHERE id = 'chat'"))
+            connection.execute(text("UPDATE messages SET selected_child_id = 'chosen' WHERE id = 'root'"))
+            if not versioned:
+                connection.execute(text("DROP TABLE alembic_version"))
+    finally:
+        engine.dispose()
+    return Database(url)
+
+
+def assert_old_chat_preserved(connection) -> None:
+    assert connection.execute(text(
+        "SELECT id, parent_id, selected_child_id, content, thinking_content FROM messages ORDER BY id"
+    )).all() == [
+        ("chosen", "root", None, "Selected reply", "Keep this reasoning"),
+        ("root", None, "chosen", "Original greeting", ""),
+        ("sibling", "root", None, "Alternative reply", "Other reasoning"),
+    ]
+    assert connection.execute(text("SELECT active_root_child_id FROM sessions WHERE id = 'chat'")).scalar_one() == "root"
+
+
+@pytest.mark.parametrize("versioned", [True, False], ids=["alembic-0002", "unversioned-legacy"])
+def test_application_upgrade_preserves_old_chat_tree_and_restores_foreign_keys(tmp_path, versioned):
+    database = old_chat_database(tmp_path / "old-chat.db", versioned=versioned)
+    try:
+        database.initialize()
+        with database.engine.connect() as connection:
+            assert_old_chat_preserved(connection)
+            assert connection.exec_driver_sql("PRAGMA foreign_keys").scalar_one() == 1
+            assert connection.exec_driver_sql("PRAGMA foreign_key_check").all() == []
+            assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "0006_single_streaming_generation"
+            with pytest.raises(IntegrityError):
+                connection.execute(text("UPDATE messages SET session_id = 'missing' WHERE id = 'chosen'"))
+    finally:
+        database.dispose()
+
+
+def test_invalid_migration_rolls_back_and_restores_foreign_key_enforcement(tmp_path, monkeypatch):
+    database = old_chat_database(tmp_path / "invalid-upgrade.db")
+    original_upgrade = command.upgrade
+
+    def corrupt_upgrade(config, revision):
+        original_upgrade(config, revision)
+        config.attributes["connection"].execute(text("UPDATE messages SET session_id = 'missing' WHERE id = 'chosen'"))
+
+    monkeypatch.setattr(command, "upgrade", corrupt_upgrade)
+    try:
+        with pytest.raises(RuntimeError, match="foreign key.*messages"):
+            database.initialize()
+        with database.engine.connect() as connection:
+            assert_old_chat_preserved(connection)
+            assert connection.exec_driver_sql("PRAGMA foreign_keys").scalar_one() == 1
+            assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "0002_message_tokens_thinking"
+            assert not any(name.startswith("_alembic_tmp_") for name in inspect(connection).get_table_names())
+            with pytest.raises(IntegrityError):
+                connection.execute(text("UPDATE messages SET session_id = 'missing' WHERE id = 'chosen'"))
     finally:
         database.dispose()

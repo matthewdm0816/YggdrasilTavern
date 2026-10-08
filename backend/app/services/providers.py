@@ -35,6 +35,9 @@ from .provider_protocols.transport import (
     _stream_sse,
     _stream_terminal_state,
     extract_usage,
+    provider_error_detail,
+    safe_endpoint,
+    safe_error_text,
 )
 from .token_limits import apply_provider_output_limit, resolve_profile_token_limits
 
@@ -225,23 +228,23 @@ async def refresh_models(profile: models.APIProfile) -> List[schemas.RemoteModel
             query = {"limit": 1000} if profile.provider_type == "anthropic_messages" else None
             response = await client.get(url, headers=headers, params=query)
     except httpx.HTTPError as exc:
-        raise ApplicationError(status_code=502, detail=f"无法连接接口地址，请检查 Base URL：{exc}") from exc
+        raise ApplicationError(status_code=502, detail=f"无法连接模型列表接口：{safe_endpoint(url)}；{safe_error_text(exc, headers)}") from exc
 
     if response.status_code >= 400:
         raise ApplicationError(
             status_code=502,
-            detail=_safe_provider_error(response.status_code, discovering_models=True),
+            detail=provider_error_detail(response, url=url, headers=headers, discovering_models=True),
         )
     try:
         payload = response.json()
     except ValueError as exc:
-        raise ApplicationError(status_code=502, detail="Remote model discovery returned invalid JSON") from exc
+        raise ApplicationError(status_code=502, detail="模型列表接口返回的内容不是有效 JSON") from exc
 
     raw_models: Any = payload.get("data") if isinstance(payload, dict) else None
     if raw_models is None and isinstance(payload, dict):
         raw_models = payload.get("models")
     if not isinstance(raw_models, list):
-        raise ApplicationError(status_code=502, detail="Remote model discovery response has no model list")
+        raise ApplicationError(status_code=502, detail="该接口未返回模型列表，可能不支持获取模型列表")
 
     discovered: List[schemas.RemoteModelInfo] = []
     seen: set[str] = set()
@@ -271,12 +274,15 @@ async def stream_completion(
     if prepare_request is None:
         raise ApplicationError(status_code=400, detail=f"Unsupported provider type: {profile.provider_type}")
     request = prepare_request(profile, context, params, key)
-    async for event in _stream_sse(
-        url=url,
-        headers=request.headers,
-        payload=request.payload,
-        text_extractor=request.text_extractor,
-        thinking_extractor=request.thinking_extractor,
-        usage_extractor=request.usage_extractor,
-    ):
-        yield event
+    try:
+        async for event in _stream_sse(
+            url=url,
+            headers=request.headers,
+            payload=request.payload,
+            text_extractor=request.text_extractor,
+            thinking_extractor=request.thinking_extractor,
+            usage_extractor=request.usage_extractor,
+        ):
+            yield event
+    except httpx.HTTPError as exc:
+        raise ApplicationError(status_code=502, detail=f"生成回复时连接失败，请检查网络和服务地址。\n模型：{profile.model}\n请求地址：{safe_endpoint(url)}\n原因：{safe_error_text(exc, request.headers)}") from exc

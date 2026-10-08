@@ -36,7 +36,7 @@ type Props = {
   onRegenerate: (messageId: string) => void;
   onSelectMessage: (messageId: string) => Promise<void>;
   onCreateSwipe: (message: Message) => Promise<void>;
-  onForkEdit: (message: Message, content: string, thinkingContent: string) => Promise<void>;
+  onUpdateMessage: (message: Message, content: string, thinkingContent: string) => Promise<void>;
   onToggleLeft: () => void;
   onToggleRight: () => void;
   themePreference: "light" | "dark" | "system";
@@ -128,7 +128,7 @@ export function ChatWorkspace({
   onRegenerate,
   onSelectMessage,
   onCreateSwipe,
-  onForkEdit,
+  onUpdateMessage,
   onToggleLeft,
   onToggleRight,
   themePreference,
@@ -140,6 +140,10 @@ export function ChatWorkspace({
   const edit = useAppStore((state) => sessionId ? state.edits[sessionId] : undefined);
   const setEdit = useAppStore((state) => state.setEdit);
   const [interactionError, setInteractionError] = useState<string | null>(null);
+  const [submittingBySession, setSubmittingBySession] = useState<Record<string, boolean>>({});
+  const submitting = Boolean(submittingBySession[sessionId]);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const submitPendingRef = useRef(new Set<string>());
   const [treeViewOpen, setTreeViewOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const shouldFollowRef = useRef(true);
@@ -180,15 +184,22 @@ export function ChatWorkspace({
   async function submit(event: FormEvent) {
     event.preventDefault();
     const content = draft.trim();
-    if (!sessionId || !content || streaming) return;
+    if (!sessionId || !tree || streaming || submitPendingRef.current.has(sessionId)) return;
+    submitPendingRef.current.add(sessionId);
+    setSubmittingBySession((current) => ({ ...current, [sessionId]: true }));
+    const submittedDraft = draft;
     setInteractionError(null);
     setDraft(sessionId, "");
     try {
       await onSend(content);
       shouldFollowRef.current = true;
     } catch (cause) {
-      setDraft(sessionId, content);
+      const nextDraft = useAppStore.getState().drafts[sessionId] || "";
+      setDraft(sessionId, nextDraft ? `${submittedDraft}\n${nextDraft}` : submittedDraft);
       setInteractionError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      submitPendingRef.current.delete(sessionId);
+      setSubmittingBySession((current) => ({ ...current, [sessionId]: false }));
     }
   }
 
@@ -198,13 +209,16 @@ export function ChatWorkspace({
   }
 
   async function saveEdit(message: Message) {
-    if (!sessionId || !edit) return;
+    if (!sessionId || !edit || savingEdit) return;
+    setSavingEdit(true);
     try {
-      await onForkEdit(message, edit.value, edit.thinkingValue);
-      setEdit(sessionId, undefined);
+      await onUpdateMessage(message, edit.value, edit.thinkingValue);
+      if (useAppStore.getState().edits[sessionId] === edit) setEdit(sessionId, undefined);
       setInteractionError(null);
     } catch (cause) {
       setInteractionError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setSavingEdit(false);
     }
   }
 
@@ -240,6 +254,15 @@ export function ChatWorkspace({
     });
   }
 
+  async function copySwipe(message: Message) {
+    try {
+      await onCreateSwipe(message);
+      setInteractionError(null);
+    } catch (cause) {
+      setInteractionError(`复制消息失败：${cause instanceof Error ? cause.message : String(cause)}`);
+    }
+  }
+
   return (
     <section className="chat-pane">
       <header className="chat-header">
@@ -271,7 +294,7 @@ export function ChatWorkspace({
           {streaming ? (
             <button className="secondary-button danger-button" title="停止生成" aria-label="停止生成" onClick={onStop}><Square size={14} />停止</button>
           ) : (
-            <button className="secondary-button" title="继续生成" aria-label="继续生成" disabled={!tree} onClick={onGenerate}><Sparkles size={16} />继续</button>
+            <button className="secondary-button" title="继续生成" aria-label="继续生成" disabled={!tree || submitting} onClick={onGenerate}><Sparkles size={16} />继续</button>
           )}
           <button className="icon-button desktop-pane-toggle" title="折叠/展开右栏" onClick={onToggleRight}><PanelRightClose size={17} /></button>
         </div>
@@ -318,10 +341,10 @@ export function ChatWorkspace({
                     {(message.role === "assistant" || message.thinking_content) && (
                       <label className="form-field"><span>编辑 Thinking（可留空）</span><AutoSizeTextarea value={edit.thinkingValue} onChange={(event) => setEdit(sessionId, { ...edit, thinkingValue: event.target.value })} /></label>
                     )}
-                    <p className="editor-hint">保存会创建新的 sibling/swipe；原消息及其后代保持不变。</p>
+                    <p className="editor-hint">直接修改这条消息的正文和 Thinking，后续回复将使用修改后的内容。</p>
                     <div className="inline-actions">
-                      <button className="primary-button" onClick={() => saveEdit(message)}>保存为新 swipe</button>
-                      <button className="icon-button" title="取消" onClick={() => setEdit(sessionId, undefined)}><X size={16} /></button>
+                      <button className="primary-button" disabled={savingEdit} onClick={() => saveEdit(message)}>{savingEdit ? "保存中…" : "保存修改"}</button>
+                      <button className="icon-button" title="取消" disabled={savingEdit} onClick={() => setEdit(sessionId, undefined)}><X size={16} /></button>
                     </div>
                   </div>
                 ) : message.content ? (
@@ -329,6 +352,7 @@ export function ChatWorkspace({
                 ) : message.status === "streaming" ? <p className="message-content">…</p> : null}
                 {message.error && <p className="message-error">{message.error}</p>}
                 <div className="message-toolbar">
+                  <div className="message-stats" aria-label="Token 用量与速度，可左右滑动查看">
                   {inputTokens > 0 && <span className="token-pill">输入 {inputTokens} tok</span>}
                   <span
                     className="token-pill"
@@ -336,14 +360,17 @@ export function ChatWorkspace({
                   >输出{tokenDisplay.outputEstimated ? "约 " : " "}{outputTokens || 0} tok</span>
                   {cachedTokens > 0 && <span className="token-pill cache">缓存输入 {cachedTokens} tok</span>}
                   {speed > 0 && <span className="token-pill">{speed.toFixed(1)} tok/s</span>}
+                  </div>
+                  <div className="message-tools">
                   <button className="icon-button" title="上一个 swipe" disabled={!previous} onClick={() => previous && selectSwipeFromToolbar(previous.id)}><ChevronLeft size={16} /></button>
                   <span className="swipe-counter">{index + 1}/{siblings.length}</span>
                   <button className="icon-button" title="下一个 swipe" disabled={!next} onClick={() => next && selectSwipeFromToolbar(next.id)}><ChevronRight size={16} /></button>
-                  <button className="icon-button" title="复制为新 swipe" onClick={() => onCreateSwipe(message)}><CopyPlus size={16} /></button>
-                  <button className="icon-button" title="编辑并创建新 swipe" onClick={() => startEdit(message)}><Edit3 size={16} /></button>
+                  <button className="icon-button" title="复制为新 swipe" onClick={() => copySwipe(message)}><CopyPlus size={16} /></button>
+                  <button className="icon-button" title="编辑消息" disabled={message.status === "streaming"} onClick={() => startEdit(message)}><Edit3 size={16} /></button>
                   {message.role === "assistant" && (
                     <button className="icon-button" title="重新生成此 swipe" disabled={streaming} onClick={() => onRegenerate(message.id)}><RefreshCcw size={16} /></button>
                   )}
+                  </div>
                 </div>
               </article>
             </div>
@@ -356,13 +383,13 @@ export function ChatWorkspace({
         <label className="composer-field"><span>发送消息</span><textarea
             value={draft}
             onChange={(event) => sessionId && setDraft(sessionId, event.target.value)}
-            placeholder="输入内容；发送后自动生成角色回复"
-            disabled={!tree || streaming}
+            placeholder={streaming ? "可以先写下一条消息；生成结束后再发送" : "输入消息；留空发送可继续生成"}
+            disabled={!tree}
           /></label>
         {streaming ? (
           <button className="send-button composer-stop-button" type="button" title="停止生成" aria-label="停止生成" onClick={onStop}><Square size={17} /></button>
         ) : (
-          <button className="send-button" disabled={!tree || !draft.trim()} title="发送" aria-label="发送"><Send size={18} /></button>
+          <button className="send-button" disabled={!tree || submitting} title={draft.trim() ? "发送" : "空白发送：继续生成"} aria-label={draft.trim() ? "发送" : "空白发送：继续生成"}><Send size={18} /></button>
         )}
       </form>
       {treeViewOpen && tree && (

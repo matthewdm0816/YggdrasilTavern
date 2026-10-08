@@ -1,6 +1,10 @@
 export class SessionGenerationRegistry {
   private readonly controllers = new Map<string, AbortController>();
 
+  isActive(sessionId: string): boolean {
+    return this.controllers.has(sessionId);
+  }
+
   begin(sessionId: string): AbortController | null {
     if (this.controllers.has(sessionId)) return null;
     const controller = new AbortController();

@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Archive, ArchiveRestore, ChevronDown, ChevronRight, CloudDownload, Eye, EyeOff, Folder, FolderPlus, MessageSquarePlus, Pencil, Pin, PinOff, Plus, RefreshCcw, Search, Server, Star, Trash2, X } from "lucide-react";
 import { api, APIProfile, CharacterSummary, ChatSession, ProviderType, RemoteModelInfo, SessionFolder, WorldBook } from "../lib/api";
 import { CollapsibleSection } from "./CollapsibleSection";
 import { SidebarResources } from "./SidebarResources";
+import { DisplaySettings } from "./DisplaySettings";
 
 type Props = {
   profiles: APIProfile[];
@@ -89,6 +90,10 @@ function remoteModelLabel(model: RemoteModelInfo): string {
   return `${model.display_name || model.id}${model.display_name ? ` · ${model.id}` : ""}${limits ? ` · ${limits}` : ""}`;
 }
 
+function profileConnectionKey(profile: APIProfile): string {
+  return JSON.stringify([profile.id, profile.provider_type, profile.base_url, profile.path_override]);
+}
+
 export function Sidebar({
   profiles,
   activeProfileId,
@@ -119,19 +124,62 @@ export function Sidebar({
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [newFolderName, setNewFolderName] = useState("");
   const [showFolderInput, setShowFolderInput] = useState(false);
-  const [profileModels, setProfileModels] = useState<Record<string, RemoteModelInfo[]>>({});
   const [refreshingProfileId, setRefreshingProfileId] = useState<string | null>(null);
   const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
   const [profileEditorOpen, setProfileEditorOpen] = useState(false);
   const [showApiKey, setShowApiKey] = useState(false);
+  const [modelNotices, setModelNotices] = useState<Record<string, string>>({});
+  const [draftModels, setDraftModels] = useState<RemoteModelInfo[]>([]);
+  const [draftModelsNotice, setDraftModelsNotice] = useState("");
+  const [discoveringDraftModels, setDiscoveringDraftModels] = useState(false);
+  const [discoveryAttempt, setDiscoveryAttempt] = useState(0);
+  const attemptedProfiles = useRef(new Set<string>());
   const activeProfile = profiles.find((item) => item.id === activeProfileId);
-  const activeCatalog = activeProfile
-    ? (profileModels[activeProfile.id] || activeProfile.model_catalog || [])
-    : [];
+  const activeConnectionKey = activeProfile ? profileConnectionKey(activeProfile) : "";
+  const activeCatalog = activeProfile?.model_catalog || [];
   const activeRemoteModel = activeCatalog.find((item) => item.id === activeProfile?.model);
   const activeEffectiveLimits = activeProfile
     ? effectiveProfileLimits(activeProfile, activeRemoteModel)
     : null;
+
+  useEffect(() => {
+    if (!activeProfile || attemptedProfiles.current.has(activeConnectionKey)) return;
+    attemptedProfiles.current.add(activeConnectionKey);
+    void refreshProfileModels(activeProfile.id);
+  }, [activeConnectionKey]);
+
+  useEffect(() => {
+    if (!profileEditorOpen) return;
+    const controller = new AbortController();
+    const existing = profiles.find((item) => item.id === editingProfileId);
+    setDraftModels([]);
+    setDiscoveringDraftModels(false);
+    if (!profile.base_url.trim() || (!profile.api_key.trim() && !existing?.has_api_key && !existing?.api_key_env)) {
+      setDraftModelsNotice("填写服务地址和 API Key 后自动获取模型列表；也可直接手输模型名称。");
+      return;
+    }
+    setDraftModelsNotice("等待获取模型列表…");
+    const timer = window.setTimeout(async () => {
+      setDiscoveringDraftModels(true);
+      try {
+        const result = await api.discoverProfileModels({
+          provider_type: profile.provider_type, base_url: profile.base_url.trim(),
+          path_override: profile.path_override || null,
+          api_key: profile.api_key.trim() || null, profile_id: editingProfileId,
+        }, controller.signal);
+        if (controller.signal.aborted) return;
+        setDraftModels(result.models);
+        setDraftModelsNotice(result.available ? (result.models.length ? `已获取 ${result.models.length} 个模型；可选择，也可手输。` : "服务商返回空列表；请手动填写模型名称。") : result.message || "无法获取模型列表；请手动填写模型名称。");
+      } catch (cause) {
+        if (controller.signal.aborted) return;
+        console.error("无法获取编辑中的 API 配置的模型列表。", cause);
+        setDraftModelsNotice(`无法获取模型列表：${cause instanceof Error ? cause.message : String(cause)}；仍可手动填写。`);
+      } finally {
+        if (!controller.signal.aborted) setDiscoveringDraftModels(false);
+      }
+    }, 700);
+    return () => { window.clearTimeout(timer); controller.abort(); };
+  }, [profileEditorOpen, editingProfileId, profile.provider_type, profile.base_url, profile.path_override, profile.api_key, discoveryAttempt]);
 
   useEffect(() => {
     loadFolders();
@@ -273,6 +321,7 @@ export function Sidebar({
     setBusy(true);
     try {
       let createdProfileId: string | null = null;
+      let savedProfile: APIProfile;
       const payload = {
         name: profile.name.trim(),
         provider_type: profile.provider_type,
@@ -285,14 +334,18 @@ export function Sidebar({
         output_token_limit: profile.output_token_limit
       };
       if (editingProfileId) {
-        await api.updateProfile(editingProfileId, payload);
+        savedProfile = await api.updateProfile(editingProfileId, payload);
       } else {
         const created = await api.createProfile(payload);
+        savedProfile = created;
         createdProfileId = created.id;
       }
+      const connectionKey = profileConnectionKey(savedProfile);
+      attemptedProfiles.current.add(connectionKey);
       resetProfileEditor();
       await onRefresh();
       if (createdProfileId) onActiveProfileChange(createdProfileId);
+      void refreshProfileModels(savedProfile.id, connectionKey);
     } catch (exc) {
       onError?.(exc instanceof Error ? exc.message : String(exc));
     } finally {
@@ -330,7 +383,7 @@ export function Sidebar({
         character_id: character.id,
         worldbook_id: selectedWorldbooks[0] || null,
         folder_id: selectedFolderId || null,
-        preset: { user_name: "User", auto_greeting: true, worldbook_ids: selectedWorldbooks }
+        preset: { auto_greeting: true, worldbook_ids: selectedWorldbooks }
       });
       resetSessionEditor();
     } catch {
@@ -338,12 +391,19 @@ export function Sidebar({
     }
   }
 
-  function createSessionDraft() {
+  async function createSessionDraft() {
     setSessionTitle("");
     setSelectedCharacter("");
     setSelectedWorldbooks([]);
     setSelectedFolderId("");
     setSessionEditorOpen(true);
+    try {
+      const defaults = await api.sessionDefaults();
+      const ids = defaults.preset?.worldbook_ids;
+      setSelectedWorldbooks(Array.isArray(ids) ? ids.filter((value): value is string => typeof value === "string" && worldbooks.some((book) => book.id === value)) : []);
+    } catch (cause) {
+      onError?.(`新会话默认设置读取失败：${cause instanceof Error ? cause.message : String(cause)}`);
+    }
   }
 
   function resetSessionEditor() {
@@ -361,14 +421,19 @@ export function Sidebar({
     setSessionTitle((current) => titleForSelectedCharacter(current, currentCharacterName, nextCharacterName));
   }
 
-  async function refreshProfileModels(profileId: string) {
+  async function refreshProfileModels(profileId: string, connectionKeyOverride?: string) {
+    const item = profiles.find((entry) => entry.id === profileId);
+    const connectionKey = connectionKeyOverride || (item ? profileConnectionKey(item) : profileId);
     setRefreshingProfileId(profileId);
     try {
       const response = await api.refreshProfileModels(profileId);
-      setProfileModels((current) => ({ ...current, [profileId]: response.models }));
-      await onRefresh();
+      setModelNotices((current) => ({ ...current, [connectionKey]: response.available ? (response.models.length ? `已获取 ${response.models.length} 个模型。` : "服务商返回空列表；可在编辑配置中手输模型名称。") : response.message || "无法获取模型列表；仍可手动填写模型名称。" }));
+      if (response.available) {
+        await onRefresh();
+      }
     } catch (exc) {
-      onError?.(exc instanceof Error ? exc.message : String(exc));
+      console.error("无法刷新模型列表。", exc);
+      setModelNotices((current) => ({ ...current, [connectionKey]: `无法获取模型列表：${exc instanceof Error ? exc.message : String(exc)}；仍可手动填写模型名称。` }));
     } finally {
       setRefreshingProfileId(null);
     }
@@ -607,6 +672,8 @@ export function Sidebar({
           </div>
         </div>
         <p className="section-help">所有聊天生成使用此项；切换不会改写聊天历史。</p>
+        {activeProfile && <div className="profile-key-status"><span>{activeProfile.has_api_key ? "API Key 已保存" : activeProfile.api_key_env ? "API Key 来自服务器环境变量" : "尚未设置 API Key"}</span><button className="secondary-button" type="button" onClick={() => editProfile(activeProfile)}>输入 / 更换 API Key</button></div>}
+        {activeProfile && modelNotices[activeConnectionKey] && <p className="model-discovery-notice" role="status">{modelNotices[activeConnectionKey]}</p>}
         {activeProfile && activeEffectiveLimits ? (
           <div className="profile-budget-summary" aria-label="当前 Token 预算">
             <span>配置输入 {formatTokenLimit(activeProfile.input_token_limit)}</span>
@@ -639,8 +706,10 @@ export function Sidebar({
               </select><small>需与服务商文档所写的接口格式一致；Kimi 等兼容服务通常选 Chat Completions。</small></label>
             <label className="form-field"><span>Base URL</span><input value={profile.base_url} onChange={(event) => setProfile({ ...profile, base_url: event.target.value })} /><small>服务地址，例如 https://api.moonshot.cn/v1；末尾的 /v1 可保留。</small></label>
             <label className="form-field"><span>自定义请求路径（可选）</span><input value={profile.path_override} onChange={(event) => setProfile({ ...profile, path_override: event.target.value })} /><small>留空会按所选协议使用默认路径；只有服务商明确给出不同路径时才填写。</small></label>
-            <label className="form-field"><span>模型名称</span><input value={profile.model} onChange={(event) => setProfile({ ...profile, model: event.target.value })} /><small>发送给 API 的模型 ID；保存后也可从远端模型列表选择。</small></label>
-            <label className="form-field"><span>API Key</span><div className="secret-input"><input type={showApiKey ? "text" : "password"} autoComplete="off" value={profile.api_key} onChange={(event) => setProfile({ ...profile, api_key: event.target.value.trim() })} /><button className="icon-button" type="button" aria-label={showApiKey ? "隐藏 API Key" : "显示 API Key"} title={showApiKey ? "隐藏" : "显示"} onClick={() => setShowApiKey((value) => !value)}>{showApiKey ? <EyeOff size={15} /> : <Eye size={15} />}</button></div><small>{editingProfileId && profiles.find((item) => item.id === editingProfileId)?.has_api_key ? "已保存；普通编辑可留空。若修改协议、Base URL 或请求路径，必须重新输入 Key。" : "直接粘贴服务商提供的 Key；首尾空格会自动移除，本地保存且读取接口不会回传明文。"}</small></label>
+            <label className="form-field"><span>模型名称（可手输）</span><input list="profile-draft-models" value={profile.model} onChange={(event) => setProfile({ ...profile, model: event.target.value })} /><datalist id="profile-draft-models">{draftModels.map((item) => <option key={item.id} value={item.id}>{remoteModelLabel(item)}</option>)}</datalist></label>
+            {draftModels.length > 0 && <label className="form-field"><span>从获取的模型列表选择</span><select value={draftModels.some((item) => item.id === profile.model) ? profile.model : ""} onChange={(event) => event.target.value && setProfile({ ...profile, model: event.target.value })}><option value="">选择模型，或在上方手输</option>{draftModels.map((item) => <option key={item.id} value={item.id}>{remoteModelLabel(item)}</option>)}</select></label>}
+            <div className="model-discovery-row"><p className="model-discovery-notice" role="status">{discoveringDraftModels ? "正在获取模型列表…" : draftModelsNotice}</p><button className="icon-button" type="button" title="重新获取模型列表" aria-label="重新获取模型列表" disabled={discoveringDraftModels} onClick={() => setDiscoveryAttempt((value) => value + 1)}><CloudDownload size={15} /></button></div>
+            <label className="form-field"><span>API Key</span><div className="secret-input"><input type={showApiKey ? "text" : "password"} autoComplete="off" placeholder={editingProfileId ? "留空保留已有 Key；粘贴新 Key 可替换" : "粘贴服务商提供的 API Key"} value={profile.api_key} onChange={(event) => setProfile({ ...profile, api_key: event.target.value.trim() })} /><button className="icon-button" type="button" aria-label={showApiKey ? "隐藏 API Key" : "显示 API Key"} title={showApiKey ? "隐藏" : "显示"} onClick={() => setShowApiKey((value) => !value)}>{showApiKey ? <EyeOff size={15} /> : <Eye size={15} />}</button></div><small>{editingProfileId && profiles.find((item) => item.id === editingProfileId)?.has_api_key ? "已保存；普通编辑可留空。若修改协议、Base URL 或请求路径，必须重新输入 Key。" : "直接粘贴服务商提供的 Key；首尾空格会自动移除，本地保存且读取接口不会回传明文。"}</small></label>
             <div className="profile-token-limits">
               <label className="form-field"><span>输入上下文上限</span><input type="number" min="1024" step="1024" value={profile.input_token_limit} onChange={(event) => setProfile({ ...profile, input_token_limit: Number(event.target.value) })} /><small>默认 262144（256K）。超出时只从当前树路径移除最旧历史，固定 Prompt 和最近消息不会被截断。</small></label>
               <label className="form-field"><span>最大输出 Token</span><input type="number" min="1" step="1024" value={profile.output_token_limit} onChange={(event) => setProfile({ ...profile, output_token_limit: Number(event.target.value) })} /><small>默认 32768（32K），包含模型可能使用的 reasoning tokens；若远端报告更小上限，会使用较小值。</small></label>
@@ -656,7 +725,8 @@ export function Sidebar({
         )}
       </CollapsibleSection>
 
-      <SidebarResources characters={characters} worldbooks={worldbooks} onChanged={onRefresh} onError={onError} />
+      <DisplaySettings />
+      <SidebarResources profiles={profiles} characters={characters} worldbooks={worldbooks} onChanged={onRefresh} onError={onError} />
     </aside>
   );
 }

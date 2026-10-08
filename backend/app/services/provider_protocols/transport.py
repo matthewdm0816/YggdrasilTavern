@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from typing import Any, AsyncIterator, Callable, Dict, Optional
+from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 
@@ -19,6 +21,8 @@ class ProviderStreamEvent:
     raw: Dict[str, Any] = field(default_factory=dict)
 
 def _safe_provider_error(status_code: int, *, discovering_models: bool = False) -> str:
+    if status_code in {400, 422}:
+        return "服务商拒绝了请求，请根据下方原因检查模型名称、参数或上下文长度"
     if status_code == 401:
         return "API Key 无效或已失效，请在 API Profile 中重新填写"
     if status_code == 403:
@@ -30,6 +34,55 @@ def _safe_provider_error(status_code: int, *, discovering_models: bool = False) 
     if status_code == 429:
         return "请求过于频繁或额度不足，请稍后重试并检查账户额度"
     return f"远端服务返回 HTTP {status_code}"
+
+
+def safe_error_text(value: Any, headers: Dict[str, str]) -> str:
+    text = str(value)
+    for name, secret in headers.items():
+        if name.lower() in {"authorization", "x-api-key", "api-key"} and secret:
+            text = text.replace(secret, "[已隐藏密钥]")
+            if secret.lower().startswith("bearer "):
+                text = text.replace(secret[7:], "[已隐藏密钥]")
+    text = re.sub(r"(?i)(bearer\s+)[^\s\"'<>]+", r"\1[已隐藏密钥]", text)
+    text = re.sub(r"(?i)((?:api[_-]?key|access_token|token|password|secret)[\"']?\s*[:=]\s*[\"']?)[^\s\"'&,<>]+", r"\1[已隐藏密钥]", text)
+    return text[:2000]
+
+
+def safe_endpoint(url: str) -> str:
+    parts = urlsplit(url)
+    host = parts.netloc.rsplit("@", 1)[-1]
+    return urlunsplit((parts.scheme, host, parts.path, "", ""))
+
+
+def provider_error_detail(response: httpx.Response, *, url: str, headers: Dict[str, str], model: str = "", discovering_models: bool = False) -> str:
+    reason = ""
+    try:
+        body = response.json()
+    except ValueError:
+        content_type = response.headers.get("content-type", "").lower()
+        if "html" in content_type or response.text.lstrip().startswith("<"):
+            reason = "服务商返回了 HTML 页面，可能是网关或接口地址错误"
+        else:
+            reason = response.text.strip()
+    else:
+        if isinstance(body, dict):
+            error = body.get("error") or body.get("detail") or body
+            if isinstance(error, dict):
+                reason = "；".join(f"{key}: {error[key]}" for key in ("message", "type", "code", "param") if error.get(key))
+            elif isinstance(error, str):
+                reason = error
+            elif isinstance(error, list):
+                reason = json.dumps(error, ensure_ascii=False)
+    operation = "获取模型列表" if discovering_models else "生成回复"
+    lines = [f"{operation}失败（HTTP {response.status_code}）：{_safe_provider_error(response.status_code, discovering_models=discovering_models)}"]
+    lines.append(f"服务商原因：{reason or '服务商未提供具体错误原因'}")
+    if model:
+        lines.append(f"模型：{model}")
+    lines.append(f"请求地址：{safe_endpoint(url)}")
+    request_id = response.headers.get("x-request-id") or response.headers.get("request-id")
+    if request_id:
+        lines.append(f"请求编号：{request_id}")
+    return safe_error_text("\n".join(lines), headers)
 
 def extract_usage(payload: Dict[str, Any]) -> Dict[str, Any]:
     merged: Dict[str, Any] = {}
@@ -92,7 +145,7 @@ async def _stream_sse(
                 await response.aread()
                 raise ApplicationError(
                     status_code=response.status_code,
-                    detail=_safe_provider_error(response.status_code),
+                    detail=provider_error_detail(response, url=url, headers=headers, model=str(payload.get("model", ""))),
                 )
             async for line in response.aiter_lines():
                 if not line or line.startswith(":") or line.startswith("event:"):
@@ -108,10 +161,10 @@ async def _stream_sse(
                 try:
                     parsed = json.loads(data)
                 except json.JSONDecodeError as exc:
-                    raise RuntimeError(f"Provider returned invalid SSE JSON: {data[:200]}") from exc
+                    raise RuntimeError(safe_error_text(f"服务商返回了无法解析的生成数据：{data[:200]}", headers)) from exc
                 terminal, terminal_error = _stream_terminal_state(parsed)
                 if terminal_error:
-                    raise RuntimeError(terminal_error)
+                    raise RuntimeError(safe_error_text(f"{terminal_error}\n模型：{payload.get('model', '')}\n请求地址：{safe_endpoint(url)}", headers))
                 saw_terminal = saw_terminal or terminal
                 thinking_delta = thinking_extractor(parsed)
                 if thinking_delta:

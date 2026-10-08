@@ -8,7 +8,7 @@ export function notifyAuthenticationRequired(path: string, response: Response): 
 
 export async function responseError(response: Response): Promise<string> {
   const text = await response.text();
-  if (!text) return response.statusText || `HTTP ${response.status}`;
+  if (!text) return `请求失败（HTTP ${response.status}）：${response.statusText || "服务器没有返回错误详情"}`;
   try {
     const payload = JSON.parse(text) as { detail?: unknown };
     if (typeof payload.detail === "string") return payload.detail;
@@ -25,13 +25,21 @@ export async function responseError(response: Response): Promise<string> {
       return messages.join("；");
     }
     if (payload.detail && typeof payload.detail === "object") {
-      const detail = payload.detail as { message?: unknown };
-      if (typeof detail.message === "string") return detail.message;
+      const detail = payload.detail as { message?: unknown; diagnostics?: unknown };
+      if (typeof detail.message === "string") {
+        const diagnostics = Array.isArray(detail.diagnostics) ? detail.diagnostics.flatMap((item) => {
+          if (!item || typeof item !== "object") return [];
+          const diagnostic = item as { message?: unknown };
+          return typeof diagnostic.message === "string" ? [diagnostic.message] : [];
+        }) : [];
+        return [detail.message, ...diagnostics].join("\n");
+      }
     }
   } catch {
     // Non-JSON provider errors are intentionally returned as plain text.
   }
-  return text;
+  if (text.trimStart().startsWith("<")) return `请求失败（HTTP ${response.status}）：服务器返回了网页，未返回 API 错误详情，请检查服务地址和代理配置。`;
+  return `请求失败（HTTP ${response.status}）：${text.slice(0, 2000)}`;
 }
 
 export async function request<T>(path: string, options: RequestInit = {}): Promise<T> {

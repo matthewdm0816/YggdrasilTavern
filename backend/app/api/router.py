@@ -5,6 +5,7 @@ from fastapi import APIRouter
 from .characters import router as characters_router
 from .folders import router as folders_router
 from .generation import router as generation_router
+from .imports import router as imports_router
 from .profiles import router as profiles_router
 from .prompts import router as prompts_router
 from .sessions import router as sessions_router
@@ -19,6 +20,7 @@ def health() -> dict[str, str]:
 
 
 router.include_router(profiles_router)
+router.include_router(imports_router)
 router.include_router(prompts_router)
 router.include_router(characters_router)
 router.include_router(worldbooks_router)

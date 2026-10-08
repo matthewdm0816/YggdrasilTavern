@@ -170,7 +170,7 @@ export default function AppShell() {
         onRegenerate={chat.handleGenerate}
         onSelectMessage={chat.handleSelectMessage}
         onCreateSwipe={chat.handleCreateSwipe}
-        onForkEdit={chat.handleForkEdit}
+        onUpdateMessage={chat.handleUpdateMessage}
         onToggleLeft={() => setLeftCollapsed((value) => !value)}
         onToggleRight={() => setRightCollapsed((value) => !value)}
         themePreference={themePreference}

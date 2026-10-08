@@ -160,7 +160,9 @@ function id(prefix: string): string {
           {regexRules.map((rule, index) => {
             const validation = validateRegex(rule);
             return (
-              <article className={`regex-rule-card ${rule.enabled ? "enabled" : "disabled"}`} key={rule.id}>
+              <details className={`regex-rule-card ${rule.enabled ? "enabled" : "disabled"}`} key={`${selectedSessionId}:${rule.id}`}>
+                <summary><span>{rule.name || "未命名 Regex"}</span><small>{rule.enabled ? "已启用" : "已停用"}{validation ? " · 规则有误" : ""}</small></summary>
+                <div className="regex-rule-fields">
                 <header>
                   <label className="form-field"><span>规则名称</span><input value={rule.name} onChange={(event) => patchRule(index, { name: event.target.value })} /></label>
                   <button
@@ -191,7 +193,8 @@ function id(prefix: string): string {
                   {targets.map((target) => <label key={target.value}><input type="checkbox" checked={rule.targets.includes(target.value)} onChange={() => toggleTarget(index, target.value)} /><span><strong>{target.label}</strong><small>{target.help}</small></span></label>)}
                 </fieldset>
                 <button className="icon-button danger-button" title="删除 Regex" aria-label={`删除 ${rule.name || "Regex"}`} onClick={() => setRegexRules((current) => current.filter((_, itemIndex) => itemIndex !== index))}><Trash2 size={15} /></button>
-              </article>
+                </div>
+              </details>
             );
           })}
         </div>

@@ -1,0 +1,16 @@
+[Unit]
+Description=Existing SillyTavern on a private upstream port
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/SillyTavern
+EnvironmentFile=%h/YggdrasilTavern/shared/sillytavern-runtime.env
+ExecStart=/home/linuxbrew/.linuxbrew/bin/node server.js --port 8815 --listen true --listenAddressIPv4 127.0.0.1 --listenAddressIPv6 ::1
+Restart=on-failure
+RestartSec=3
+UMask=0077
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

@@ -67,6 +67,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/api-profiles/models/discover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Discover Api Profile Models */
+        post: operations["discover_api_profile_models_api_api_profiles_models_discover_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/api-profiles": {
         parameters: {
             query?: never;
@@ -114,6 +131,108 @@ export interface paths {
         put?: never;
         /** Refresh Api Profile Models */
         post: operations["refresh_api_profile_models_api_api_profiles__profile_id__models_refresh_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/imports/sillytavern/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview Import */
+        post: operations["preview_import_api_imports_sillytavern_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/imports/sillytavern/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Commit Import */
+        post: operations["commit_import_api_imports_sillytavern_apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/imports/resources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Imported Resources */
+        get: operations["imported_resources_api_imports_resources_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/saved-credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Saved Credentials */
+        get: operations["saved_credentials_api_saved_credentials_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/api-profiles/{profile_id}/credential": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Bind Credential */
+        post: operations["bind_credential_api_api_profiles__profile_id__credential_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/session-defaults": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Session Defaults */
+        get: operations["session_defaults_api_settings_session_defaults_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -695,6 +814,11 @@ export interface components {
             /** Username */
             username?: string | null;
         };
+        /** BindCredentialRequest */
+        BindCredentialRequest: {
+            /** Credential Id */
+            credential_id: string;
+        };
         /** Body_import_character_api_characters_import_post */
         Body_import_character_api_characters_import_post: {
             /** File */
@@ -1060,6 +1184,15 @@ export interface components {
             /** Api Profile Id */
             api_profile_id?: string | null;
         };
+        /** DefaultSessionConfigOut */
+        DefaultSessionConfigOut: {
+            /** Preset */
+            preset?: {
+                [key: string]: unknown;
+            };
+            /** Api Profile Id */
+            api_profile_id?: string | null;
+        };
         /** GenerateRequest */
         GenerateRequest: {
             /** Regenerate Message Id */
@@ -1198,6 +1331,27 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** ImportedResourceOut */
+        ImportedResourceOut: {
+            /** Id */
+            id: string;
+            /** Source */
+            source: string;
+            /** Kind */
+            kind: string;
+            /** Name */
+            name: string;
+            /** Raw Json */
+            raw_json: {
+                [key: string]: unknown;
+            };
+            /** Converted */
+            converted: {
+                [key: string]: unknown;
+            };
+            /** Warnings */
+            warnings: string[];
         };
         /** LoginRequest */
         LoginRequest: {
@@ -1356,15 +1510,32 @@ export interface components {
             /** Error */
             error?: string | null;
         };
+        /** ModelsDiscoverIn */
+        ModelsDiscoverIn: {
+            /** Provider Type */
+            provider_type: string;
+            /** Base Url */
+            base_url: string;
+            /** Path Override */
+            path_override?: string | null;
+            /** Api Key */
+            api_key?: string | null;
+            /** Profile Id */
+            profile_id?: string | null;
+        };
         /** ModelsRefreshOut */
         ModelsRefreshOut: {
             /** Models */
             models: components["schemas"]["RemoteModelInfo"][];
+            /** Refreshed At */
+            refreshed_at?: string | null;
             /**
-             * Refreshed At
-             * Format: date-time
+             * Available
+             * @default true
              */
-            refreshed_at: string;
+            available: boolean;
+            /** Message */
+            message?: string | null;
         };
         /** PromptDiagnostic */
         PromptDiagnostic: {
@@ -1437,6 +1608,15 @@ export interface components {
             supports_reasoning?: boolean | null;
             /** Supports Vision */
             supports_vision?: boolean | null;
+        };
+        /** SavedCredentialOut */
+        SavedCredentialOut: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Secret Type */
+            secret_type: string;
         };
         /** SessionCreate */
         SessionCreate: {
@@ -1591,6 +1771,67 @@ export interface components {
             } | null;
             /** Active Root Child Id */
             active_root_child_id?: string | null;
+        };
+        /** SillyTavernApplyRequest */
+        SillyTavernApplyRequest: {
+            /** Token */
+            token: string;
+            /**
+             * Activate
+             * @default false
+             */
+            activate: boolean;
+        };
+        /** SillyTavernImportReport */
+        SillyTavernImportReport: {
+            /** Source */
+            source: string;
+            /** Counts */
+            counts: {
+                [key: string]: number;
+            };
+            /** Already Imported */
+            already_imported: {
+                [key: string]: number;
+            };
+            /** Warnings */
+            warnings: string[];
+            /** Errors */
+            errors: string[];
+            /** Omitted */
+            omitted: {
+                [key: string]: unknown;
+            };
+            /** Can Apply */
+            can_apply: boolean;
+            /** Token */
+            token?: string | null;
+            /** Created */
+            created?: {
+                [key: string]: number;
+            };
+            /**
+             * Activated
+             * @default false
+             */
+            activated: boolean;
+            /** Backup Path */
+            backup_path?: string | null;
+        };
+        /** SillyTavernPreviewRequest */
+        SillyTavernPreviewRequest: {
+            /** Ssh Host */
+            ssh_host: string;
+            /**
+             * Directory
+             * @default ~/SillyTavern
+             */
+            directory: string;
+            /**
+             * User
+             * @default default-user
+             */
+            user: string;
         };
         /** SwipeCreate */
         SwipeCreate: {
@@ -1948,6 +2189,39 @@ export interface operations {
             };
         };
     };
+    discover_api_profile_models_api_api_profiles_models_discover_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModelsDiscoverIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelsRefreshOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_api_profiles_api_api_profiles_get: {
         parameters: {
             query?: never;
@@ -2096,6 +2370,178 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_import_api_imports_sillytavern_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SillyTavernPreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SillyTavernImportReport"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    commit_import_api_imports_sillytavern_apply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SillyTavernApplyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SillyTavernImportReport"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    imported_resources_api_imports_resources_get: {
+        parameters: {
+            query?: {
+                kind?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportedResourceOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    saved_credentials_api_saved_credentials_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SavedCredentialOut"][];
+                };
+            };
+        };
+    };
+    bind_credential_api_api_profiles__profile_id__credential_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BindCredentialRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["APIProfileOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    session_defaults_api_settings_session_defaults_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DefaultSessionConfigOut"];
                 };
             };
         };

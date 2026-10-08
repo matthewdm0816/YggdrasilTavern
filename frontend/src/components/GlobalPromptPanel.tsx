@@ -30,6 +30,10 @@ export function GlobalPromptPanel({ onError }: Props) {
     staleTime: Infinity,
     refetchOnWindowFocus: false
   });
+  const importedPrompts = useQuery({
+    queryKey: ["imported-resources", "prompt"], queryFn: () => api.importedResources("prompt")
+  });
+  const [importedPromptId, setImportedPromptId] = useState("");
   useEffect(() => {
     if (!globalPromptQuery.data) return;
     setSlots(normalizeSlots(globalPromptQuery.data.prompt_slots));
@@ -79,6 +83,14 @@ export function GlobalPromptPanel({ onError }: Props) {
         headerMeta={<span className="quiet-badge">全部会话 · r{promptRevision}</span>}
       >
         <p className="section-help">这里的顺序、开关、role 和覆盖文本由所有会话共同使用；History 仍会读取各会话当前选中的真实树路径。</p>
+        {!!importedPrompts.data?.length && <label className="form-field"><span>导入的 SillyTavern 提示词预设</span><select value={importedPromptId} onChange={(event) => {
+          const value = event.target.value;
+          setImportedPromptId(value);
+          const preset = importedPrompts.data?.find((item) => item.id === value);
+          if (preset) setSlots(normalizeSlots(preset.converted.prompt_slots));
+        }}><option value="">选择预设</option>{importedPrompts.data.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><small>选择后可检查和编辑，点击“保存全局 Prompt”才会生效。API 采样参数保存在导入的连接配置中。</small></label>}
+        {importedPrompts.error && <p className="field-error">导入的提示词预设读取失败：{importedPrompts.error instanceof Error ? importedPrompts.error.message : String(importedPrompts.error)}</p>}
+        {importedPrompts.data?.find((item) => item.id === importedPromptId)?.warnings.map((warning, index) => <p className="section-help" key={index}>{warning}</p>)}
         {globalPromptQuery.isPending && <p className="muted">正在读取全局 Prompt…</p>}
         {globalPromptQuery.error && <p className="field-error" role="alert">全局 Prompt 读取失败：{globalPromptQuery.error instanceof Error ? globalPromptQuery.error.message : String(globalPromptQuery.error)}</p>}
         <div className="slot-list">

@@ -336,3 +336,40 @@ treechat.db                       运行时创建的本地数据库；Git 已忽
 - Provider 未返回完整 usage 时，token 数为估算值。
 - 只面向本地单用户运行，不是加固后的多用户部署。
 - 当前应用界面以简体中文为主；提供英文 README 不代表界面已经完整国际化。
+# 从本地或 SSH SillyTavern 目录导入
+
+左侧的 **SillyTavern 导入** 支持 SSH 主机别名（例如 `oc`）、酒馆目录（例如 `~/SillyTavern`）和用户目录（默认 `default-user`）。SSH 使用运行后端的电脑上的 OpenSSH 配置和已有认证；远端只需要 Python 3，不需要运行 SillyTavern 服务。
+
+点击“预览远端配置”后会显示可导入数量、已有数量、转换限制和未导入的目录。预览保留 15 分钟；“备份并导入”写入预览时读取的配置快照。默认只新增资源；勾选“启用远端当前提示词与新会话默认设置”会替换所有会话共用的提示词，并为新会话设置用户名、世界书和当前连接。已有会话的角色、世界书绑定和聊天记录不会修改。
+
+也可在项目根目录使用命令行工具：
+
+```powershell
+# 只预览，不修改数据库
+./scripts/import-sillytavern.ps1 -SshHost oc -Directory '~/SillyTavern'
+
+# 备份后正式导入；同时启用当前提示词与新会话默认设置
+./scripts/import-sillytavern.ps1 -SshHost oc -Directory '~/SillyTavern' -Apply -Activate
+
+# 导入本地目录；用户目录可以是安装目录、data 目录或实际用户目录
+./scripts/import-sillytavern.ps1 -SshHost '' -Directory 'D:/SillyTavern' -Apply
+```
+
+Python 入口为 `uv run --frozen --python 3.12 python scripts/import-sillytavern.py`，接受 `--ssh`、`--directory`、`--user`、`--apply`、`--activate`、`--report` 和用于隔离测试的 `--database-url`。默认数据库读取 `backend/.env` 中的 `TREECHAT_DATABASE_URL`；相对数据库路径按项目根目录解析，与启动脚本一致。数据库备份位于 `.yggdrasil-runtime/backups/`；使用 SQLite 在线备份，包含已经提交的 WAL 数据。默认只预览；预览不升级数据库。
+
+可用资源包括 PNG/JSON 角色卡及头像、嵌入世界书、独立世界书、完整连接配置及其指定密钥、全部保存的密钥、Chat Completion 提示词顺序/开关/角色/文本、系统提示词模板、采样参数和用户角色。导入的提示词预设可在“全局 Prompt Profile”中选择、编辑和保存；保存的 API Key 可在导入面板应用到指定 API 配置，读取接口不会返回明文。
+
+重复导入按源目录和源文件身份去重，不覆盖本地编辑；远端配置变化会明确报告。没有完整地址、模型或对应密钥的连接只保存原始配置。没有等价支持的消息深度/条件注入、世界书触发逻辑、正则作用范围不会被猜测或悄悄改变；受影响的条目禁用或仅保留原始数据，并显示限制。世界书递归扫描仍使用 Yggdrasil 的现有关键词扫描。TextGen/instruct/context/reasoning、主题、快捷回复和群聊设置等保存为可查看的原始配置，不代表对应功能已启用。
+
+聊天记录、群聊记录、背景图、缓存、备份和插件代码不在本次配置导入范围；报告列出这些目录和文件数量。整个导入事务遇到错误时回滚，解析错误会阻止正式导入。工具不会向任何导入的 API 地址发送模型请求。
+## OC 上共用公网端口的部署
+
+当前访问地址为 `https://tavern.apeirianetwork.com:15266/`。`tavern.apeirianetwork.com` 的 CNAME 指向 `js1.blockelite.cn`，使用仅 DNS 模式。这个部署只使用 Cloudflare 的 DNS，不使用 Cloudflare 代理、Tunnel、Workers、账户 API 或证书服务。
+
+公网 `15266` 沿用 OC 的内部 `8802` 入口。Caddy 在 `8802` 提供自签名 HTTPS，并按域名分发请求：`tavern.apeirianetwork.com` 提供 Yggdrasil 前端，`/api` 转给 `127.0.0.1:8811`；`js1.blockelite.cn` 转给原有 SillyTavern 的 `127.0.0.1:8815`。访问时由用户在浏览器手动接受自签名证书。两个域名的证书均由 OC 本机生成，不向外部证书机构发请求。
+
+运行目录是 `/home/kmichiru/YggdrasilTavern`：`current` 指向当前代码版本，`releases` 保存代码版本，`shared/treechat.db` 和 `shared/backend.env` 保存数据库及现有登录设置。复制本地 SQLite 时使用在线备份；角色、世界书、API 配置、密钥和会话随一致的数据库快照一起复制。
+
+后台运行由三个用户级 systemd 服务管理。`yggdrasil-tavern.service` 运行 Yggdrasil 后端；`yggdrasil-gateway.service` 运行 Caddy；`sillytavern-upstream.service` 运行原有 SillyTavern。配置定义在 `deploy/oc/`。SillyTavern 必须保留 `--listen true` 来启用原有密码验证，同时通过 `--listenAddressIPv4 127.0.0.1 --listenAddressIPv6 ::1` 将实际监听限制在本机。直接使用 `--listen false` 会使它跳过原有密码验证。
+
+`scripts/package-oc-deployment.py` 打包当前工作目录的代码、构建文件、登录设置和数据库快照；私有部署包放在已被 Git 忽略的 `.yggdrasil-runtime/deploy-oc/`。`scripts/prepare-oc-deployment.py` 在 OC 校验文件哈希、创建 Python 环境并启动本机后端，拒绝覆盖已存在的共享数据。`scripts/activate-oc-gateway.py` 切换已有公网入口，并在检查失败时恢复原有 SillyTavern。初次准备成功后不应直接重复运行准备脚本覆盖数据；更新应保留 `shared` 数据并明确选择新的代码版本。

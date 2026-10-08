@@ -58,6 +58,11 @@ def list_sessions(
 @router.post("/sessions", response_model=schemas.SessionOut)
 def create_session(payload: schemas.SessionCreate, db: Session = Depends(get_db)) -> models.ChatSession:
     data = payload.model_dump()
+    defaults = db.get(models.DefaultSessionConfig, "default")
+    if defaults:
+        data["preset"] = {**defaults.preset, **data.get("preset", {})}
+        if not data.get("api_profile_id"):
+            data["api_profile_id"] = defaults.api_profile_id
     data["preset"] = _normalize_session_preset_or_422(data.get("preset"))
     _validate_session_references(db, data)
     character = db.get(models.Character, data["character_id"])
@@ -170,6 +175,8 @@ def append_message(session_id: str, payload: schemas.MessageCreate, db: Session 
 @router.patch("/messages/{message_id}", response_model=schemas.MessageOut)
 def update_message(message_id: str, payload: schemas.MessageUpdate, db: Session = Depends(get_db)) -> models.Message:
     message = get_message_or_404(db, message_id)
+    if message.status == "streaming":
+        raise HTTPException(status_code=409, detail="这条消息正在生成，请停止生成后再修改，以免新内容覆盖编辑结果")
     _update_model(message, payload)
     session = get_session_or_404(db, message.session_id)
     model_name = session.api_profile.model if session.api_profile else None

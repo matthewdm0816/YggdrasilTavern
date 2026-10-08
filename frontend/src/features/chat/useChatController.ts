@@ -22,6 +22,7 @@ export function useChatController({ selectedSessionId, activeProfileId }: ChatCo
   const generations = useRef(new SessionGenerationRegistry());
   const selections = useRef(new SessionSelectionQueue());
   const epochs = useRef(new SessionTreeEpoch());
+  const pendingSends = useRef(new Set<string>());
 
   const treeQuery = useQuery({
     queryKey: ["tree", selectedSessionId],
@@ -84,17 +85,26 @@ export function useChatController({ selectedSessionId, activeProfileId }: ChatCo
 
   async function handleSend(content: string) {
     const sessionId = selectedSessionId;
-    if (!sessionId || !content.trim()) return;
+    if (!sessionId) return;
     if (!activeProfileId) {
-      setSessionError(sessionId, "请先在 API Profiles 中选择或新建一个当前 Profile");
+      throw new Error("请先在左侧 API 设置中选择或新建一组 API 配置");
+    }
+    if (pendingSends.current.has(sessionId) || generations.current.isActive(sessionId)) return;
+    if (!content.trim()) {
+      void handleGenerate(undefined, sessionId);
       return;
     }
+    pendingSends.current.add(sessionId);
     setSessionError(sessionId, null);
-    epochs.current.advance(sessionId);
-    await api.appendMessage(sessionId, { role: "user", speaker: "User", content: content.trim(), status: "complete" });
-    epochs.current.advance(sessionId);
-    await reloadTree(sessionId);
-    void handleGenerate(undefined, sessionId);
+    try {
+      epochs.current.advance(sessionId);
+      await api.appendMessage(sessionId, { role: "user", speaker: "User", content: content.trim(), status: "complete" });
+      epochs.current.advance(sessionId);
+      await reloadTree(sessionId);
+      void handleGenerate(undefined, sessionId);
+    } finally {
+      pendingSends.current.delete(sessionId);
+    }
   }
 
   async function handleGenerate(regenerateMessageId?: string, sessionIdOverride?: string) {
@@ -203,8 +213,18 @@ export function useChatController({ selectedSessionId, activeProfileId }: ChatCo
     );
   }
 
-  async function handleForkEdit(message: Message, content: string, thinkingContent: string) {
-    await handleCreateSwipe(message, content, thinkingContent);
+  async function handleUpdateMessage(message: Message, content: string, thinkingContent: string) {
+    const sessionId = message.session_id;
+    epochs.current.advance(sessionId);
+    await selections.current.run(sessionId, async () => {
+      await queryClient.cancelQueries({ queryKey: treeQueryKey(sessionId), exact: true });
+      await api.updateMessage(message.id, { content, thinking_content: thinkingContent });
+      return api.tree(sessionId);
+    }, (next) => {
+      epochs.current.advance(sessionId);
+      reconcileTreeSnapshot(queryClient, next);
+    });
+    await queryClient.invalidateQueries({ queryKey: ["context-preview", sessionId] });
   }
 
   return {
@@ -219,6 +239,6 @@ export function useChatController({ selectedSessionId, activeProfileId }: ChatCo
     stopGeneration,
     handleSelectMessage,
     handleCreateSwipe,
-    handleForkEdit
+    handleUpdateMessage
   };
 }

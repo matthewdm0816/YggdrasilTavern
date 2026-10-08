@@ -75,7 +75,7 @@ export function SillyTavernImportPanel({ profiles, onChanged, onError }: {
 
   return <CollapsibleSection contentId="sidebar-sillytavern-import-content" title="SillyTavern 导入"
     icon={<Download size={16} />} storageKey="yggdrasil-tavern.sidebar.sillytavern-import.expanded">
-    <p className="section-help">通过运行 Yggdrasil 后端的电脑上配置的 SSH 别名读取远端酒馆。先预览，再备份本地数据库并导入。</p>
+    <p className="section-help">SSH 别名须配置在后端所在机器。</p>
     <label className="form-field"><span>SSH 主机</span><input disabled={busy} value={sshHost} onChange={(e) => editSource(setSshHost, e.target.value)} /></label>
     <label className="form-field"><span>SillyTavern 目录</span><input disabled={busy} value={directory} onChange={(e) => editSource(setDirectory, e.target.value)} /></label>
     <label className="form-field"><span>用户目录</span><input disabled={busy} value={user} onChange={(e) => editSource(setUser, e.target.value)} /></label>
@@ -88,7 +88,7 @@ export function SillyTavernImportPanel({ profiles, onChanged, onError }: {
       <details><summary>未导入的目录和文件</summary><p className="section-help">聊天记录、群聊运行方式、图片资源及插件代码没有转成 Yggdrasil 会话或功能。</p><pre>{JSON.stringify(report.omitted, null, 2)}</pre></details>
       {report.backup_path && <p className="section-help">数据库备份：{report.backup_path}</p>}
       {report.token && <>
-        <label className="form-field"><span><input type="checkbox" checked={activate} onChange={(e) => setActivate(e.target.checked)} />启用远端当前提示词与新会话默认设置</span><small>会替换所有会话共用的提示词；新会话使用导入的用户名、世界书和当前连接。</small></label>
+        <label className="form-field"><span><input type="checkbox" checked={activate} onChange={(e) => setActivate(e.target.checked)} />启用远端当前提示词与新会话默认设置</span><small>替换全局提示词；其余默认设置仅用于新会话。</small></label>
         <button className="primary-button full-button" disabled={busy || !report.can_apply} onClick={apply}>备份并导入</button>
       </>}
     </div>}
@@ -100,7 +100,7 @@ export function SillyTavernImportPanel({ profiles, onChanged, onError }: {
     {resources.error && <p className="field-error">配置读取失败：{detail(resources.error)}</p>}
     {viewed && <details open><summary>{viewed.name}</summary>{viewed.warnings.map((warning, i) => <p className="section-help" key={i}>{warning}</p>)}<pre>{JSON.stringify(viewed.raw_json, null, 2)}</pre></details>}
     <label className="form-field"><span>给 API 配置更换保存的密钥</span><select value={profileId} onChange={(e) => setProfileId(e.target.value)}><option value="">选择 API 配置</option>{profiles.map((profile) => <option value={profile.id} key={profile.id}>{profile.name}</option>)}</select></label>
-    <label className="form-field"><span>保存的 API Key</span><select value={credentialId} onChange={(e) => setCredentialId(e.target.value)}><option value="">选择密钥；不会显示明文</option>{credentials.data?.filter((item) => item.secret_type.startsWith("api_key_")).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+    <label className="form-field"><span>保存的 API Key</span><select value={credentialId} onChange={(e) => setCredentialId(e.target.value)}><option value="">选择密钥</option>{credentials.data?.filter((item) => item.secret_type.startsWith("api_key_")).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
     {credentials.error && <p className="field-error">密钥列表读取失败：{detail(credentials.error)}</p>}
     <button className="secondary-button full-button" disabled={busy || !profileId || !credentialId} onClick={bind}>应用到所选 API 配置</button>
   </CollapsibleSection>;

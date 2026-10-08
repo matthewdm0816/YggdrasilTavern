@@ -34,7 +34,7 @@ type Props = {
   onStop: () => void;
   onRegenerate: (messageId: string) => void;
   onSelectMessage: (messageId: string) => Promise<void>;
-  onCreateSwipe: (message: Message) => Promise<void>;
+  onCreateSwipe: (message: Message, content?: string, thinkingContent?: string) => Promise<void>;
   onUpdateMessage: (message: Message, content: string, thinkingContent: string) => Promise<void>;
   onToggleLeft: () => void;
   onToggleRight: () => void;
@@ -222,18 +222,22 @@ export function ChatWorkspace({
     setEdit(sessionId, messageEditDraft(message));
   }
 
-  async function saveEdit(message: Message) {
+  async function saveEdit(message: Message, asNewSwipe = false) {
     if (!sessionId || !edit || pendingEdits.current.has(sessionId)) return;
     const submitted = edit;
-    if (submitted.value === message.content && submitted.thinkingValue === message.thinking_content) return;
+    if (!asNewSwipe && submitted.value === message.content && submitted.thinkingValue === message.thinking_content) return;
     pendingEdits.current.add(sessionId);
     setSavingEditSessions((current) => ({ ...current, [sessionId]: true }));
     try {
-      await onUpdateMessage(message, submitted.value, submitted.thinkingValue);
+      if (asNewSwipe) {
+        await onCreateSwipe(message, submitted.value, submitted.thinkingValue);
+      } else {
+        await onUpdateMessage(message, submitted.value, submitted.thinkingValue);
+      }
       if (useAppStore.getState().edits[sessionId] === submitted) setEdit(sessionId, undefined);
       setInteractionError(null);
     } catch (cause) {
-      setInteractionError("消息修改失败：" + (cause instanceof Error ? cause.message : String(cause)));
+      setInteractionError((asNewSwipe ? "保存新 swipe 失败：" : "消息修改失败：") + (cause instanceof Error ? cause.message : String(cause)));
     } finally {
       pendingEdits.current.delete(sessionId);
       setSavingEditSessions((current) => ({ ...current, [sessionId]: false }));
@@ -317,7 +321,7 @@ export function ChatWorkspace({
         )}
         {loadError && <div className="inline-error" role="alert">会话树加载失败：{loadError}</div>}
         {!loading && !loadError && !tree && (
-          <div className="empty-state"><GitBranch size={32} /><p>创建或选择一个会话后，树状路径会显示在这里。</p></div>
+          <div className="empty-state"><GitBranch size={32} /><p>未选择会话</p></div>
         )}
         {activeMessages.map((message) => {
           const siblings = siblingsFor(tree, message);
@@ -346,14 +350,14 @@ export function ChatWorkspace({
                 )}
                 {isEditing ? (
                   <div className="editor-box">
-                    <label className="form-field"><span>编辑消息正文</span><AutoSizeTextarea disabled={savingEdit} value={edit.value} onChange={(event) => setEdit(sessionId, { ...edit, value: event.target.value })} /></label>
+                    <label className="form-field"><span>正文</span><AutoSizeTextarea disabled={savingEdit} value={edit.value} onChange={(event) => setEdit(sessionId, { ...edit, value: event.target.value })} /></label>
                     {(message.role === "assistant" || message.thinking_content) && (
-                      <label className="form-field"><span>编辑 Thinking（可留空）</span><AutoSizeTextarea disabled={savingEdit} value={edit.thinkingValue} onChange={(event) => setEdit(sessionId, { ...edit, thinkingValue: event.target.value })} /></label>
+                      <label className="form-field"><span>Thinking</span><AutoSizeTextarea disabled={savingEdit} value={edit.thinkingValue} onChange={(event) => setEdit(sessionId, { ...edit, thinkingValue: event.target.value })} /></label>
                     )}
-                    <p className="editor-hint">直接修改这条消息的正文和 Thinking，后续回复将使用修改后的内容。</p>
                     <div className="inline-actions">
                       <button className="primary-button" disabled={savingEdit || streaming || (edit.value === message.content && edit.thinkingValue === message.thinking_content)} onClick={() => saveEdit(message)}>{savingEdit ? "保存中…" : "保存修改"}</button>
-                      <button className="icon-button" title="取消" onClick={() => setEdit(sessionId, undefined)}><X size={16} /></button>
+                      <button className="secondary-button" disabled={savingEdit || streaming} onClick={() => saveEdit(message, true)}>保存为新 swipe</button>
+                      <button className="icon-button" title="取消" disabled={savingEdit} onClick={() => setEdit(sessionId, undefined)}><X size={16} /></button>
                     </div>
                   </div>
                 ) : message.content ? (
@@ -396,7 +400,7 @@ export function ChatWorkspace({
           <label className="composer-field"><span className="sr-only">发送消息</span><textarea
               value={draft}
               onChange={(event) => sessionId && setDraft(sessionId, event.target.value)}
-              placeholder={streaming ? "可以先写下一条消息；生成结束后再发送" : "输入消息；留空发送可继续生成"}
+              placeholder={streaming ? "输入消息…" : "输入消息；留空继续生成"}
               disabled={!tree}
             /></label>
           {streaming ? (

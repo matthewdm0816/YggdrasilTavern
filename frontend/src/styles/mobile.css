@@ -113,3 +113,7 @@
   .model-settings-header h2 { font-size: 1.2rem; }
   .model-settings-header p, .model-settings-notice { font-size: 1rem; }
 }
+
+@media (max-width: 920px) {
+  .editor-box .auto-size-textarea { min-height: 3rem; margin: 4px 0; }
+}

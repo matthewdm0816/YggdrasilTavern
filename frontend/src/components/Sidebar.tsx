@@ -200,7 +200,7 @@ export function Sidebar({
         }, controller.signal);
         if (controller.signal.aborted) return;
         setDraftModels(result.models);
-        setDraftModelsNotice(result.available ? (result.models.length ? `已获取 ${result.models.length} 个模型；可选择，也可手输。` : "服务商返回空列表；请手动填写模型名称。") : result.message || "无法获取模型列表；请手动填写模型名称。");
+        setDraftModelsNotice(result.available ? (result.models.length ? `已获取 ${result.models.length} 个模型。` : "服务商返回空列表；请手动填写模型名称。") : result.message || "无法获取模型列表；请手动填写模型名称。");
       } catch (cause) {
         if (controller.signal.aborted) return;
         console.error("无法获取编辑中的 API 配置的模型列表。", cause);
@@ -417,7 +417,7 @@ export function Sidebar({
   }
 
   async function deleteProfile(item: APIProfile) {
-    if (!window.confirm(`删除连接配置“${item.name}”？已绑定的会话会保留，但需要重新选择连接配置。`)) return;
+    if (!window.confirm(`删除连接配置“${item.name}”？`)) return;
     setProfileError(null);
     setProfileNotice(null);
     setBusy(true);
@@ -606,7 +606,7 @@ export function Sidebar({
       }}
     >
       <header className="model-settings-header">
-        <div><h2 id="model-settings-title">模型与连接设置</h2><p>管理模型服务、密钥和默认参数</p></div>
+        <div><h2 id="model-settings-title">模型与连接设置</h2></div>
         <button className="icon-button" type="button" aria-label="关闭模型与连接设置" disabled={busy || refreshingProfileId !== null} onClick={onCloseSettings}><X size={18} /></button>
       </header>
       <div className="model-settings-content">
@@ -631,7 +631,7 @@ export function Sidebar({
             )}
           </div>
         </div>
-        <p className="section-help">此处管理服务地址、密钥和生成参数。输入区会显示实际使用的模型。</p>
+
         {activeProfile && <div className="profile-key-status"><span>{activeProfile.has_api_key ? "API Key 已保存" : activeProfile.api_key_env ? "API Key 来自服务器环境变量" : "尚未设置 API Key"}</span><button className="secondary-button" type="button" onClick={() => editProfile(activeProfile)}>输入 / 更换 API Key</button></div>}
         {activeProfile && modelNotices[activeConnectionKey] && <p className="model-discovery-notice" role="status">{modelNotices[activeConnectionKey]}</p>}
         {activeProfile && activeEffectiveLimits ? (
@@ -655,7 +655,7 @@ export function Sidebar({
               <strong>{editingProfileId ? "编辑连接配置" : "新增连接配置"}</strong>
               <button className="icon-button" type="button" title="取消编辑" aria-label="取消编辑连接配置" onClick={resetProfileEditor}><X size={15} /></button>
             </div>
-            <label className="form-field"><span>连接配置名称</span><input value={profile.name} onChange={(event) => setProfile({ ...profile, name: event.target.value })} /><small>给这组连接设置起一个容易辨认的名称。</small></label>
+            <label className="form-field"><span>连接配置名称</span><input value={profile.name} onChange={(event) => setProfile({ ...profile, name: event.target.value })} /></label>
             <label className="form-field"><span>API 协议</span><select
                 value={profile.provider_type}
                 onChange={(event) => setProfile({ ...profile, provider_type: event.target.value as ProviderType })}
@@ -663,23 +663,23 @@ export function Sidebar({
                 <option value="openai_responses">OpenAI Responses API</option>
                 <option value="openai_chat_completions">OpenAI 兼容 Chat Completions</option>
                 <option value="anthropic_messages">Anthropic Messages API</option>
-              </select><small>需与服务商文档所写的接口格式一致；Kimi 等兼容服务通常选 Chat Completions。</small></label>
-            <label className="form-field"><span>Base URL</span><input value={profile.base_url} onChange={(event) => setProfile({ ...profile, base_url: event.target.value })} /><small>服务地址，例如 https://api.moonshot.cn/v1；末尾的 /v1 可保留。</small></label>
-            <label className="form-field"><span>自定义请求路径（可选）</span><input value={profile.path_override} onChange={(event) => setProfile({ ...profile, path_override: event.target.value })} /><small>留空会按所选协议使用默认路径；只有服务商明确给出不同路径时才填写。</small></label>
-            <label className="form-field"><span>模型名称（可手输）</span><input list="profile-draft-models" value={profile.model} onChange={(event) => setProfile({ ...profile, model: event.target.value })} /><datalist id="profile-draft-models">{draftModels.map((item) => <option key={item.id} value={item.id}>{remoteModelLabel(item)}</option>)}</datalist></label>
-            {draftModels.length > 0 && <label className="form-field"><span>从获取的模型列表选择</span><select value={draftModels.some((item) => item.id === profile.model) ? profile.model : ""} onChange={(event) => event.target.value && setProfile({ ...profile, model: event.target.value })}><option value="">选择模型，或在上方手输</option>{draftModels.map((item) => <option key={item.id} value={item.id}>{remoteModelLabel(item)}</option>)}</select></label>}
+              </select></label>
+            <label className="form-field"><span>Base URL</span><input placeholder="https://api.example.com/v1" value={profile.base_url} onChange={(event) => setProfile({ ...profile, base_url: event.target.value })} /></label>
+            <label className="form-field"><span>自定义请求路径（可选）</span><input placeholder="默认路径" value={profile.path_override} onChange={(event) => setProfile({ ...profile, path_override: event.target.value })} /></label>
+            <label className="form-field"><span>模型名称</span><input list="profile-draft-models" value={profile.model} onChange={(event) => setProfile({ ...profile, model: event.target.value })} /><datalist id="profile-draft-models">{draftModels.map((item) => <option key={item.id} value={item.id}>{remoteModelLabel(item)}</option>)}</datalist></label>
+            {draftModels.length > 0 && <label className="form-field"><span>模型列表</span><select value={draftModels.some((item) => item.id === profile.model) ? profile.model : ""} onChange={(event) => event.target.value && setProfile({ ...profile, model: event.target.value })}><option value="">选择模型</option>{draftModels.map((item) => <option key={item.id} value={item.id}>{remoteModelLabel(item)}</option>)}</select></label>}
             <div className="model-discovery-row"><p className="model-discovery-notice" role="status">{discoveringDraftModels ? "正在获取模型列表…" : draftModelsNotice}</p><button className="icon-button" type="button" title="重新获取模型列表" aria-label="重新获取模型列表" disabled={discoveringDraftModels} onClick={() => setDiscoveryAttempt((value) => value + 1)}><CloudDownload size={15} /></button></div>
-            <label className="form-field"><span>API Key</span><div className="secret-input"><input type={showApiKey ? "text" : "password"} autoComplete="off" placeholder={editingProfileId ? "留空保留已有 Key；粘贴新 Key 可替换" : "粘贴服务商提供的 API Key"} value={profile.api_key} onChange={(event) => setProfile({ ...profile, api_key: event.target.value.trim() })} /><button className="icon-button" type="button" aria-label={showApiKey ? "隐藏 API Key" : "显示 API Key"} title={showApiKey ? "隐藏" : "显示"} onClick={() => setShowApiKey((value) => !value)}>{showApiKey ? <EyeOff size={15} /> : <Eye size={15} />}</button></div><small>{editingProfileId && profiles.find((item) => item.id === editingProfileId)?.has_api_key ? "已保存；普通编辑可留空。若修改协议、Base URL 或请求路径，必须重新输入 Key。" : "直接粘贴服务商提供的 Key；首尾空格会自动移除，本地保存且读取接口不会回传明文。"}</small></label>
+            <label className="form-field"><span>API Key</span><div className="secret-input"><input type={showApiKey ? "text" : "password"} autoComplete="off" placeholder={editingProfileId ? "留空保留已有 Key；粘贴新 Key 可替换" : "粘贴服务商提供的 API Key"} value={profile.api_key} onChange={(event) => setProfile({ ...profile, api_key: event.target.value.trim() })} /><button className="icon-button" type="button" aria-label={showApiKey ? "隐藏 API Key" : "显示 API Key"} title={showApiKey ? "隐藏" : "显示"} onClick={() => setShowApiKey((value) => !value)}>{showApiKey ? <EyeOff size={15} /> : <Eye size={15} />}</button></div></label>
             <div className="profile-token-limits">
-              <label className="form-field"><span>输入上下文上限</span><input type="number" min="1024" step="1024" value={profile.input_token_limit} onChange={(event) => setProfile({ ...profile, input_token_limit: Number(event.target.value) })} /><small>默认 262144（256K）。超出时只从当前树路径移除最旧历史，固定 Prompt 和最近消息不会被截断。</small></label>
-              <label className="form-field"><span>最大输出 Token</span><input type="number" min="1" step="1024" value={profile.output_token_limit} onChange={(event) => setProfile({ ...profile, output_token_limit: Number(event.target.value) })} /><small>默认 32768（32K），包含模型可能使用的 reasoning tokens；若远端报告更小上限，会使用较小值。</small></label>
+              <label className="form-field"><span>输入上下文上限</span><input type="number" min="1024" step="1024" value={profile.input_token_limit} onChange={(event) => setProfile({ ...profile, input_token_limit: Number(event.target.value) })} /><small>超限时缩减发送给模型的最旧历史，保留固定提示词和最近两条消息。</small></label>
+              <label className="form-field"><span>最大输出 Token</span><input type="number" min="1" step="1024" value={profile.output_token_limit} onChange={(event) => setProfile({ ...profile, output_token_limit: Number(event.target.value) })} /><small>包含 Thinking token。</small></label>
             </div>
             {editingProfileId === activeProfile?.id && activeRemoteModel ? <small className="model-capability-note">远端报告：{activeRemoteModel.max_input_tokens ? `最大输入 ${formatTokenLimit(activeRemoteModel.max_input_tokens)}；` : ""}{activeRemoteModel.max_output_tokens ? `最大输出 ${formatTokenLimit(activeRemoteModel.max_output_tokens)}；` : ""}{activeRemoteModel.max_total_tokens ? `总上下文 ${formatTokenLimit(activeRemoteModel.max_total_tokens)}；` : ""}{!activeRemoteModel.max_input_tokens && !activeRemoteModel.max_output_tokens && !activeRemoteModel.max_total_tokens ? "未提供 Context 上限。" : "配置高于模型能力时会自动收紧生效值。"}</small> : null}
-            <label className="form-field"><span>思考强度（Thinking Level）</span><select value={String(profile.default_params._thinking_level ?? "auto")} onChange={(event) => setProfile({ ...profile, default_params: { ...profile.default_params, _thinking_level: event.target.value } })}>{thinkingLevelOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select><small>自动使用服务商默认；档位越高通常更慢且消耗更多 token；模型不支持该档位时会显示远端错误。</small></label>
-            <label className="form-field"><span>Temperature</span><input type="number" min="0" max="2" step="0.1" value={String(profile.default_params.temperature ?? "")} onChange={(event) => setProfile({ ...profile, default_params: { ...profile.default_params, temperature: event.target.value === "" ? undefined : Number(event.target.value) } })} /><small>数值越高回复越随机；常见范围 0–2。</small></label>
+            <label className="form-field"><span>思考强度（Thinking Level）</span><select value={String(profile.default_params._thinking_level ?? "auto")} onChange={(event) => setProfile({ ...profile, default_params: { ...profile.default_params, _thinking_level: event.target.value } })}>{thinkingLevelOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+            <label className="form-field"><span>Temperature</span><input type="number" min="0" max="2" step="0.1" value={String(profile.default_params.temperature ?? "")} onChange={(event) => setProfile({ ...profile, default_params: { ...profile.default_params, temperature: event.target.value === "" ? undefined : Number(event.target.value) } })} /><small>越高越随机。</small></label>
             <button className={profileDirty ? "primary-button" : "secondary-button"} type="button" disabled={busy || refreshingProfileId !== null || !profileDirty} onClick={saveProfile}>
               {editingProfileId ? <Pencil size={15} /> : <Plus size={15} />}
-              {busy ? "保存中…" : editingProfileId ? (profileDirty ? "保存修改" : "没有未保存的修改") : "新增连接配置"}
+              {busy ? "保存中…" : editingProfileId ? (profileDirty ? "保存修改" : "保存修改") : "新增连接配置"}
             </button>
           </div>
         )}
@@ -788,8 +788,8 @@ export function Sidebar({
             <label className="form-field"><span>扮演角色（必选）</span><select required value={selectedCharacter} onChange={(event) => selectCharacter(event.target.value)}>
               <option value="">请选择角色</option>
               {characters.map((character) => <option key={character.id} value={character.id}>{character.name}</option>)}
-            </select><small>决定角色设定、开场白和头像；必须选择后才能创建会话。</small></label>
-            <label className="form-field"><span>会话标题（可选）</span><input value={sessionTitle} onChange={(event) => setSessionTitle(event.target.value)} placeholder="默认使用角色名" /><small>留空时使用所选角色名；手动填写可覆盖。</small></label>
+            </select></label>
+            <label className="form-field"><span>会话标题（可选）</span><input value={sessionTitle} onChange={(event) => setSessionTitle(event.target.value)} placeholder="默认使用角色名" /></label>
             <fieldset className="compact-check-list">
               <legend>绑定多个世界书（可留空）</legend>
               {worldbooks.map((book) => (

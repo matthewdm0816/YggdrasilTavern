@@ -78,7 +78,7 @@ export function ChatPane({
         {!tree && (
           <div className="empty-state">
             <GitBranch size={32} />
-            <p>创建或选择一个会话后，树状路径会显示在这里。</p>
+            <p>未选择会话</p>
           </div>
         )}
         {activeMessages.map((message) => {
@@ -150,7 +150,7 @@ export function ChatPane({
         <textarea
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
-          placeholder="输入下一条 user message；发送后会自动生成 assistant 回复"
+          placeholder="输入消息…"
           disabled={!tree || streaming}
         />
         <button className="send-button" disabled={!tree || streaming || !draft.trim()} title="发送">

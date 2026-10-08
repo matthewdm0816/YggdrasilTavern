@@ -38,7 +38,6 @@ describe("workspace inspector", () => {
     expect(html).not.toContain("inactive-descendant");
     expect(html).toContain("打开完整树");
     expect(html).toContain('class="secondary-button inspector-save" disabled=""');
-    expect(html).toContain("会话设置未修改。");
     expect(html).toContain('aria-label="关闭分支与设置"');
   });
 
@@ -49,6 +48,6 @@ describe("workspace inspector", () => {
       active_path_ids: ["old-root"]
     }, "two");
     expect(html).not.toContain("old-alternate");
-    expect(html).toContain("选择会话后显示附近分叉。");
+    expect(html).toContain("未选择会话");
   });
 });

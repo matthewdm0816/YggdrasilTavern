@@ -29,7 +29,7 @@ export function ContextPreviewPanel({ selectedSessionId, previewQuery }: Props) 
               {previewQuery.data.diagnostics.length ? <div className="context-diagnostics">{previewQuery.data.diagnostics.map((item, index) => <p className={item.level === "error" ? "field-error" : "muted"} key={`${item.code}-${index}`}>{item.message}</p>)}</div> : null}
               <h3>System</h3><pre>{previewQuery.data.system}</pre><h3>Messages</h3><pre>{JSON.stringify(previewQuery.data.messages, null, 2)}</pre><h3>Activated Lore</h3><pre>{JSON.stringify(previewQuery.data.activated_lore, null, 2)}</pre>
             </>
-          ) : <p className="muted">选择会话后可查看最终发送给模型的 Prompt。</p>}
+          ) : <p className="muted">未选择会话</p>}
         </div>
       </CollapsibleSection>
   );

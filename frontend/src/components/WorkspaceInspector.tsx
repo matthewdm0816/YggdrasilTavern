@@ -25,16 +25,16 @@ type Props = {
 type SaveFeedback = { status: "saving" | "saved" | "error"; error?: string };
 type BranchFeedback = { selecting: boolean; error?: string };
 
-const targets: Array<{ value: RegexTarget; label: string; help: string }> = [
-  { value: "display", label: "聊天显示", help: "只改变你看到的文本，不改原消息。" },
-  { value: "user_input", label: "用户消息", help: "处理界面中的用户消息。" },
-  { value: "assistant_output", label: "角色回复", help: "处理界面中的模型回复。" },
-  { value: "outgoing_prompt", label: "发送给模型的 Prompt", help: "编译 Prompt 时显式替换；不能使用遮罩模式。" }
+const targets: Array<{ value: RegexTarget; label: string; help?: string }> = [
+  { value: "display", label: "聊天显示" },
+  { value: "user_input", label: "用户消息" },
+  { value: "assistant_output", label: "角色回复" },
+  { value: "outgoing_prompt", label: "发送给模型的 Prompt", help: "仅支持显式替换" }
 ];
 
 const regexFlagOptions = [
   { flag: "g", label: "替换全部命中", help: "关闭时，每段文本只替换第一个命中。" },
-  { flag: "i", label: "忽略大小写", help: "例如 A 和 a 会被视为相同。" },
+  { flag: "i", label: "忽略大小写", help: "" },
   { flag: "m", label: "按行匹配开头与结尾", help: "让 ^ 和 $ 对每一行分别生效。" },
   { flag: "s", label: "点号可以跨行", help: "让 . 也能匹配换行符。" }
 ] as const;
@@ -180,7 +180,7 @@ export function WorkspaceInspector({ tree, selectedSessionId, activeProfileId, w
         className="inspector-section nearby-branches-section"
         defaultExpanded
       >
-        <p className="section-help">沿当前聊天路径显示可切换的消息分支。点击消息即可切换；完整树可搜索和浏览全部分支。</p>
+
         {nearbyGroups.map((group) => (
           <section className="nearby-branch-group" key={group.parentId || "root"}>
             <h3>{group.parentId === null ? "开场分支" : `第 ${group.messagePosition} 条消息的分支`}</h3>
@@ -202,8 +202,8 @@ export function WorkspaceInspector({ tree, selectedSessionId, activeProfileId, w
             </div>
           </section>
         ))}
-        {!currentTree && <p className="muted">选择会话后显示附近分叉。</p>}
-        {currentTree && !nearbyGroups.length && <p className="muted">当前路径暂无分叉。消息旁的分支按钮仍可创建或切换回复。</p>}
+        {!currentTree && <p className="muted">未选择会话</p>}
+        {currentTree && !nearbyGroups.length && <p className="muted">当前路径暂无分叉。</p>}
         {allNearbyGroups.length > nearbyGroups.length && <p className="section-help">已显示最近的 {nearbyGroups.length} 处分叉；较早的分叉可在完整树中查看。</p>}
         {branchFeedback?.selecting && <p className="save-feedback" role="status">正在切换分支…</p>}
         {branchFeedback?.error && <p className="field-error" role="alert">{branchFeedback.error}</p>}
@@ -219,7 +219,7 @@ export function WorkspaceInspector({ tree, selectedSessionId, activeProfileId, w
         storageKey="yggdrasil-tavern.inspector.regex.expanded"
         className="inspector-section"
       >
-        <p className="section-help">显式替换会显示替换后的文本；隐式遮罩保留原文，悬浮或点击才揭示。两种方式都不会改写原始 Message.content。</p>
+
         <div className="regex-rule-list">
           {regexRules.map((rule, index) => {
             const validation = validateRegex(rule);
@@ -237,24 +237,24 @@ export function WorkspaceInspector({ tree, selectedSessionId, activeProfileId, w
                     onClick={() => patchRule(index, { enabled: !rule.enabled })}
                   >{rule.enabled ? <ToggleRight size={22} /> : <ToggleLeft size={22} />}</button>
                 </header>
-                <label className="form-field"><span>查找规则（正则表达式）</span><input value={rule.pattern} onChange={(event) => patchRule(index, { pattern: event.target.value })} /><small>例如：\\*\\*(.*?)\\*\\* 会匹配两个 ** 之间的内容。</small></label>
+                <label className="form-field"><span>查找规则（正则表达式）</span><input value={rule.pattern} onChange={(event) => patchRule(index, { pattern: event.target.value })} /></label>
                 {validation && <p className="field-error" role="alert">{validation}</p>}
-                <label className="form-field"><span>替换内容</span><input value={rule.replacement} onChange={(event) => patchRule(index, { replacement: event.target.value })} /><small>可用 $1、$2 引用查找规则中的分组；遮罩模式下这是揭示后显示的文本。</small></label>
+                <label className="form-field"><span>替换内容</span><input value={rule.replacement} onChange={(event) => patchRule(index, { replacement: event.target.value })} /><small>可用 $1、$2 引用分组；遮罩模式下作为揭示文本。</small></label>
                 <fieldset className="regex-flags">
                   <legend>匹配选项</legend>
                   {regexFlagOptions.map((option) => (
-                    <label key={option.flag}>
+                    <label key={option.flag} title={option.help}>
                       <input type="checkbox" checked={rule.flags.includes(option.flag)} onChange={() => toggleRegexFlag(index, option.flag)} />
-                      <span><strong>{option.label}</strong><small>{option.help}</small></span>
+                      <span><strong>{option.label}</strong></span>
                     </label>
                   ))}
                 </fieldset>
                 <label className="form-field"><span>处理方式</span><select value={rule.mode} onChange={(event) => patchRule(index, { mode: event.target.value as RegexRule["mode"] })}>
-                  <option value="replace">显式替换</option><option value="veil">隐式遮罩段落</option>
+                  <option value="replace">显式替换</option><option value="veil">隐式遮罩（点击显示）</option>
                 </select></label>
                 <fieldset className="target-grid">
                   <legend>应用位置</legend>
-                  {targets.map((target) => <label key={target.value}><input type="checkbox" checked={rule.targets.includes(target.value)} onChange={() => toggleTarget(index, target.value)} /><span><strong>{target.label}</strong><small>{target.help}</small></span></label>)}
+                  {targets.map((target) => <label key={target.value}><input type="checkbox" checked={rule.targets.includes(target.value)} onChange={() => toggleTarget(index, target.value)} /><span><strong>{target.label}</strong>{target.help && <small>{target.help}</small>}</span></label>)}
                 </fieldset>
                 <button className="icon-button danger-button" title="删除 Regex" aria-label={`删除 ${rule.name || "Regex"}`} onClick={() => setRegexRules((current) => current.filter((_, itemIndex) => itemIndex !== index))}><Trash2 size={15} /></button>
                 </div>
@@ -272,7 +272,7 @@ export function WorkspaceInspector({ tree, selectedSessionId, activeProfileId, w
         storageKey="yggdrasil-tavern.inspector.worldbooks.expanded"
         className="inspector-section"
       >
-        <p className="section-help">可同时绑定多本；每个会话保存自己的选择。</p>
+
         <div className="check-list">
           {worldbooks.map((book) => <label key={book.id}><input type="checkbox" checked={worldbookIds.includes(book.id)} onChange={() => setWorldbookIds((current) => current.includes(book.id) ? current.filter((item) => item !== book.id) : [...current, book.id])} />{book.name}</label>)}
           {!worldbooks.length && <p className="muted">尚无世界书。</p>}
@@ -292,9 +292,9 @@ export function WorkspaceInspector({ tree, selectedSessionId, activeProfileId, w
           disabled={!currentTree || !hasSettingsChanges || savingSession || invalidRegexCount > 0 || hasSettingsConflict}
           onClick={() => void saveSessionConfiguration()}
         ><Save size={16} />{savingSession ? "保存中…" : "保存会话设置"}</button>
-        <p className="save-feedback" role="status" aria-live="polite">
-          {savingSession ? "正在保存提交的设置…" : hasSettingsChanges ? (saveFeedback?.status === "saved" ? "上次修改已保存，当前还有未保存修改。" : "有未保存修改。") : saveFeedback?.status === "saved" ? "会话设置已保存。" : currentTree ? "会话设置未修改。" : "请先选择会话。"}
-        </p>
+        {(savingSession || hasSettingsChanges || saveFeedback?.status === "saved") && <p className="save-feedback" role="status" aria-live="polite">
+          {savingSession ? "保存中…" : hasSettingsChanges ? "未保存" : "已保存"}
+        </p>}
         {saveFeedback?.error && <p className="field-error" role="alert">{saveFeedback.error}</p>}
       </div>
 

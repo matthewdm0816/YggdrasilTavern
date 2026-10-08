@@ -112,7 +112,7 @@ export function Inspector({ tree, selectedSessionId, onSessionUpdated }: Props) 
               <pre>{JSON.stringify(previewQuery.data.activated_lore, null, 2)}</pre>
             </>
           ) : (
-            <p className="muted">选择会话后可查看最终 provider-neutral prompt。</p>
+            <p className="muted">未选择会话</p>
           )}
         </div>
       </section>

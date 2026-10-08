@@ -109,13 +109,13 @@ export function GlobalPromptPanel({ onError }: Props) {
         className="inspector-section prompt-profile-section"
         headerMeta={<span className="quiet-badge">全部会话 · r{promptRevision}</span>}
       >
-        <p className="section-help">这里的顺序、开关、role 和覆盖文本由所有会话共同使用；History 仍会读取各会话当前选中的真实树路径。</p>
+
         {!!importedPrompts.data?.length && <label className="form-field"><span>导入的 SillyTavern 提示词预设</span><select value={importedPromptId} onChange={(event) => {
           const value = event.target.value;
           setImportedPromptId(value);
           const preset = importedPrompts.data?.find((item) => item.id === value);
           if (preset) setSlots(normalizeSlots(preset.converted.prompt_slots));
-        }}><option value="">选择预设</option>{importedPrompts.data.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><small>选择后可检查和编辑，点击“保存全局 Prompt”才会生效。API 采样参数保存在导入的连接配置中。</small></label>}
+        }}><option value="">选择预设</option>{importedPrompts.data.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}
         {importedPrompts.error && <p className="field-error">导入的提示词预设读取失败：{importedPrompts.error instanceof Error ? importedPrompts.error.message : String(importedPrompts.error)}</p>}
         {importedPrompts.data?.find((item) => item.id === importedPromptId)?.warnings.map((warning, index) => <p className="section-help" key={index}>{warning}</p>)}
         {globalPromptQuery.isPending && <p className="muted">正在读取全局 Prompt…</p>}
@@ -174,11 +174,11 @@ export function GlobalPromptPanel({ onError }: Props) {
                 </div>
               </div>
               {slot.kind === "history" ? (
-                <div className="history-slot"><GitFork size={16} />自动插入当前会话所选节点的完整祖先路径</div>
+                <div className="history-slot"><GitFork size={16} />当前会话历史</div>
               ) : slot.content === null ? (
-                <button className="dynamic-slot" onClick={() => patchSlot(index, { content: "" })}>使用每个会话的动态内容 · 点击设置全局覆盖</button>
+                <button className="dynamic-slot" onClick={() => patchSlot(index, { content: "" })}>设置全局覆盖</button>
               ) : (
-                <label className="form-field"><span>全局覆盖内容</span><textarea value={slot.content} onChange={(event) => patchSlot(index, { content: event.target.value })} /><small>这段文本会替代该插槽原本从角色、世界书或会话读取的动态内容。</small></label>
+                <label className="form-field"><span>全局覆盖内容</span><textarea value={slot.content} onChange={(event) => patchSlot(index, { content: event.target.value })} /></label>
               )}
               <footer>
                 {slot.content !== null && slot.kind !== "custom" && <button className="secondary-button" onClick={() => patchSlot(index, { content: null })}>恢复动态内容</button>}

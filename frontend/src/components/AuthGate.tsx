@@ -174,7 +174,7 @@ export function AuthGate({ children }: Props) {
 
         {phase === "login" && (
           <>
-            <p className="auth-introduction">请输入配置的用户名和密码以登录酒馆。</p>
+
             <form className="auth-form" onSubmit={submitLogin}>
               <label className="auth-field">
                 <span>用户名</span>

@@ -451,7 +451,7 @@ export function ForestTreeView({ tree, onClose, onSelectMessage }: Props) {
                   ) : <p>{pinnedId ? "这是临时预览；移开后会回到已固定节点。" : "点击树中的节点可固定这段完整预览。"}</p>}
                 </footer>
               </>
-            ) : <p className="muted">悬停、聚焦或点击节点以查看完整 swipe 文本。</p>}
+            ) : <p className="muted">未选择消息</p>}
           </aside>
         </div>
       </section>

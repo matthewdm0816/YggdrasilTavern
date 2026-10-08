@@ -141,7 +141,7 @@ export function CharacterManager({ characters, onChanged, onError }: CommonProps
   }
 
   async function remove(item: CharacterSummary) {
-    if (!window.confirm(`删除本地角色“${item.name}”？已存在会话不会被删除。`)) return;
+    if (!window.confirm(`删除本地角色“${item.name}”？`)) return;
     try {
       await api.deleteCharacter(item.id);
       onChanged();
@@ -170,7 +170,7 @@ export function CharacterManager({ characters, onChanged, onError }: CommonProps
       {draft && (
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setEditingId(null)}>
           <section className="resource-modal" role="dialog" aria-modal="true" aria-label={`编辑角色 ${draft.name}`}>
-            <header><div><p className="eyebrow">Normalized Character</p><h2>编辑本地角色</h2></div><button className="icon-button" title="关闭" onClick={() => setEditingId(null)}><X size={17} /></button></header>
+            <header><div><h2>编辑本地角色</h2></div><button className="icon-button" title="关闭" onClick={() => setEditingId(null)}><X size={17} /></button></header>
             <div className="resource-modal-body">
               <AvatarEditor
                 character={draft}
@@ -258,16 +258,16 @@ export function WorldbookManager({ worldbooks, onChanged, onError }: CommonProps
           <section className="resource-modal worldbook-modal" role="dialog" aria-modal="true" aria-label={`编辑世界书 ${draft.name}`}>
             <header><div><p className="eyebrow">World Book</p><h2>编辑世界书与条目</h2></div><button className="icon-button" title="关闭" onClick={() => setEditingId(null)}><X size={17} /></button></header>
             <div className="resource-modal-body">
-              <div className="editor-grid"><label>名称<input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} /><small>在会话绑定列表中显示的名称。</small></label><label>扫描最近消息数<input type="number" min="0" value={draft.scan_depth} onChange={(event) => setDraft({ ...draft, scan_depth: Number(event.target.value) })} /><small>用最近多少条树路径消息查找触发关键词。</small></label><label>激活内容 Token 上限<input type="number" min="0" value={draft.token_budget} onChange={(event) => setDraft({ ...draft, token_budget: Number(event.target.value) })} /><small>本书一次最多插入 Prompt 的估算 Token 数。</small></label></div>
+              <div className="editor-grid"><label>名称<input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} /></label><label>扫描最近消息数<input type="number" min="0" value={draft.scan_depth} onChange={(event) => setDraft({ ...draft, scan_depth: Number(event.target.value) })} /></label><label>激活内容 Token 上限<input type="number" min="0" value={draft.token_budget} onChange={(event) => setDraft({ ...draft, token_budget: Number(event.target.value) })} /></label></div>
               <label>描述<textarea value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} /></label>
               <div className="worldbook-entry-list">
                 {draft.entries.map((entry, index) => (
                   <article className="worldbook-entry-card" key={entry.id || index}>
                     <header><strong>条目 {index + 1}</strong><button className={`icon-button config-toggle ${entry.enabled ? "active" : ""}`} aria-pressed={entry.enabled} aria-label={entry.enabled ? `停用条目 ${index + 1}` : `启用条目 ${index + 1}`} title={entry.enabled ? "已启用；点击停用" : "已停用；点击启用"} onClick={() => patchEntry(index, { enabled: !entry.enabled })}>{entry.enabled ? <ToggleRight size={22} /> : <ToggleLeft size={22} />}</button><button className="icon-button danger-button" title="删除条目" onClick={() => setDraft({ ...draft, entries: draft.entries.filter((_, itemIndex) => itemIndex !== index) })}><Trash2 size={15} /></button></header>
-                    <label>主关键词（逗号分隔）<input value={entry.keys.join(", ")} onChange={(event) => patchEntry(index, { keys: event.target.value.split(",").map((item) => item.trim()).filter(Boolean) })} /><small>任一关键词命中时可激活此条目。</small></label>
+                    <label>主关键词（逗号分隔）<input value={entry.keys.join(", ")} onChange={(event) => patchEntry(index, { keys: event.target.value.split(",").map((item) => item.trim()).filter(Boolean) })} /></label>
                     <label>次关键词（逗号分隔）<input value={entry.secondary_keys.join(", ")} onChange={(event) => patchEntry(index, { secondary_keys: event.target.value.split(",").map((item) => item.trim()).filter(Boolean) })} /><small>开启“需次关键词”后，还必须命中这里的任一项。</small></label>
                     <label>内容<textarea value={entry.content} onChange={(event) => patchEntry(index, { content: event.target.value })} /></label>
-                    <div className="entry-options"><label>插入顺序<input type="number" value={entry.order} onChange={(event) => patchEntry(index, { order: Number(event.target.value) })} /><small>数字较小的条目先插入。</small></label><label>插入位置<select value={entry.position} onChange={(event) => patchEntry(index, { position: event.target.value })}><option value="before_char">角色设定之前</option><option value="after_char">角色设定之后</option></select><small>决定它位于角色设定的前还是后。</small></label><label title="不检查关键词，每次都插入"><input type="checkbox" checked={entry.constant} onChange={(event) => patchEntry(index, { constant: event.target.checked })} />始终插入</label><label title="主关键词命中后还需要次关键词"><input type="checkbox" checked={entry.selective} onChange={(event) => patchEntry(index, { selective: event.target.checked })} />需次关键词</label><label><input type="checkbox" checked={entry.case_sensitive} onChange={(event) => patchEntry(index, { case_sensitive: event.target.checked })} />区分大小写</label><label><input type="checkbox" checked={entry.match_whole_words} onChange={(event) => patchEntry(index, { match_whole_words: event.target.checked })} />仅匹配完整词</label></div>
+                    <div className="entry-options"><label>插入顺序<input type="number" value={entry.order} onChange={(event) => patchEntry(index, { order: Number(event.target.value) })} /><small>数字较小的条目先插入。</small></label><label>插入位置<select value={entry.position} onChange={(event) => patchEntry(index, { position: event.target.value })}><option value="before_char">角色设定之前</option><option value="after_char">角色设定之后</option></select></label><label title="不检查关键词，每次都插入"><input type="checkbox" checked={entry.constant} onChange={(event) => patchEntry(index, { constant: event.target.checked })} />始终插入</label><label title="主关键词命中后还需要次关键词"><input type="checkbox" checked={entry.selective} onChange={(event) => patchEntry(index, { selective: event.target.checked })} />需次关键词</label><label><input type="checkbox" checked={entry.case_sensitive} onChange={(event) => patchEntry(index, { case_sensitive: event.target.checked })} />区分大小写</label><label><input type="checkbox" checked={entry.match_whole_words} onChange={(event) => patchEntry(index, { match_whole_words: event.target.checked })} />仅匹配完整词</label></div>
                   </article>
                 ))}
               </div>

@@ -1,0 +1,15 @@
+[Unit]
+Description=Yggdrasil Tavern application backend
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/YggdrasilTavern/current
+ExecStart=%h/YggdrasilTavern/current/.venv/bin/python -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8811 --proxy-headers --forwarded-allow-ips 127.0.0.1
+Restart=on-failure
+RestartSec=3
+UMask=0077
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

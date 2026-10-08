@@ -35,7 +35,7 @@ type Props = {
   onRegenerate: (messageId: string) => void;
   onSelectMessage: (messageId: string) => Promise<void>;
   onCreateSwipe: (message: Message) => Promise<void>;
-  onForkEdit: (message: Message, content: string, thinkingContent: string) => Promise<void>;
+  onUpdateMessage: (message: Message, content: string, thinkingContent: string) => Promise<void>;
   onToggleLeft: () => void;
   onToggleRight: () => void;
   leftOpen: boolean;
@@ -133,7 +133,7 @@ export function ChatWorkspace({
   onRegenerate,
   onSelectMessage,
   onCreateSwipe,
-  onForkEdit,
+  onUpdateMessage,
   onToggleLeft,
   onToggleRight,
   leftOpen,
@@ -198,7 +198,7 @@ export function ChatWorkspace({
   async function submit(event: FormEvent) {
     event.preventDefault();
     const content = draft.trim();
-    if (!sessionId || !content || streaming || !canGenerate || pendingSubmissions.current.has(sessionId)) return;
+    if (!sessionId || !tree || streaming || !canGenerate || pendingSubmissions.current.has(sessionId)) return;
     pendingSubmissions.current.add(sessionId);
     setSubmittingSessions((current) => ({ ...current, [sessionId]: true }));
     setInteractionError(null);
@@ -229,11 +229,11 @@ export function ChatWorkspace({
     pendingEdits.current.add(sessionId);
     setSavingEditSessions((current) => ({ ...current, [sessionId]: true }));
     try {
-      await onForkEdit(message, submitted.value, submitted.thinkingValue);
+      await onUpdateMessage(message, submitted.value, submitted.thinkingValue);
       if (useAppStore.getState().edits[sessionId] === submitted) setEdit(sessionId, undefined);
       setInteractionError(null);
     } catch (cause) {
-      setInteractionError("消息分支保存失败：" + (cause instanceof Error ? cause.message : String(cause)));
+      setInteractionError("消息修改失败：" + (cause instanceof Error ? cause.message : String(cause)));
     } finally {
       pendingEdits.current.delete(sessionId);
       setSavingEditSessions((current) => ({ ...current, [sessionId]: false }));
@@ -350,9 +350,9 @@ export function ChatWorkspace({
                     {(message.role === "assistant" || message.thinking_content) && (
                       <label className="form-field"><span>编辑 Thinking（可留空）</span><AutoSizeTextarea disabled={savingEdit} value={edit.thinkingValue} onChange={(event) => setEdit(sessionId, { ...edit, thinkingValue: event.target.value })} /></label>
                     )}
-                    <p className="editor-hint">保存会在同一父消息下创建一个新分支，原消息及其后续消息保持不变。</p>
+                    <p className="editor-hint">直接修改这条消息的正文和 Thinking，后续回复将使用修改后的内容。</p>
                     <div className="inline-actions">
-                      <button className="primary-button" disabled={savingEdit || streaming || (edit.value === message.content && edit.thinkingValue === message.thinking_content)} onClick={() => saveEdit(message)}>{savingEdit ? "保存中…" : "保存为新分支"}</button>
+                      <button className="primary-button" disabled={savingEdit || streaming || (edit.value === message.content && edit.thinkingValue === message.thinking_content)} onClick={() => saveEdit(message)}>{savingEdit ? "保存中…" : "保存修改"}</button>
                       <button className="icon-button" title="取消" onClick={() => setEdit(sessionId, undefined)}><X size={16} /></button>
                     </div>
                   </div>
@@ -375,7 +375,7 @@ export function ChatWorkspace({
                     <ActionMenu label="消息操作">
                       <button type="button" data-close-menu disabled={!message.content} onClick={() => void copyMessage(message)}><Copy size={16} />复制正文</button>
                       <button type="button" data-close-menu disabled={streaming} onClick={() => void duplicateMessage(message)}><CopyPlus size={16} />复制为新分支</button>
-                      <button type="button" data-close-menu disabled={streaming} onClick={() => startEdit(message)}><Edit3 size={16} />编辑为新分支</button>
+                      <button type="button" data-close-menu disabled={streaming} onClick={() => startEdit(message)}><Edit3 size={16} />编辑消息</button>
                       {message.role === "assistant" && <button type="button" data-close-menu disabled={streaming || submitting || !canGenerate} onClick={() => onRegenerate(message.id)}><RefreshCcw size={16} />重新生成此回复</button>}
                     </ActionMenu>
                   </div>
@@ -396,13 +396,13 @@ export function ChatWorkspace({
           <label className="composer-field"><span className="sr-only">发送消息</span><textarea
               value={draft}
               onChange={(event) => sessionId && setDraft(sessionId, event.target.value)}
-              placeholder="输入消息…"
-              disabled={!tree || streaming || submitting}
+              placeholder={streaming ? "可以先写下一条消息；生成结束后再发送" : "输入消息；留空发送可继续生成"}
+              disabled={!tree}
             /></label>
           {streaming ? (
             <button className="send-button composer-stop-button" type="button" title="停止生成" aria-label="停止生成" onClick={onStop}><Square size={17} /></button>
           ) : (
-            <button className="send-button" disabled={!tree || !draft.trim() || !canGenerate || submitting} title="发送" aria-label="发送"><Send size={18} /></button>
+            <button className="send-button" disabled={!tree || !canGenerate || submitting} title={draft.trim() ? "发送" : "空白发送：继续生成"} aria-label={draft.trim() ? "发送" : "空白发送：继续生成"}><Send size={18} /></button>
           )}
         </form>
       </div>

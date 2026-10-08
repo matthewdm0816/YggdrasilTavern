@@ -1,0 +1,44 @@
+# One OC listener serves both domains. OC's public 15266 maps to local 8802.
+# The owner explicitly selected self-signed certificates for both domains.
+{
+    admin 127.0.0.1:2020
+    auto_https disable_redirects
+    skip_install_trust
+    # The public and local port numbers differ; do not advertise local HTTP/3 ports.
+    servers {
+        protocols h1 h2
+    }
+}
+
+https://tavern.apeirianetwork.com:{$YGGDRASIL_GATEWAY_PORT:8802} {
+    bind {$YGGDRASIL_GATEWAY_BIND:0.0.0.0}
+    tls internal
+
+    @api path /api /api/*
+    handle @api {
+        reverse_proxy 127.0.0.1:8811 {
+            flush_interval -1
+        }
+    }
+    handle {
+        root * {$YGGDRASIL_ROOT}/current/frontend/dist
+        try_files {path} /index.html
+        file_server
+    }
+}
+
+https://js1.blockelite.cn:{$YGGDRASIL_GATEWAY_PORT:8802} {
+    bind {$YGGDRASIL_GATEWAY_BIND:0.0.0.0}
+    # We do not control blockelite.cn's DNS. Its previous certificate was also
+    # self-signed; this address retains an untrusted certificate, with a new
+    # fingerprint. The owned tavern hostname also uses a self-signed certificate.
+    tls internal
+    reverse_proxy https://127.0.0.1:{$SILLYTAVERN_UPSTREAM_PORT:8815} {
+        # The existing SillyTavern TLS certificate is self-signed and has no SAN.
+        # This exception applies only to this loopback upstream.
+        transport http {
+            tls_insecure_skip_verify
+        }
+        flush_interval -1
+    }
+}

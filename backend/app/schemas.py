@@ -67,7 +67,17 @@ class APIProfileOut(APIProfileBase, ORMModel):
 
 class ModelsRefreshOut(BaseModel):
     models: List[RemoteModelInfo]
-    refreshed_at: datetime
+    refreshed_at: Optional[datetime] = None
+    available: bool = True
+    message: Optional[str] = None
+
+
+class ModelsDiscoverIn(BaseModel):
+    provider_type: str = Field(pattern="^(anthropic_messages|openai_chat_completions|openai_responses)$")
+    base_url: str
+    path_override: Optional[str] = None
+    api_key: Optional[str] = None
+    profile_id: Optional[str] = None
 
 
 class CharacterBase(BaseModel):
@@ -241,6 +251,56 @@ class GlobalPromptConfigOut(BaseModel):
 class GlobalPromptConfigUpdate(BaseModel):
     prompt_slots: List[PromptSlot]
     expected_revision: int = Field(ge=0)
+
+
+class SillyTavernPreviewRequest(BaseModel):
+    ssh_host: str = Field(min_length=1, max_length=200)
+    directory: str = Field(default="~/SillyTavern", min_length=1, max_length=2048)
+    user: str = Field(default="default-user", min_length=1, max_length=120)
+
+
+class SillyTavernApplyRequest(BaseModel):
+    token: str = Field(min_length=1, max_length=120)
+    activate: bool = False
+
+
+class SillyTavernImportReport(BaseModel):
+    source: str
+    counts: Dict[str, int]
+    already_imported: Dict[str, int]
+    warnings: List[str]
+    errors: List[str]
+    omitted: Dict[str, Any]
+    can_apply: bool
+    token: Optional[str] = None
+    created: Dict[str, int] = Field(default_factory=dict)
+    activated: bool = False
+    backup_path: Optional[str] = None
+
+
+class ImportedResourceOut(ORMModel):
+    id: str
+    source: str
+    kind: str
+    name: str
+    raw_json: Dict[str, Any]
+    converted: Dict[str, Any]
+    warnings: List[str]
+
+
+class SavedCredentialOut(ORMModel):
+    id: str
+    name: str
+    secret_type: str
+
+
+class BindCredentialRequest(BaseModel):
+    credential_id: str
+
+
+class DefaultSessionConfigOut(BaseModel):
+    preset: Dict[str, Any] = Field(default_factory=dict)
+    api_profile_id: Optional[str] = None
 
 
 RegexTarget = Literal["display", "outgoing_prompt", "user_input", "assistant_output"]

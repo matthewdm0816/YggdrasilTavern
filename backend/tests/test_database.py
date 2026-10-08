@@ -183,7 +183,7 @@ def test_application_upgrade_preserves_old_chat_tree_and_restores_foreign_keys(t
             assert_old_chat_preserved(connection)
             assert connection.exec_driver_sql("PRAGMA foreign_keys").scalar_one() == 1
             assert connection.exec_driver_sql("PRAGMA foreign_key_check").all() == []
-            assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "0006_single_streaming_generation"
+            assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "0007_sillytavern_import"
             with pytest.raises(IntegrityError):
                 connection.execute(text("UPDATE messages SET session_id = 'missing' WHERE id = 'chosen'"))
     finally:

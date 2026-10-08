@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+from threading import RLock
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -34,6 +35,8 @@ def create_app(
     app = FastAPI(title="YggdrasilTavern API", version="0.1.0", lifespan=lifespan)
     app.state.settings = settings
     app.state.database = database
+    app.state.st_import_lock = RLock()
+    app.state.st_import_plans = {}
 
     @app.exception_handler(ApplicationError)
     async def application_error(_request: Request, exc: ApplicationError) -> JSONResponse:

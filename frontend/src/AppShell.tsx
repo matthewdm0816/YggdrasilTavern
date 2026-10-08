@@ -183,7 +183,7 @@ export default function AppShell() {
         onRegenerate={chat.handleGenerate}
         onSelectMessage={chat.handleSelectMessage}
         onCreateSwipe={chat.handleCreateSwipe}
-        onForkEdit={chat.handleForkEdit}
+        onUpdateMessage={chat.handleUpdateMessage}
         onToggleLeft={() => isMobile ? setMobilePanel((value) => value === "left" ? null : "left") : setLeftCollapsed((value) => !value)}
         onToggleRight={() => isMobile ? setMobilePanel((value) => value === "right" ? null : "right") : setRightPreference(!rightOpen)}
         leftOpen={isMobile ? mobilePanel === "left" : !leftCollapsed}

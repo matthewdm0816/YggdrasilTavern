@@ -11,13 +11,26 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 .yggdrasil-runtime/
+output/
+.playwright-cli/
+.playwright/
 treechat.db
 *.db
 *.db-wal
 *.db-shm
+*.db-journal
+*.sqlite
+*.sqlite3
+*.pem
+*.key
+*.p12
+*.pfx
 .env
 
 # Local browser validation artifacts and test caches
 .playwright-cli/
 .vite/
 output/playwright/
+
+.env.*
+!.env.example

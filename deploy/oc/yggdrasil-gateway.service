@@ -1,0 +1,18 @@
+[Unit]
+Description=Yggdrasil and SillyTavern shared HTTPS gateway
+After=yggdrasil-tavern.service
+Requires=yggdrasil-tavern.service
+
+[Service]
+Type=simple
+EnvironmentFile=%h/YggdrasilTavern/shared/gateway.env
+ExecStartPre=/usr/bin/caddy validate --config %h/YggdrasilTavern/current/deploy/oc/Caddyfile --adapter caddyfile
+ExecStart=/usr/bin/caddy run --config %h/YggdrasilTavern/current/deploy/oc/Caddyfile --adapter caddyfile
+ExecReload=/usr/bin/caddy reload --config %h/YggdrasilTavern/current/deploy/oc/Caddyfile --adapter caddyfile
+Restart=on-failure
+RestartSec=3
+UMask=0077
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

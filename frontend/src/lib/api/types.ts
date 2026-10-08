@@ -1,5 +1,10 @@
 import type { components } from "./generated";
 
+export type SillyTavernImportReport = components["schemas"]["SillyTavernImportReport"];
+export type ImportedResource = components["schemas"]["ImportedResourceOut"];
+export type SavedCredential = components["schemas"]["SavedCredentialOut"];
+export type SessionDefaults = components["schemas"]["DefaultSessionConfigOut"];
+
 export type ProviderType = "anthropic_messages" | "openai_chat_completions" | "openai_responses";
 
 type WireProfile = components["schemas"]["APIProfileOut"];

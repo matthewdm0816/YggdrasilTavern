@@ -1,6 +1,12 @@
-import { renderToStaticMarkup } from "react-dom/server";
+import { renderToStaticMarkup as renderMarkup } from "react-dom/server";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { ReactElement } from "react";
 import { describe, expect, it } from "vitest";
 import { fallbackProfileIdAfterDelete, formatTokenLimit, Sidebar, titleForSelectedCharacter } from "./Sidebar";
+
+function renderToStaticMarkup(element: ReactElement) {
+  return renderMarkup(<QueryClientProvider client={new QueryClient()}>{element}</QueryClientProvider>);
+}
 
 describe("titleForSelectedCharacter", () => {
   it("uses the selected character name for an empty or automatic title", () => {

@@ -62,6 +62,41 @@ class GlobalPromptConfig(TimestampMixin, Base):
     revision: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
 
 
+class ImportedResource(TimestampMixin, Base):
+    """Source ledger and converted/read-only SillyTavern configuration."""
+
+    __tablename__ = "imported_resources"
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    source: Mapped[str] = mapped_column(Text, nullable=False)
+    kind: Mapped[str] = mapped_column(String(80), nullable=False)
+    source_key: Mapped[str] = mapped_column(Text, nullable=False)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    entity_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    raw_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    converted: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    warnings: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+
+
+class SavedCredential(TimestampMixin, Base):
+    """Imported secrets; only metadata may be returned through the API."""
+
+    __tablename__ = "saved_credentials"
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    secret_type: Mapped[str] = mapped_column(String(120), nullable=False)
+    api_key: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class DefaultSessionConfig(TimestampMixin, Base):
+    __tablename__ = "default_session_config"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default="default")
+    preset: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    api_profile_id: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("api_profiles.id", ondelete="SET NULL"), nullable=True,
+    )
+
+
 class Character(TimestampMixin, Base):
     __tablename__ = "characters"
 

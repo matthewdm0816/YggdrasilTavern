@@ -5,12 +5,23 @@ import type {
   SwipeCreateInput, WorldBookCreateInput, WorldBookUpdateInput
 } from "./contracts";
 import { download, request, upload } from "./http";
+import type { components } from "./generated";
 import type {
   APIProfile, AuthLogin, AuthStatus, Character, CharacterSummary,
   ChatSession, ContextPreview, GlobalPromptConfig, Message,
-  RemoteModelInfo, SessionFolder, SessionTree, WorldBook
+  SessionFolder, SessionTree, WorldBook,
+  SillyTavernImportReport, ImportedResource, SavedCredential, SessionDefaults
 } from "./types";
 export const api = {
+  previewSillyTavern: (payload: { ssh_host: string; directory: string; user: string }) =>
+    request<SillyTavernImportReport>("/api/imports/sillytavern/preview", { method: "POST", body: JSON.stringify(payload) }),
+  applySillyTavern: (token: string, activate: boolean) =>
+    request<SillyTavernImportReport>("/api/imports/sillytavern/apply", { method: "POST", body: JSON.stringify({ token, activate }) }),
+  importedResources: (kind: string) => request<ImportedResource[]>(`/api/imports/resources?kind=${encodeURIComponent(kind)}`),
+  savedCredentials: () => request<SavedCredential[]>("/api/saved-credentials"),
+  bindCredential: (profileId: string, credential_id: string) =>
+    request<APIProfile>(`/api/api-profiles/${profileId}/credential`, { method: "POST", body: JSON.stringify({ credential_id }) }),
+  sessionDefaults: () => request<SessionDefaults>("/api/settings/session-defaults"),
   authStatus: () => request<AuthStatus>("/api/auth/status"),
   authLogin: (payload: AuthLogin) =>
     request<AuthStatus>("/api/auth/login", { method: "POST", body: JSON.stringify(payload) }),
@@ -23,7 +34,9 @@ export const api = {
   deleteProfile: (profileId: string) =>
     request<{ ok: boolean }>(`/api/api-profiles/${profileId}`, { method: "DELETE" }),
   refreshProfileModels: (profileId: string) =>
-    request<{ models: RemoteModelInfo[]; refreshed_at: string }>(`/api/api-profiles/${profileId}/models/refresh`, { method: "POST", body: "{}" }),
+    request<components["schemas"]["ModelsRefreshOut"]>(`/api/api-profiles/${profileId}/models/refresh`, { method: "POST", body: "{}" }),
+  discoverProfileModels: (payload: components["schemas"]["ModelsDiscoverIn"], signal?: AbortSignal) =>
+    request<components["schemas"]["ModelsRefreshOut"]>("/api/api-profiles/models/discover", { method: "POST", body: JSON.stringify(payload), signal }),
   globalPromptConfig: () => request<GlobalPromptConfig>("/api/settings/prompt"),
   updateGlobalPromptConfig: (payload: PromptConfigUpdateInput) =>
     request<GlobalPromptConfig>("/api/settings/prompt", { method: "PUT", body: JSON.stringify(payload) }),

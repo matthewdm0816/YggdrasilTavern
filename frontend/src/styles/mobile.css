@@ -1,0 +1,115 @@
+:root { font-size: var(--desktop-font-size, var(--font-size-ui, 16px)); }
+/* Preserve the desktop toolbar while keeping every mobile action in one row. */
+.message-stats, .message-tools { display: contents; }
+
+@media (max-width: 920px) {
+  .icon-button, .icon-button-sm, .primary-button, .secondary-button, .file-button,
+  .send-button, .folder-toggle, .forest-tree-branch-toggle, .slot-drag-handle {
+    min-width: var(--mobile-control-size);
+    min-height: var(--mobile-control-size);
+    font-size: 1rem;
+  }
+  .icon-button, .icon-button-sm, .forest-tree-branch-toggle, .slot-drag-handle {
+    width: var(--mobile-control-size);
+    height: var(--mobile-control-size);
+    padding: 0;
+  }
+  button svg, .file-button svg {
+    width: var(--mobile-icon-size);
+    height: var(--mobile-icon-size);
+    flex-shrink: 0;
+  }
+  .primary-button, .secondary-button, .file-button { padding: 2px 5px; gap: 4px; }
+  .collapsible-section-toggle { min-height: var(--mobile-control-size); padding: 2px 3px; }
+  .left-pane, .right-pane { padding: 8px; }
+  .mobile-panel-left .left-pane { padding-top: calc(8px + env(safe-area-inset-top)); }
+  .tool-section, .inspector-section { margin-top: 7px; padding-top: 5px; }
+  .pane-header h1, .pane-header h2 { font-size: 1.125rem; }
+  input, select, textarea { padding: 2px 4px; font-size: 1rem; }
+  input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]), select {
+    min-height: var(--mobile-control-size);
+    height: var(--mobile-control-size);
+    padding-block: 0;
+  }
+  .slot-name-field input, .regex-rule-fields > header .form-field input, .compact-field select,
+  .slot-card > header > input, .regex-rule-fields > header > input, .slot-meta select {
+    padding: 2px 4px;
+    font-size: 1rem;
+  }
+  input[type="checkbox"], input[type="radio"], .regex-flags input, .target-grid input {
+    width: 1rem;
+    height: 1rem;
+    min-height: 0;
+    padding: 0;
+  }
+  .switch-label input[type="checkbox"] { width: 2rem; height: 1.2rem; flex-basis: 2rem; }
+  .switch-label input[type="checkbox"]::after { top: .1rem; left: .1rem; width: .8rem; height: .8rem; }
+  .switch-label input[type="checkbox"]:checked::after { transform: translateX(.8rem); }
+  input[type="range"] { height: var(--mobile-control-size); padding: 0; }
+  .composer-field > span { display: none; }
+  .composer { gap: 4px; padding-block: 4px max(4px, env(safe-area-inset-bottom)); }
+  .composer .send-button { width: var(--mobile-control-size); height: var(--mobile-control-size); }
+  .message-content, .markdown-body { margin: 5px 0; line-height: 1.55; }
+  .markdown-body p { margin-bottom: 5px; }
+  .thinking-box { margin-top: 4px; }
+  .thinking-box summary { padding: 4px 6px; }
+  .message-toolbar { flex-wrap: nowrap; gap: 4px; margin-top: 3px; padding-top: 3px; min-width: 0; }
+  .message-stats {
+    display: flex;
+    flex: 1 1 0;
+    min-width: 0;
+    align-items: center;
+    gap: 3px;
+    overflow-x: auto;
+    white-space: nowrap;
+    scrollbar-width: none;
+  }
+  .message-stats::-webkit-scrollbar { display: none; }
+  .message-tools { display: flex; flex: 0 0 auto; align-items: center; gap: 2px; white-space: nowrap; }
+  .message-tools > *, .message-stats > * { flex-shrink: 0; }
+  .token-pill, .swipe-counter {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: var(--mobile-control-size);
+    min-height: var(--mobile-control-size);
+    font-size: .9rem;
+  }
+  .token-pill { padding: 1px 4px; border-radius: 4px; }
+  .swipe-counter { min-width: 1.8rem; }
+  .message-line { margin-bottom: 6px; }
+  .session-title-btn { min-height: 3rem; padding: 3px 4px; gap: 4px; }
+  .session-character-avatar { width: 2rem; height: 2rem; flex-basis: 2rem; }
+  .secret-input { grid-template-columns: minmax(0, 1fr) var(--mobile-control-size); }
+  .secret-input .icon-button { width: var(--mobile-control-size); height: var(--mobile-control-size); }
+  .regex-rule-card > summary { min-height: var(--mobile-control-size); padding: 4px 6px; }
+}
+
+@media (max-width: 920px) {
+  :root { font-size: var(--mobile-font-size, 10px); --mobile-control-size: 2rem; --mobile-icon-size: 1.2rem; }
+  .chat-pane .chat-header { grid-template-columns: 2rem minmax(0, 1fr) 4.4rem; min-height: calc(2.4rem + env(safe-area-inset-top)); padding: env(safe-area-inset-top) 5px 0; gap: 4px; }
+  .chat-header .session-title-block h2 { font-size: 1rem; }
+  .chat-header .icon-button, .message-branch-actions .icon-button, .left-pane .session-actions-menu { width: var(--mobile-control-size); height: var(--mobile-control-size); min-width: var(--mobile-control-size); min-height: var(--mobile-control-size); }
+  .chat-pane .message-scroll { padding: 5px; }
+  .message-scroll .message-line { margin-bottom: 6px; }
+  .message-scroll .message-row { padding: 5px 6px 3px; }
+  .message-line .markdown-body, .message-line .message-content { font-size: 1rem; line-height: 1.55; }
+  .message-meta { font-size: .9rem; }
+  .message-footer { flex-wrap: nowrap; gap: 4px; margin-top: 3px; min-width: 0; }
+  .message-usage { flex: 1 1 0; flex-wrap: nowrap; min-width: 0; height: var(--mobile-control-size); align-items: center; overflow-x: auto; white-space: nowrap; font-size: .9rem; scrollbar-width: none; }
+  .message-usage::-webkit-scrollbar { display: none; }
+  .message-usage > span { flex-shrink: 0; }
+  .message-branch-actions { flex: 0 0 auto; min-width: 0; white-space: nowrap; }
+  .message-branch-actions .swipe-counter { min-width: 1.8rem; height: var(--mobile-control-size); display: inline-flex; align-items: center; justify-content: center; font-size: .9rem; }
+  .composer-tools { padding: 4px 6px 0; gap: 4px; }
+  .composer-tools .continue-generation { height: var(--mobile-control-size); min-height: var(--mobile-control-size); padding: 2px 4px; font-size: 1rem; }
+  .composer-area .composer { grid-template-columns: minmax(0, 1fr) var(--mobile-control-size); padding: 4px 6px; gap: 4px; }
+  .composer-area .composer textarea { min-height: 3rem; height: 3rem; font-size: 1rem; }
+  .composer-area .send-button { width: var(--mobile-control-size); height: var(--mobile-control-size); }
+  .composer-model-choice select { height: var(--mobile-control-size); min-height: var(--mobile-control-size); padding: 0 1rem 0 4px; font-size: 1rem; }
+  .composer-model-choice > span { font-size: .9rem; }
+  .action-menu > button { min-height: var(--mobile-control-size); padding: 3px 4px; font-size: 1rem; }
+  .model-settings-header, .model-settings-content { padding: 8px; }
+  .model-settings-header h2 { font-size: 1.2rem; }
+  .model-settings-header p, .model-settings-notice { font-size: 1rem; }
+}

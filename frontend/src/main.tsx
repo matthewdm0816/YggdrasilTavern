@@ -7,6 +7,7 @@ import { initializeTheme, ThemeErrorNotice } from "./features/theme";
 import "./styles/app.css";
 import "./styles/workspace.css";
 import "./styles/theme.css";
+import "./styles/mobile.css";
 
 void initializeTheme();
 

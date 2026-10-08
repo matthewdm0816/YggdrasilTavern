@@ -336,3 +336,10 @@ treechat.db                        Runtime database; ignored by Git
 - Token counts are estimated when a provider does not report complete usage.
 - Local single-user operation only; this is not a hardened multi-user deployment.
 - The current application UI is primarily Simplified Chinese; the English README does not imply full UI internationalization.
+## SillyTavern directory import
+
+Use **SillyTavern 导入** in the sidebar to preview and import an SSH directory, such as `oc:~/SillyTavern`, using the backend computer's existing OpenSSH configuration. The remote host needs Python 3. Preview is read-only; apply creates a SQLite online backup and adds resources in one transaction. Optionally activate the current prompt and defaults for new sessions.
+
+From the repository root, run `./scripts/import-sillytavern.ps1 -SshHost oc -Directory '~/SillyTavern'` to preview. Add `-Apply` to import and `-Activate` to activate the current prompt/defaults. Use `-SshHost ''` for a local directory. The Python entry point is `uv run --frozen --python 3.12 python scripts/import-sillytavern.py`; it also accepts `--database-url` for an isolated database and `--report` for a secret-free JSON report.
+
+The importer supports characters, avatars, embedded and standalone worldbooks, complete saved connections and their referenced keys, all saved credentials, chat-completion and system prompt presets, sampling parameters, and persona data. Imported prompt presets can be loaded into the global prompt editor; saved keys can be assigned without exposing their values. Repeated imports preserve local edits and report source changes. Unsupported templates/extensions are preserved as read-only configuration, with explicit conversion warnings. Chats, group chats, backgrounds, caches, backups, and plugin code are excluded and counted in the report. See [the Chinese guide](README.zh-CN.md) for details and compatibility limits.

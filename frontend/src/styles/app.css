@@ -40,14 +40,14 @@
 
 .auth-brand h1 {
   margin: 0;
-  font-size: clamp(20px, 5vw, 25px);
+  font-size: clamp(1.25rem, 5vw, 1.5625rem);
   line-height: 1.2;
 }
 
 .auth-introduction,
 .auth-status-copy {
   color: var(--muted);
-  font-size: 13px;
+  font-size: 0.8125rem;
   line-height: 1.55;
 }
 
@@ -91,7 +91,7 @@
 
 .auth-field > span {
   color: var(--text);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 650;
 }
 
@@ -102,7 +102,7 @@
   border-radius: 8px;
   background: var(--danger-bg);
   color: var(--red);
-  font-size: 12px;
+  font-size: 0.75rem;
   line-height: 1.45;
   text-align: left;
 }
@@ -142,7 +142,7 @@
   background: var(--danger-bg);
   color: var(--red);
   box-shadow: var(--shadow);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -232,14 +232,14 @@ button:disabled {
 .pane-header h2,
 .chat-header h2 {
   margin: 0;
-  font-size: 20px;
+  font-size: 1.25rem;
   line-height: 1.15;
 }
 
 .eyebrow {
   margin: 0 0 4px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 0.6875rem;
   letter-spacing: 0;
   text-transform: uppercase;
 }
@@ -258,7 +258,7 @@ button:disabled {
   margin-bottom: 10px;
   color: var(--accent-text);
   font-weight: 700;
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 
 .collapsible-section-toggle {
@@ -335,7 +335,7 @@ button:disabled {
 .form-field > span,
 .composer-field > span {
   color: var(--text);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 650;
   line-height: 1.3;
 }
@@ -345,7 +345,7 @@ button:disabled {
 .worldbook-entry-card label > small,
 .entry-options label > small {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 400;
   line-height: 1.4;
 }
@@ -400,7 +400,7 @@ button:disabled {
   border-radius: 999px;
   background: var(--chip-bg);
   color: var(--muted);
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 650;
 }
 
@@ -466,8 +466,8 @@ textarea:focus {
   gap: 7px;
   border-radius: 7px;
   border: 1px solid transparent;
-  min-height: 36px;
-  padding: 8px 11px;
+  min-height: 30px;
+  padding: 5px 8px;
 }
 
 .primary-button,
@@ -496,7 +496,7 @@ textarea:focus {
 }
 
 .icon-button {
-  width: 36px;
+  width: 30px;
   padding: 0;
 }
 
@@ -536,7 +536,7 @@ textarea:focus {
 
 .mini-list span {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
   line-height: 1.35;
 }
 
@@ -569,7 +569,7 @@ textarea:focus {
 .search-bar input {
   border: none;
   padding: 7px 0;
-  font-size: 12px;
+  font-size: 0.75rem;
   width: 100%;
   outline: none;
 }
@@ -601,7 +601,7 @@ textarea:focus {
 .inline-folder-input input {
   flex: 1;
   padding: 6px 8px;
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .session-list {
@@ -621,7 +621,7 @@ textarea:focus {
   gap: 5px;
   padding: 4px 6px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.3px;
@@ -647,7 +647,7 @@ textarea:focus {
   border-radius: 5px;
   background: transparent;
   color: var(--text);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 600;
   cursor: pointer;
   text-align: left;
@@ -660,7 +660,7 @@ textarea:focus {
 .folder-count {
   color: var(--muted);
   font-weight: 400;
-  font-size: 11px;
+  font-size: 0.6875rem;
   margin-left: 2px;
 }
 
@@ -703,7 +703,7 @@ textarea:focus {
   border: none;
   background: transparent;
   color: var(--text);
-  font-size: 14px;
+  font-size: 0.875rem;
   text-align: left;
   cursor: pointer;
   min-width: 0;
@@ -720,7 +720,7 @@ textarea:focus {
   border-radius: 10px;
   background: var(--surface-soft);
   color: var(--accent-text);
-  font-size: 15px;
+  font-size: 0.9375rem;
   font-weight: 750;
 }
 
@@ -744,14 +744,14 @@ textarea:focus {
 }
 
 .session-title-text {
-  font-size: 14px;
+  font-size: 0.875rem;
   font-weight: 650;
   line-height: 1.25;
 }
 
 .session-character-name {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 0.6875rem;
   line-height: 1.25;
 }
 
@@ -798,7 +798,7 @@ textarea:focus {
   min-width: 0;
   max-width: 80px;
   padding: 2px 4px;
-  font-size: 10px;
+  font-size: 0.625rem;
   border: 1px solid var(--line);
   border-radius: 4px;
   background: var(--surface);
@@ -938,7 +938,7 @@ textarea:focus {
 .message-meta {
   justify-content: space-between;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .message-meta strong {
@@ -1004,9 +1004,9 @@ textarea:focus {
   line-height: 1.3;
 }
 
-.markdown-body h1 { font-size: 18px; }
-.markdown-body h2 { font-size: 16px; }
-.markdown-body h3 { font-size: 14px; }
+.markdown-body h1 { font-size: 1.125rem; }
+.markdown-body h2 { font-size: 1rem; }
+.markdown-body h3 { font-size: 0.875rem; }
 
 .markdown-body hr {
   margin: 14px 0;
@@ -1033,7 +1033,7 @@ textarea:focus {
   width: 100%;
   border-collapse: collapse;
   margin: 10px 0;
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 
 .markdown-body th,
@@ -1063,7 +1063,7 @@ textarea:focus {
   background: var(--code-bg);
   color: var(--code-text);
   overflow-x: auto;
-  font-size: 12px;
+  font-size: 0.75rem;
   line-height: 1.5;
 }
 
@@ -1076,7 +1076,7 @@ textarea:focus {
 .message-error {
   margin: 8px 0;
   color: var(--red);
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 
 .message-toolbar {
@@ -1093,7 +1093,7 @@ textarea:focus {
   border-radius: 7px;
   background: var(--chip-bg);
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .token-pill.cache {
@@ -1113,7 +1113,7 @@ textarea:focus {
   padding: 9px 11px;
   color: var(--amber);
   font-weight: 700;
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .thinking-box pre {
@@ -1133,7 +1133,7 @@ textarea:focus {
   min-width: 42px;
   color: var(--muted);
   text-align: center;
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .editor-box textarea {
@@ -1219,7 +1219,7 @@ textarea:focus {
   border-radius: 6px;
   background: var(--surface);
   border: 1px solid var(--line);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 700;
 }
 
@@ -1228,7 +1228,7 @@ textarea:focus {
   margin: 0;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .context-preview {
@@ -1249,7 +1249,7 @@ textarea:focus {
   border-radius: 999px;
   background: var(--chip-bg);
   color: var(--muted);
-  font-size: 10px;
+  font-size: 0.625rem;
 }
 
 .context-budget-summary strong {
@@ -1271,7 +1271,7 @@ textarea:focus {
 
 .context-preview h3 {
   margin: 8px 0;
-  font-size: 13px;
+  font-size: 0.8125rem;
   color: var(--blue);
 }
 
@@ -1285,13 +1285,13 @@ textarea:focus {
   color: var(--code-text);
   white-space: pre-wrap;
   word-break: break-word;
-  font-size: 12px;
+  font-size: 0.75rem;
   line-height: 1.45;
 }
 
 .muted {
   color: var(--muted);
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 
 .toast {
@@ -1426,7 +1426,7 @@ textarea:focus {
 .section-help {
   margin: 4px 0 9px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
   line-height: 1.45;
 }
 
@@ -1434,7 +1434,7 @@ textarea:focus {
 .composer-error,
 .field-error {
   color: var(--red);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .inline-error {
@@ -1516,7 +1516,7 @@ textarea:focus {
   padding: 12px;
   color: var(--blue);
   font-weight: 700;
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .veil-block.revealed .veil-content,
@@ -1581,7 +1581,7 @@ textarea:focus {
 
 .slot-card > header,
 .slot-card > footer,
-.regex-rule-card > header,
+.regex-rule-fields > header,
 .worldbook-entry-card > header,
 .resource-modal > header,
 .resource-modal > footer {
@@ -1595,7 +1595,7 @@ textarea:focus {
   grid-template-columns: 28px minmax(0, 1fr) auto;
 }
 
-.regex-rule-card > header {
+.regex-rule-fields > header {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
 }
@@ -1630,14 +1630,14 @@ textarea:focus {
 }
 
 .slot-name-field > span {
-  font-size: 11px;
+  font-size: 0.6875rem;
 }
 
 .slot-name-field input,
-.regex-rule-card > header .form-field input {
+.regex-rule-fields > header .form-field input {
   min-width: 0;
   padding: 7px 9px;
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 600;
 }
 
@@ -1654,7 +1654,7 @@ textarea:focus {
 
 .compact-field select {
   padding: 7px 9px;
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .slot-move-actions {
@@ -1679,10 +1679,10 @@ textarea:focus {
 }
 
 .slot-card > header > input,
-.regex-rule-card > header > input {
+.regex-rule-fields > header > input {
   min-width: 0;
   padding: 6px 8px;
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 600;
 }
 
@@ -1691,7 +1691,7 @@ textarea:focus {
 }
 
 .slot-card > footer .danger-button,
-.regex-rule-card > .danger-button {
+.regex-rule-fields > .danger-button {
   margin-left: auto;
 }
 
@@ -1724,7 +1724,7 @@ textarea:focus {
   border-radius: 999px;
   background: var(--chip-bg);
   color: var(--muted);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 700;
   line-height: 1.2;
   overflow-wrap: anywhere;
@@ -1733,12 +1733,12 @@ textarea:focus {
 .slot-meta select,
 .regex-pattern-row input:last-child {
   width: 92px;
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .slot-card textarea {
   min-height: 82px;
-  font-size: 13px;
+  font-size: 0.8125rem;
   line-height: 1.5;
 }
 
@@ -1751,7 +1751,7 @@ textarea:focus {
   align-items: center;
   gap: 6px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .switch-label {
@@ -1822,7 +1822,7 @@ textarea:focus {
   border-radius: 7px;
   background: var(--surface-soft);
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
   text-align: left;
 }
 
@@ -1850,7 +1850,7 @@ textarea:focus {
 .regex-flags legend {
   padding: 0 5px;
   color: var(--text);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 650;
 }
 
@@ -1884,13 +1884,13 @@ textarea:focus {
 .regex-flags strong,
 .target-grid strong {
   color: var(--text);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .regex-flags small,
 .target-grid small {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 0.6875rem;
   line-height: 1.35;
 }
 
@@ -1901,7 +1901,7 @@ textarea:focus {
   border-radius: 999px;
   background: var(--chip-bg);
   color: var(--muted);
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 600;
   white-space: nowrap;
 }
@@ -1916,7 +1916,7 @@ textarea:focus {
 .compact-check-list legend {
   padding: 0 4px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 0.6875rem;
 }
 
 .full-button,
@@ -1944,17 +1944,17 @@ textarea:focus {
   flex: 1;
   min-width: 140px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .profile-row > span strong {
   color: var(--text);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .profile-row > span small {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 0.6875rem;
 }
 
 .profile-row > select {
@@ -1992,7 +1992,7 @@ textarea:focus {
   background: var(--surface-selected);
   object-fit: cover;
   color: var(--accent-text);
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 700;
 }
 
@@ -2000,7 +2000,7 @@ textarea:focus {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .modal-backdrop {
@@ -2040,7 +2040,7 @@ textarea:focus {
 
 .resource-modal h2 {
   margin: 0;
-  font-size: 18px;
+  font-size: 1.125rem;
 }
 
 .resource-modal-body {
@@ -2059,7 +2059,7 @@ textarea:focus {
   display: grid;
   gap: 5px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .editor-grid {
@@ -2163,20 +2163,20 @@ textarea:focus {
 }
 
 .forest-tree-header h2 {
-  font-size: 20px;
+  font-size: 1.25rem;
 }
 
 .forest-tree-instructions {
   margin: 5px 0 0;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
   line-height: 1.45;
 }
 
 .forest-tree-stats {
   margin: 4px 0 0;
   color: var(--accent-text);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 650;
 }
 
@@ -2246,7 +2246,7 @@ textarea:focus {
   grid-column: 1 / -1;
   margin: 0;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 0.6875rem;
 }
 
 .forest-tree-warning,
@@ -2258,7 +2258,7 @@ textarea:focus {
   border-bottom: 1px solid var(--line);
   background: var(--warning-bg);
   color: var(--warning-text);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .forest-tree-warning p {
@@ -2357,7 +2357,7 @@ textarea:focus {
 
 .forest-tree-branch-toggle span {
   color: var(--accent-text);
-  font-size: 9px;
+  font-size: 0.5625rem;
   font-weight: 750;
 }
 
@@ -2424,7 +2424,7 @@ textarea:focus {
   border-radius: 999px;
   background: var(--chip-bg);
   color: var(--muted);
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 700;
   white-space: nowrap;
 }
@@ -2451,7 +2451,7 @@ textarea:focus {
 
 .forest-tree-node-speaker {
   overflow: hidden;
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2460,7 +2460,7 @@ textarea:focus {
 .forest-tree-node-summary {
   overflow: hidden;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 0.6875rem;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -2515,7 +2515,7 @@ textarea:focus {
 }
 
 .forest-tree-preview-header h3 {
-  font-size: 16px;
+  font-size: 1rem;
 }
 
 .forest-tree-preview-badges {
@@ -2565,7 +2565,7 @@ textarea:focus {
 .forest-tree-message-error {
   margin: 0;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
   line-height: 1.45;
 }
 
@@ -2602,8 +2602,8 @@ textarea:focus {
   .primary-button,
   .secondary-button,
   .send-button {
-    min-width: 44px;
-    min-height: 44px;
+    min-width: 34px;
+    min-height: 34px;
   }
 
   .collapsible-section-toggle,
@@ -2612,8 +2612,8 @@ textarea:focus {
   }
 
   .forest-tree-branch-toggle {
-    min-width: 44px;
-    min-height: 44px;
+    min-width: 34px;
+    min-height: 34px;
   }
 }
 
@@ -2632,6 +2632,12 @@ textarea:focus {
 }
 
 @media (max-width: 920px) {
+  :root {
+    font-size: var(--mobile-font-size, 10px);
+    --mobile-control-size: 2rem;
+    --mobile-icon-size: 1.2rem;
+  }
+
   body {
     overflow: hidden;
   }
@@ -2652,10 +2658,10 @@ textarea:focus {
     inset: 0 0 auto 0;
     z-index: 45;
     display: grid;
-    grid-template-columns: 44px minmax(0, 1fr) 44px;
+    grid-template-columns: var(--mobile-control-size) minmax(0, 1fr) var(--mobile-control-size);
     align-items: center;
     gap: 8px;
-    min-height: calc(52px + env(safe-area-inset-top));
+    min-height: calc(2.4rem + env(safe-area-inset-top));
     padding: env(safe-area-inset-top) 8px 0;
     border-bottom: 1px solid var(--line);
     background: var(--glass-bg);
@@ -2667,7 +2673,7 @@ textarea:focus {
     text-align: center;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 14px;
+    font-size: 0.875rem;
   }
 
   .mobile-scrim {
@@ -2721,14 +2727,14 @@ textarea:focus {
     height: 100dvh;
     min-height: 100dvh;
     overflow: hidden;
-    padding-top: calc(52px + env(safe-area-inset-top));
+    padding-top: calc(2.4rem + env(safe-area-inset-top));
   }
 
   .chat-header {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     min-width: 0;
-    padding: 10px 12px;
+    padding: 2px 10px 4px;
   }
 
   .desktop-pane-toggle,
@@ -2752,14 +2758,14 @@ textarea:focus {
   }
 
   .chat-actions > .secondary-button {
-    width: 44px;
-    min-width: 44px;
+    width: var(--mobile-control-size);
+    min-width: var(--mobile-control-size);
     padding: 0;
     font-size: 0;
   }
 
   .tree-view-trigger {
-    width: 44px;
+    width: var(--mobile-control-size);
     padding: 0;
   }
 
@@ -2771,7 +2777,7 @@ textarea:focus {
     width: 100%;
     min-width: 0;
     overflow-x: hidden;
-    padding: 14px 10px;
+    padding: 5px;
     overscroll-behavior: contain;
   }
 
@@ -2779,7 +2785,7 @@ textarea:focus {
     width: 100%;
     min-width: 0;
     max-width: 100%;
-    gap: 6px;
+    gap: 4px;
   }
 
   .message-line .markdown-body,
@@ -2790,21 +2796,22 @@ textarea:focus {
   }
 
   .message-avatar {
-    width: 32px;
-    height: 32px;
+    width: var(--mobile-control-size);
+    height: var(--mobile-control-size);
   }
 
   .message-row {
-    padding: 12px 11px 8px;
+    padding: 5px 6px 3px;
+    margin-bottom: 8px;
   }
 
   .message-toolbar {
-    gap: 5px;
+    gap: 3px;
   }
 
   .message-toolbar .icon-button {
-    width: 44px;
-    height: 44px;
+    width: var(--mobile-control-size);
+    height: var(--mobile-control-size);
   }
 
   .composer-error {
@@ -2814,13 +2821,14 @@ textarea:focus {
   .composer {
     position: sticky;
     bottom: 0;
-    grid-template-columns: minmax(0, 1fr) 48px;
-    padding: 10px max(10px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
+    grid-template-columns: minmax(0, 1fr) var(--mobile-control-size);
+    padding: 6px max(8px, env(safe-area-inset-right)) max(6px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
   }
 
   .composer textarea {
-    min-height: 48px;
-    max-height: 32dvh;
+    min-height: 3rem;
+    height: 3rem;
+    max-height: 28dvh;
   }
 
   .resource-modal {
@@ -2849,7 +2857,7 @@ textarea:focus {
   }
 
   .forest-tree-header h2 {
-    font-size: 18px;
+    font-size: 1.125rem;
   }
 
   .forest-tree-toolbar {
@@ -2926,3 +2934,31 @@ textarea:focus {
     left: 10px;
   }
 }
+/* Configuration reports can contain long paths and preserved JSON. */
+.st-import-report, #sidebar-sillytavern-import-content { min-width: 0; }
+#sidebar-sillytavern-import-content pre { max-height: 360px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.75rem; }
+#sidebar-sillytavern-import-content li { overflow-wrap: anywhere; margin-bottom: 6px; }
+#sidebar-sillytavern-import-content details { margin: 10px 0; }
+
+/* Compact controls and user-adjustable typography. */
+.regex-rule-card {
+  display: block;
+  padding: 0;
+  min-width: 0;
+}
+.regex-rule-card > summary {
+  padding: 8px 9px;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.regex-rule-card > summary > span { font-weight: 650; }
+.regex-rule-card > summary > small { margin-left: 8px; color: var(--muted); }
+.regex-rule-fields { display: grid; gap: 8px; padding: 0 9px 9px; }
+.profile-key-status, .model-discovery-row { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
+.profile-key-status { flex-wrap: wrap; font-size: .8125rem; }
+.model-discovery-notice { min-width: 0; color: var(--muted); font-size: .75rem; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.model-discovery-row .icon-button { flex-shrink: 0; }
+.font-size-setting { margin-bottom: 10px; }
+.font-size-setting input { padding: 0; }
+.message-error, .composer-error, .inline-error, .toast > span { white-space: pre-wrap; overflow-wrap: anywhere; }
+.toast { max-height: 65dvh; overflow: auto; }

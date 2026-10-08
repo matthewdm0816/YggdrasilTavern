@@ -36,13 +36,13 @@
 
 .model-settings-header h2 {
   margin: 0;
-  font-size: 18px;
+  font-size: 1.125rem;
 }
 
 .model-settings-header p {
   margin: 5px 0 0;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .model-settings-content {
@@ -67,7 +67,7 @@
 .model-settings-notice {
   margin: 0 0 14px;
   color: var(--accent-text);
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 
 .composer-model-picker {
@@ -92,7 +92,7 @@
 .composer-model-choice > span {
   flex-shrink: 0;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .composer-model-choice select {
@@ -101,7 +101,7 @@
   padding: 6px 26px 6px 8px;
   border-color: transparent;
   background: transparent;
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 600;
   text-overflow: ellipsis;
 }
@@ -144,7 +144,7 @@
 
   .composer-model-choice select {
     width: 100%;
-    font-size: 12px;
+    font-size: 0.75rem;
   }
 }
 

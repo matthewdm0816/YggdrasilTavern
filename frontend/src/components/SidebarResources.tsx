@@ -1,10 +1,12 @@
 import { ChangeEvent, useState } from "react";
 import { BookOpen, Link, Plus, Upload, UserRound } from "lucide-react";
-import { api, CharacterSummary, WorldBook } from "../lib/api";
+import { api, APIProfile, CharacterSummary, WorldBook } from "../lib/api";
 import { CollapsibleSection } from "./CollapsibleSection";
 import { CharacterManager, WorldbookManager } from "./ResourceEditors";
+import { SillyTavernImportPanel } from "./SillyTavernImportPanel";
 
 type Props = {
+  profiles: APIProfile[];
   characters: CharacterSummary[];
   worldbooks: WorldBook[];
   onChanged: () => Promise<void>;
@@ -15,7 +17,7 @@ function errorDetail(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
 }
 
-export function SidebarResources({ characters, worldbooks, onChanged, onError }: Props) {
+export function SidebarResources({ profiles, characters, worldbooks, onChanged, onError }: Props) {
   const [chubPath, setChubPath] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -82,6 +84,7 @@ export function SidebarResources({ characters, worldbooks, onChanged, onError }:
 
   return (
     <>
+      <SillyTavernImportPanel profiles={profiles} onChanged={onChanged} onError={onError} />
       <CollapsibleSection
         contentId="sidebar-chub-import-content"
         title="Chub.ai 导入"

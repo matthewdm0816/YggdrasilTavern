@@ -27,6 +27,7 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: true,
+    allowedHosts: ["tavern.apeirianetwork.com"],
     https,
     proxy: {
       "/api": {

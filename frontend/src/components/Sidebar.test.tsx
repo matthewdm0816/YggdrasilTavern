@@ -108,4 +108,72 @@ describe("Sidebar defaults", () => {
     expect(html).toContain("Moonlit Path");
     expect(html).toContain("Alice");
   });
+
+  it("separates resources and settings into dedicated sidebar tabs to reduce visual clutter", () => {
+    const sessionsHtml = renderToStaticMarkup(
+      <Sidebar
+        settingsOpen={false}
+        onCloseSettings={() => undefined}
+        profiles={[]}
+        activeProfileId=""
+        onActiveProfileChange={() => undefined}
+        characters={[{
+          id: "character-1",
+          name: "Alice",
+          avatar_data_url: "",
+          tags: [],
+          creator: "",
+          character_version: ""
+        }]}
+        worldbooks={[]}
+        sessions={[]}
+        selectedSessionId={null}
+        showArchived={false}
+        onSelectSession={() => undefined}
+        creatingSession={false}
+        createSessionError={null}
+        onCreateSession={async () => { throw new Error("not called"); }}
+        onRefresh={async () => undefined}
+        onToggleArchived={() => undefined}
+      />
+    );
+
+    expect(sessionsHtml).toContain("侧边栏分区");
+    expect(sessionsHtml).toContain("角色/世界书");
+    expect(sessionsHtml).toContain("设置/导入");
+    expect(sessionsHtml).not.toContain("Chub.ai 导入");
+
+    const resourcesHtml = renderToStaticMarkup(
+      <Sidebar
+        initialTab="resources"
+        settingsOpen={false}
+        onCloseSettings={() => undefined}
+        profiles={[]}
+        activeProfileId=""
+        onActiveProfileChange={() => undefined}
+        characters={[{
+          id: "character-1",
+          name: "Alice",
+          avatar_data_url: "",
+          tags: [],
+          creator: "",
+          character_version: ""
+        }]}
+        worldbooks={[]}
+        sessions={[]}
+        selectedSessionId={null}
+        showArchived={false}
+        onSelectSession={() => undefined}
+        creatingSession={false}
+        createSessionError={null}
+        onCreateSession={async () => { throw new Error("not called"); }}
+        onRefresh={async () => undefined}
+        onToggleArchived={() => undefined}
+      />
+    );
+
+    expect(resourcesHtml).toContain("角色卡 (1)");
+    expect(resourcesHtml).toContain("世界书 (0)");
+    expect(resourcesHtml).not.toContain("Chub.ai 导入");
+  });
 });

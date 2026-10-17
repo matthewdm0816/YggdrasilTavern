@@ -432,6 +432,29 @@ button:disabled {
   height: 38px;
 }
 
+.api-key-input-shell {
+  position: relative;
+  min-width: 0;
+}
+
+.api-key-input-shell > input {
+  padding-right: calc(1.2rem + 8px);
+}
+
+.api-key-unsaved {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  display: inline-flex;
+  color: var(--amber);
+  transform: translateY(-50%);
+}
+
+.api-key-unsaved svg {
+  width: var(--mobile-icon-size, 14px);
+  height: var(--mobile-icon-size, 14px);
+}
+
 input,
 select,
 textarea {

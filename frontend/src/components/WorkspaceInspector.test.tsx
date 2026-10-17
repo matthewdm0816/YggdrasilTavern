@@ -50,4 +50,30 @@ describe("workspace inspector", () => {
     expect(html).not.toContain("old-alternate");
     expect(html).toContain("未选择会话");
   });
+
+  it("supports focused inspector tabs so users can view only session settings or branches", () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const html = renderToStaticMarkup(
+      <QueryClientProvider client={client}>
+        <WorkspaceInspector
+          initialTab="session"
+          tree={{
+            session: { id: "one", title: "One", preset: {} },
+            messages: [message("root-active", null)],
+            active_path_ids: ["root-active"]
+          }}
+          selectedSessionId="one"
+          activeProfileId="profile"
+          worldbooks={[]}
+          onSelectMessage={async () => undefined}
+          onOpenTree={() => undefined}
+          onCloseMobile={() => undefined}
+        />
+      </QueryClientProvider>
+    );
+    expect(html).toContain("当前会话 Regex");
+    expect(html).toContain("当前会话的世界书");
+    expect(html).not.toContain("附近分叉");
+    expect(html).not.toContain("全局 Prompt Profile");
+  });
 });

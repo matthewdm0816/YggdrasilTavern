@@ -192,6 +192,8 @@ export default function AppShell() {
         onOpenTree={openTree}
         onCloseTree={closeTree}
         canGenerate={Boolean(activeProfileId) && !modelChanging && !profilesQuery.isFetching}
+        onQuickCreateSession={(payload) => createSession.mutateAsync(payload)}
+        onOpenSettings={openSettings}
         appearanceControls={<>
           <label className="form-field"><span>皮肤</span><select aria-label="皮肤" value={theme.themeId} onChange={(event) => theme.setThemeId(event.target.value)}>{theme.themes.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
           <label className="form-field"><span>明暗模式</span><select aria-label="明暗模式" value={theme.mode} onChange={(event) => theme.setMode(event.target.value as "light" | "dark" | "system")}><option value="system">跟随系统</option><option value="light">亮色</option><option value="dark">暗色</option></select></label>

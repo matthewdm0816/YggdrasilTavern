@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { FormEvent, KeyboardEvent, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ChevronLeft,
   ChevronRight,
@@ -8,13 +8,15 @@ import {
   GitBranch,
   Menu,
   GitFork,
+  Plus,
   RefreshCcw,
   Send,
+  Settings,
   Sparkles,
   Square,
   X
 } from "lucide-react";
-import { CharacterSummary, ChatSession, Message, RegexRule, SessionTree } from "../lib/api";
+import { api, CharacterSummary, ChatSession, Message, RegexRule, SessionTree } from "../lib/api";
 import { activeMessages as getActiveMessages, siblingsFor } from "../lib/tree";
 import { useAppStore } from "../state/useAppStore";
 import { AutoSizeTextarea } from "./AutoSizeTextarea";
@@ -46,6 +48,8 @@ type Props = {
   appearanceControls: ReactNode;
   modelPicker: ReactNode;
   canGenerate: boolean;
+  onQuickCreateSession?: (payload: Parameters<typeof api.createSession>[0]) => Promise<ChatSession>;
+  onOpenSettings?: () => void;
 };
 
 function usageNumber(usage: Record<string, unknown>, ...keys: string[]): number {
@@ -143,7 +147,9 @@ export function ChatWorkspace({
   onCloseTree,
   appearanceControls,
   modelPicker,
-  canGenerate
+  canGenerate,
+  onQuickCreateSession,
+  onOpenSettings
 }: Props) {
   const sessionId = activeSession?.id || tree?.session.id || "";
   const draft = useAppStore((state) => sessionId ? state.drafts[sessionId] || "" : "");
@@ -159,6 +165,7 @@ export function ChatWorkspace({
   const pendingEdits = useRef(new Set<string>());
   const [submittingSessions, setSubmittingSessions] = useState<Record<string, boolean>>({});
   const [savingEditSessions, setSavingEditSessions] = useState<Record<string, boolean>>({});
+  const [quickCreatingId, setQuickCreatingId] = useState<string | null>(null);
   const submitting = Boolean(submittingSessions[sessionId]);
   const savingEdit = Boolean(savingEditSessions[sessionId]);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -195,8 +202,7 @@ export function ChatWorkspace({
     shouldFollowRef.current = element.scrollHeight - element.scrollTop - element.clientHeight < 120;
   }
 
-  async function submit(event: FormEvent) {
-    event.preventDefault();
+  async function submitContent() {
     const content = draft.trim();
     if (!sessionId || !tree || streaming || !canGenerate || pendingSubmissions.current.has(sessionId)) return;
     pendingSubmissions.current.add(sessionId);
@@ -214,6 +220,35 @@ export function ChatWorkspace({
     } finally {
       pendingSubmissions.current.delete(sessionId);
       setSubmittingSessions((current) => ({ ...current, [sessionId]: false }));
+    }
+  }
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    await submitContent();
+  }
+
+  function handleComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+      event.preventDefault();
+      void submitContent();
+    }
+  }
+
+  async function quickStartWithCharacter(target: CharacterSummary) {
+    if (!onQuickCreateSession || quickCreatingId) return;
+    setQuickCreatingId(target.id);
+    setInteractionError(null);
+    try {
+      await onQuickCreateSession({
+        title: target.name,
+        character_id: target.id,
+        preset: { auto_greeting: true }
+      });
+    } catch (cause) {
+      setInteractionError("创建会话失败：" + (cause instanceof Error ? cause.message : String(cause)));
+    } finally {
+      setQuickCreatingId(null);
     }
   }
 
@@ -302,7 +337,15 @@ export function ChatWorkspace({
           <button className="icon-button" type="button" title="会话与资源" aria-label="会话与资源" aria-expanded={leftOpen} onClick={onToggleLeft}><Menu size={20} /></button>
         </div>
         <div className="session-title-block">
-          <h2 title={activeSession?.title || "还没有会话"}>{activeSession?.title || "还没有会话"}</h2>
+          <div className="session-header-identity">
+            {character?.avatar_data_url && (
+              <img className="chat-header-avatar" src={character.avatar_data_url} alt="" aria-hidden="true" />
+            )}
+            <div className="session-header-copy">
+              <h2 title={activeSession?.title || "还没有会话"}>{activeSession?.title || "还没有会话"}</h2>
+              {character && <span className="session-header-subtitle">{character.name}</span>}
+            </div>
+          </div>
         </div>
         <div className="chat-actions">
           <button className="icon-button" type="button" title="当前路径分支与会话设置" aria-label="当前路径分支与会话设置" aria-expanded={rightOpen} onClick={onToggleRight}><GitFork size={19} /></button>
@@ -321,7 +364,44 @@ export function ChatWorkspace({
         )}
         {loadError && <div className="inline-error" role="alert">会话树加载失败：{loadError}</div>}
         {!loading && !loadError && !tree && (
-          <div className="empty-state"><GitBranch size={32} /><p>未选择会话</p></div>
+          <div className="empty-state">
+            <GitBranch size={32} />
+            <p>未选择会话</p>
+            <div className="empty-state-guide">
+              {characters.length > 0 && onQuickCreateSession ? (
+                <>
+                  <span className="muted">点击角色立即开启新对话：</span>
+                  <div className="quick-character-grid">
+                    {characters.slice(0, 6).map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        className="secondary-button quick-character-btn"
+                        disabled={quickCreatingId !== null}
+                        onClick={() => void quickStartWithCharacter(item)}
+                      >
+                        <Plus size={14} />
+                        <span>{quickCreatingId === item.id ? `正在创建 ${item.name}…` : `与 ${item.name} 对话`}</span>
+                      </button>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <div className="inline-actions">
+                  <button type="button" className="secondary-button" onClick={onToggleLeft}>
+                    <Menu size={15} />
+                    打开会话与角色面板
+                  </button>
+                  {onOpenSettings && (
+                    <button type="button" className="secondary-button" onClick={onOpenSettings}>
+                      <Settings size={15} />
+                      配置模型连接
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
         )}
         {activeMessages.map((message) => {
           const siblings = siblingsFor(tree, message);
@@ -355,9 +435,9 @@ export function ChatWorkspace({
                       <label className="form-field"><span>Thinking</span><AutoSizeTextarea disabled={savingEdit} value={edit.thinkingValue} onChange={(event) => setEdit(sessionId, { ...edit, thinkingValue: event.target.value })} /></label>
                     )}
                     <div className="inline-actions">
-                      <button className="primary-button" disabled={savingEdit || streaming || (edit.value === message.content && edit.thinkingValue === message.thinking_content)} onClick={() => saveEdit(message)}>{savingEdit ? "保存中…" : "保存修改"}</button>
-                      <button className="secondary-button" disabled={savingEdit || streaming} onClick={() => saveEdit(message, true)}>保存为新 swipe</button>
-                      <button className="icon-button" title="取消" disabled={savingEdit} onClick={() => setEdit(sessionId, undefined)}><X size={16} /></button>
+                      <button className="primary-button" type="button" disabled={savingEdit || streaming || (edit.value === message.content && edit.thinkingValue === message.thinking_content)} onClick={() => void saveEdit(message)}>{savingEdit ? "保存中…" : "保存修改"}</button>
+                      <button className="secondary-button" type="button" disabled={savingEdit || streaming} onClick={() => void saveEdit(message, true)}>保存为新 swipe</button>
+                      <button className="icon-button" type="button" title="取消" disabled={savingEdit} onClick={() => setEdit(sessionId, undefined)}><X size={16} /></button>
                     </div>
                   </div>
                 ) : message.content ? (
@@ -376,6 +456,10 @@ export function ChatWorkspace({
                     <button className="icon-button" type="button" title="上一个消息分支" aria-label="上一个消息分支" disabled={!previous} onClick={() => previous && selectSwipeFromToolbar(previous.id)}><ChevronLeft size={16} /></button>
                     <span className="swipe-counter" aria-label={"第 " + (index + 1) + " 个，共 " + siblings.length + " 个消息分支"}>{index + 1}/{siblings.length}</span>
                     <button className="icon-button" type="button" title="下一个消息分支" aria-label="下一个消息分支" disabled={!next} onClick={() => next && selectSwipeFromToolbar(next.id)}><ChevronRight size={16} /></button>
+                    <button className="icon-button message-quick-action" type="button" title="编辑消息" aria-label="编辑消息" disabled={streaming} onClick={() => startEdit(message)}><Edit3 size={15} /></button>
+                    {message.role === "assistant" && (
+                      <button className="icon-button message-quick-action" type="button" title="重新生成此回复" aria-label="重新生成此回复" disabled={streaming || submitting || !canGenerate} onClick={() => onRegenerate(message.id)}><RefreshCcw size={15} /></button>
+                    )}
                     <ActionMenu label="消息操作">
                       <button type="button" data-close-menu disabled={!message.content} onClick={() => void copyMessage(message)}><Copy size={16} />复制正文</button>
                       <button type="button" data-close-menu disabled={streaming} onClick={() => void duplicateMessage(message)}><CopyPlus size={16} />复制为新分支</button>
@@ -396,17 +480,18 @@ export function ChatWorkspace({
           {modelPicker}
           <button className="secondary-button continue-generation" type="button" title="从当前路径继续生成回复" disabled={!tree || streaming || submitting || !canGenerate} onClick={onGenerate}><Sparkles size={15} /><span>继续</span></button>
         </div>
-        <form className="composer" onSubmit={submit}>
+        <form className="composer" onSubmit={(event) => void submit(event)}>
           <label className="composer-field"><span className="sr-only">发送消息</span><textarea
               value={draft}
               onChange={(event) => sessionId && setDraft(sessionId, event.target.value)}
-              placeholder={streaming ? "输入消息…" : "输入消息；留空继续生成"}
+              onKeyDown={handleComposerKeyDown}
+              placeholder={streaming ? "输入消息…" : "输入消息（Ctrl+Enter 发送）；留空点击发送可继续生成"}
               disabled={!tree}
             /></label>
           {streaming ? (
             <button className="send-button composer-stop-button" type="button" title="停止生成" aria-label="停止生成" onClick={onStop}><Square size={17} /></button>
           ) : (
-            <button className="send-button" disabled={!tree || !canGenerate || submitting} title={draft.trim() ? "发送" : "空白发送：继续生成"} aria-label={draft.trim() ? "发送" : "空白发送：继续生成"}><Send size={18} /></button>
+            <button className="send-button" disabled={!tree || !canGenerate || submitting} title={draft.trim() ? "发送 (Ctrl+Enter)" : "空白发送：继续生成"} aria-label={draft.trim() ? "发送" : "空白发送：继续生成"}><Send size={18} /></button>
           )}
         </form>
       </div>

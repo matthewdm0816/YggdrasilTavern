@@ -5,7 +5,7 @@ from typing import Dict, List
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, load_only
 
 from .. import models, schemas
 from ..database import get_db
@@ -16,7 +16,23 @@ router = APIRouter()
 
 @router.get("/characters", response_model=List[schemas.CharacterSummaryOut])
 def list_characters(db: Session = Depends(get_db)) -> List[models.Character]:
-    return list(db.scalars(select(models.Character).order_by(models.Character.updated_at.desc())))
+    statement = (
+        select(models.Character)
+        .options(
+            load_only(
+                models.Character.id,
+                models.Character.name,
+                models.Character.avatar_data_url,
+                models.Character.avatar_transform,
+                models.Character.tags,
+                models.Character.creator,
+                models.Character.character_version,
+                models.Character.updated_at,
+            )
+        )
+        .order_by(models.Character.updated_at.desc())
+    )
+    return list(db.scalars(statement))
 
 
 @router.post("/characters", response_model=schemas.CharacterOut)

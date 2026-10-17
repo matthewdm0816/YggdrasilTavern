@@ -11,13 +11,14 @@ type Props = {
   worldbooks: WorldBook[];
   onChanged: () => Promise<void>;
   onError?: (message: string) => void;
+  mode?: "all" | "resources" | "imports";
 };
 
 function errorDetail(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
 }
 
-export function SidebarResources({ profiles, characters, worldbooks, onChanged, onError }: Props) {
+export function SidebarResources({ profiles, characters, worldbooks, onChanged, onError, mode = "all" }: Props) {
   const [chubPath, setChubPath] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -82,70 +83,89 @@ export function SidebarResources({ profiles, characters, worldbooks, onChanged, 
     }
   }
 
+  const showResources = mode === "all" || mode === "resources";
+  const showImports = mode === "all" || mode === "imports";
+
   return (
     <>
-      <SillyTavernImportPanel profiles={profiles} onChanged={onChanged} onError={onError} />
-      <CollapsibleSection
-        contentId="sidebar-chub-import-content"
-        title="Chub.ai 导入"
-        icon={<Link size={16} />}
-        storageKey="yggdrasil-tavern.sidebar.chub-import.expanded"
-      >
-        <div className="chub-import">
-          <label className="form-field"><span>Chub 路径</span><input
-              value={chubPath}
-              onChange={(event) => setChubPath(event.target.value)}
-            /><small>填写 characters/user/slug 或 lorebooks/user/slug。</small></label>
-          <div className="inline-actions">
-            <button className="secondary-button" disabled={busy || !chubPath.trim()} onClick={() => importFromChub("character")}>
-              导入角色
-            </button>
-            <button className="secondary-button" disabled={busy || !chubPath.trim()} onClick={() => importFromChub("worldbook")}>
-              导入世界书
-            </button>
-          </div>
-        </div>
-      </CollapsibleSection>
+      {showResources && (
+        <>
+          <CollapsibleSection
+            contentId="sidebar-characters-content"
+            title={`角色卡 (${characters.length})`}
+            icon={<UserRound size={16} />}
+            storageKey="yggdrasil-tavern.sidebar.characters.expanded"
+            defaultExpanded={mode === "resources"}
+          >
+            <div>
+              <div className="inline-actions resource-toolbar-actions">
+                <button className="secondary-button" type="button" disabled={busy} onClick={() => void createBlankCharacter()}>
+                  <Plus size={15} />
+                  空角色
+                </button>
+                <label className="file-button">
+                  <Upload size={15} />
+                  导入 JSON/PNG
+                  <input type="file" disabled={busy} accept=".json,.png,application/json,image/png" onChange={(event) => void importFile(event, "character")} />
+                </label>
+              </div>
+              <CharacterManager characters={characters} onChanged={onChanged} onError={onError} />
+            </div>
+          </CollapsibleSection>
 
-      <CollapsibleSection
-        contentId="sidebar-characters-content"
-        title="角色卡"
-        icon={<UserRound size={16} />}
-        storageKey="yggdrasil-tavern.sidebar.characters.expanded"
-      >
-        <div>
-          <button className="secondary-button" onClick={createBlankCharacter}>
-            <Plus size={15} />
-            空角色
-          </button>
-          <label className="file-button">
-            <Upload size={15} />
-            导入 JSON/PNG
-            <input type="file" disabled={busy} accept=".json,.png,application/json,image/png" onChange={(event) => importFile(event, "character")} />
-          </label>
-          <CharacterManager characters={characters} onChanged={onChanged} onError={onError} />
-        </div>
-      </CollapsibleSection>
+          <CollapsibleSection
+            contentId="sidebar-worldbooks-content"
+            title={`世界书 (${worldbooks.length})`}
+            icon={<BookOpen size={16} />}
+            storageKey="yggdrasil-tavern.sidebar.worldbooks.expanded"
+            defaultExpanded={mode === "resources"}
+          >
+            <div>
+              <div className="inline-actions resource-toolbar-actions">
+                <button className="secondary-button" type="button" disabled={busy} onClick={() => void createBlankWorldbook()}>
+                  <Plus size={15} />
+                  空世界书
+                </button>
+                <label className="file-button">
+                  <Upload size={15} />
+                  导入 JSON
+                  <input type="file" disabled={busy} accept=".json,application/json" onChange={(event) => void importFile(event, "worldbook")} />
+                </label>
+              </div>
+              <WorldbookManager worldbooks={worldbooks} onChanged={onChanged} onError={onError} />
+            </div>
+          </CollapsibleSection>
+        </>
+      )}
 
-      <CollapsibleSection
-        contentId="sidebar-worldbooks-content"
-        title="世界书"
-        icon={<BookOpen size={16} />}
-        storageKey="yggdrasil-tavern.sidebar.worldbooks.expanded"
-      >
-        <div>
-          <button className="secondary-button" onClick={createBlankWorldbook}>
-            <Plus size={15} />
-            空世界书
-          </button>
-          <label className="file-button">
-            <Upload size={15} />
-            导入 JSON
-            <input type="file" disabled={busy} accept=".json,application/json" onChange={(event) => importFile(event, "worldbook")} />
-          </label>
-          <WorldbookManager worldbooks={worldbooks} onChanged={onChanged} onError={onError} />
-        </div>
-      </CollapsibleSection>
+      {showImports && (
+        <>
+          <CollapsibleSection
+            contentId="sidebar-chub-import-content"
+            title="Chub.ai 导入"
+            icon={<Link size={16} />}
+            storageKey="yggdrasil-tavern.sidebar.chub-import.expanded"
+            defaultExpanded={mode === "imports"}
+          >
+            <div className="chub-import">
+              <label className="form-field"><span>Chub 路径</span><input
+                  value={chubPath}
+                  placeholder="characters/user/slug 或 lorebooks/user/slug"
+                  onChange={(event) => setChubPath(event.target.value)}
+                /><small>填写 characters/user/slug 或 lorebooks/user/slug。</small></label>
+              <div className="inline-actions">
+                <button className="secondary-button" type="button" disabled={busy || !chubPath.trim()} onClick={() => void importFromChub("character")}>
+                  导入角色
+                </button>
+                <button className="secondary-button" type="button" disabled={busy || !chubPath.trim()} onClick={() => void importFromChub("worldbook")}>
+                  导入世界书
+                </button>
+              </div>
+            </div>
+          </CollapsibleSection>
+          <SillyTavernImportPanel profiles={profiles} onChanged={onChanged} onError={onError} />
+        </>
+      )}
     </>
   );
 }

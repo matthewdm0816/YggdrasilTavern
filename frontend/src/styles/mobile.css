@@ -88,7 +88,14 @@
 @media (max-width: 920px) {
   :root { font-size: var(--mobile-font-size, 10px); --mobile-control-size: 2rem; --mobile-icon-size: 1.2rem; }
   .chat-pane .chat-header { grid-template-columns: 2rem minmax(0, 1fr) 4.4rem; min-height: calc(2.4rem + env(safe-area-inset-top)); padding: env(safe-area-inset-top) 5px 0; gap: 4px; }
+  .chat-header .session-header-identity { justify-content: center; gap: 6px; }
+  .chat-header .chat-header-avatar { width: 1.6rem; height: 1.6rem; }
   .chat-header .session-title-block h2 { font-size: 1rem; }
+  .chat-header .session-header-subtitle { display: none; }
+  .pane-tab { min-height: var(--mobile-control-size); padding: 2px 4px; font-size: .9rem; gap: 3px; }
+  .pane-tab > svg { width: 1.05rem; height: 1.05rem; }
+  .pane-tab-badge { min-width: 1.4rem; height: 1.4rem; padding: 0 3px; font-size: .8rem; }
+  .left-pane .resource-row { grid-template-columns: 2.2rem minmax(0, 1fr) repeat(3, var(--mobile-control-size)); }
   .chat-header .icon-button, .message-branch-actions .icon-button, .left-pane .session-actions-menu { width: var(--mobile-control-size); height: var(--mobile-control-size); min-width: var(--mobile-control-size); min-height: var(--mobile-control-size); }
   .chat-pane .message-scroll { padding: 5px; }
   .message-scroll .message-line { margin-bottom: 6px; }

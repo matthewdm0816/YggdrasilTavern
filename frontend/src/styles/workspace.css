@@ -57,7 +57,11 @@
 }
 .chat-header .chat-header-start { display: flex; align-items: center; }
 .chat-header .session-title-block { display: block; min-width: 0; }
-.chat-header .session-title-block h2 { margin: 0; font-size: 1.0625rem; line-height: 1.35; }
+.chat-header .session-header-identity { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.chat-header .chat-header-avatar { width: 32px; height: 32px; border-radius: var(--radius-sm, 6px); object-fit: cover; flex-shrink: 0; border: 1px solid var(--line); }
+.chat-header .session-header-copy { display: flex; flex-direction: column; min-width: 0; }
+.chat-header .session-title-block h2 { margin: 0; font-size: 1.0625rem; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-header .session-header-subtitle { color: var(--muted); font-size: 0.75rem; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chat-header .chat-actions { display: flex; flex-wrap: nowrap; width: auto; gap: 4px; }
 .chat-pane .message-scroll {
   flex: 1 1 auto;
@@ -140,3 +144,146 @@
 
 .primary-button, .secondary-button, .send-button, .icon-button, input, select, textarea { border-radius: var(--radius-sm); }
 .resource-modal, .forest-tree-dialog, .model-settings-dialog, .auth-card { border-radius: var(--radius-lg); }
+
+/* Tabbed navigation for sidebar and inspector */
+.pane-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 3px;
+  margin-top: 12px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md, 10px);
+  background: var(--surface);
+  min-width: 0;
+}
+
+.pane-tabs.inspector-tabs {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.pane-tab {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 32px;
+  padding: 4px 5px;
+  border: 0;
+  border-radius: var(--radius-sm, 6px);
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.pane-tab > svg {
+  flex-shrink: 0;
+}
+
+.pane-tab > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pane-tab:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.pane-tab.active {
+  background: var(--surface-selected);
+  color: var(--accent-text);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+
+.pane-tab-badge {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--line) 65%, transparent);
+  color: var(--text);
+  font-size: 0.65rem;
+  font-weight: 600;
+}
+
+.pane-tab.active .pane-tab-badge {
+  background: color-mix(in srgb, var(--accent-text) 20%, transparent);
+  color: var(--accent-text);
+}
+
+.pane-tab-badge.unsaved-dot {
+  min-width: 12px;
+  height: 12px;
+  padding: 0;
+  color: var(--amber);
+  background: transparent;
+  font-size: 1rem;
+}
+
+.pane-tab-body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.sidebar-tab-panel {
+  margin-top: 12px;
+  padding-top: 12px;
+}
+
+.resource-toolbar-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.resource-toolbar-actions > .secondary-button,
+.resource-toolbar-actions > .file-button {
+  width: 100%;
+  margin-top: 0;
+  white-space: nowrap;
+}
+
+.left-pane .resource-row {
+  min-width: 0;
+  grid-template-columns: 32px minmax(0, 1fr) repeat(3, 30px);
+}
+
+/* Empty state onboarding & quick character start */
+.empty-state-guide {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  max-width: 480px;
+}
+
+.quick-character-grid {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+.quick-character-btn {
+  padding: 7px 12px;
+  font-size: 0.8125rem;
+}
+

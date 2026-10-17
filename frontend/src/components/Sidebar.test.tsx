@@ -139,8 +139,8 @@ describe("Sidebar defaults", () => {
     );
 
     expect(sessionsHtml).toContain("侧边栏分区");
-    expect(sessionsHtml).toContain("角色/世界书");
-    expect(sessionsHtml).toContain("设置/导入");
+    expect(sessionsHtml).toContain("角色与世界书");
+    expect(sessionsHtml).toContain("设置与导入");
     expect(sessionsHtml).not.toContain("Chub.ai 导入");
 
     const resourcesHtml = renderToStaticMarkup(

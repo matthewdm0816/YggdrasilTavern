@@ -3,9 +3,9 @@ import { Type } from "lucide-react";
 import { CollapsibleSection } from "./CollapsibleSection";
 
 const storageKey = "yggdrasil-tavern.font-sizes";
-const defaults = { desktop: 16, mobile: 10 };
+const defaults = { desktop: 14, mobile: 10 };
 
-function loadSizes() {
+export function loadSizes() {
   if (typeof window === "undefined") return defaults;
   try {
     const stored = window.localStorage.getItem(storageKey);
@@ -13,7 +13,10 @@ function loadSizes() {
     const parsed = JSON.parse(stored);
     if (parsed && typeof parsed.desktop === "number" && parsed.desktop >= 12 && parsed.desktop <= 22
       && typeof parsed.mobile === "number" && parsed.mobile >= 10 && parsed.mobile <= 22) {
-      return { desktop: parsed.desktop, mobile: parsed.version !== 2 && parsed.mobile === 14 ? defaults.mobile : parsed.mobile };
+      return {
+        desktop: parsed.version !== 3 && parsed.desktop === 16 ? defaults.desktop : parsed.desktop,
+        mobile: parsed.version !== 2 && parsed.version !== 3 && parsed.mobile === 14 ? defaults.mobile : parsed.mobile
+      };
     }
     console.error("保存的字号设置无效，使用默认字号。", parsed);
   } catch (cause) {
@@ -22,14 +25,19 @@ function loadSizes() {
   return defaults;
 }
 
+export function applyFontSizeSettings(sizes = loadSizes()) {
+  if (typeof document === "undefined") return;
+  document.documentElement.style.setProperty("--desktop-font-size", `${sizes.desktop}px`);
+  document.documentElement.style.setProperty("--mobile-font-size", `${sizes.mobile}px`);
+}
+
 export function DisplaySettings() {
   const [sizes, setSizes] = useState(loadSizes);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
-    document.documentElement.style.setProperty("--desktop-font-size", `${sizes.desktop}px`);
-    document.documentElement.style.setProperty("--mobile-font-size", `${sizes.mobile}px`);
+    applyFontSizeSettings(sizes);
     try {
-      window.localStorage.setItem(storageKey, JSON.stringify({ version: 2, ...sizes }));
+      window.localStorage.setItem(storageKey, JSON.stringify({ version: 3, ...sizes }));
       setError(null);
     } catch (cause) {
       console.error("字号已应用，但无法保存到浏览器。", cause);

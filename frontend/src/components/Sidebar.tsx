@@ -122,7 +122,7 @@ export function Sidebar({
             onClick={() => setActiveTab("resources")}
           >
             <BookOpen size={15} />
-            <span title="角色与世界书">角色/世界书</span>
+            <span title="角色与世界书">角色</span>
             <small className="pane-tab-badge">{characters.length + worldbooks.length}</small>
           </button>
           <button
@@ -132,7 +132,7 @@ export function Sidebar({
             onClick={() => setActiveTab("settings")}
           >
             <SlidersHorizontal size={15} />
-            <span title="设置与导入">设置/导入</span>
+            <span title="设置与导入">设置</span>
           </button>
         </nav>
 

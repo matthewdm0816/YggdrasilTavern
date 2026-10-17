@@ -1,5 +1,5 @@
 import { FormEvent, ReactNode, useCallback, useEffect, useRef, useState } from "react";
-import { LockKeyhole, LogIn, LogOut, RefreshCw, ShieldCheck, WifiOff } from "lucide-react";
+import { LockKeyhole, LogIn, RefreshCw, ShieldCheck, WifiOff } from "lucide-react";
 import { api, AUTH_REQUIRED_EVENT, AuthStatus } from "../lib/api";
 
 type Props = {
@@ -28,20 +28,15 @@ export function AuthGate({ children }: Props) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [currentStatus, setCurrentStatus] = useState<AuthStatus | null>(null);
-  const [loggingOut, setLoggingOut] = useState(false);
-  const [logoutError, setLogoutError] = useState<string | null>(null);
   const requestRevisionRef = useRef(0);
 
   const checkStatus = useCallback(async () => {
     const revision = ++requestRevisionRef.current;
     setPhase("checking");
     setCheckError(null);
-    setCurrentStatus(null);
     try {
       const status = await api.authStatus();
       if (revision !== requestRevisionRef.current) return;
-      setCurrentStatus(status);
       setPhase(authAllowsApplication(status) ? "ready" : "login");
     } catch (cause) {
       if (revision !== requestRevisionRef.current) return;
@@ -61,9 +56,7 @@ export function AuthGate({ children }: Props) {
   useEffect(() => {
     function requireLogin() {
       requestRevisionRef.current += 1;
-      setCurrentStatus({ enabled: true, authenticated: false, username: null });
       setPassword("");
-      setLogoutError(null);
       setLoginError("登录会话已过期，请重新登录。");
       setPhase("login");
     }
@@ -88,7 +81,6 @@ export function AuthGate({ children }: Props) {
         throw new Error("服务器没有确认登录状态，请重试。");
       }
       setPassword("");
-      setCurrentStatus(status);
       setPhase("ready");
     } catch (cause) {
       setPassword("");
@@ -99,48 +91,8 @@ export function AuthGate({ children }: Props) {
     }
   }
 
-  async function logout() {
-    if (loggingOut) return;
-    setLoggingOut(true);
-    setLogoutError(null);
-    try {
-      const status = await api.authLogout();
-      if (status.enabled && status.authenticated) {
-        throw new Error("服务器没有结束当前登录会话，请重试。");
-      }
-      setCurrentStatus(status);
-      setUsername("");
-      setPassword("");
-      setPhase(status.enabled ? "login" : "ready");
-    } catch (cause) {
-      setLogoutError(readableAuthError(cause));
-      console.error("退出登录失败", cause);
-    } finally {
-      setLoggingOut(false);
-    }
-  }
-
   if (phase === "ready") {
-    return (
-      <>
-        {children}
-        {currentStatus?.enabled && currentStatus.authenticated && (
-          <>
-            <button
-              className="icon-button auth-logout-button"
-              type="button"
-              title="退出当前登录并返回登录界面"
-              aria-label="退出当前登录并返回登录界面"
-              disabled={loggingOut}
-              onClick={() => void logout()}
-            >
-              {loggingOut ? <RefreshCw className="auth-spinner" size={16} aria-hidden="true" /> : <LogOut size={16} aria-hidden="true" />}
-            </button>
-            {logoutError && <p className="auth-logout-error" role="alert">退出登录失败：{logoutError}</p>}
-          </>
-        )}
-      </>
-    );
+    return <>{children}</>;
   }
 
   return (

@@ -42,6 +42,12 @@ export function WorkspaceInspector({
   initialTab = "all"
 }: Props) {
   const [activeTab, setActiveTab] = useState<InspectorTab>(initialTab);
+  const [promptVisited, setPromptVisited] = useState(initialTab === "all" || initialTab === "prompt");
+
+  function selectTab(tab: InspectorTab) {
+    if (tab === "all" || tab === "prompt") setPromptVisited(true);
+    setActiveTab(tab);
+  }
   const [settingsDrafts, setSettingsDrafts] = useState<SessionSettingsDrafts>({});
   const queryClient = useQueryClient();
   const [saveFeedbackBySession, setSaveFeedbackBySession] = useState<Record<string, SaveFeedback>>({});
@@ -175,7 +181,7 @@ export function WorkspaceInspector({
           type="button"
           className={activeTab === "all" ? "pane-tab active" : "pane-tab"}
           aria-pressed={activeTab === "all"}
-          onClick={() => setActiveTab("all")}
+          onClick={() => selectTab("all")}
         >
           <span>全部</span>
         </button>
@@ -183,7 +189,7 @@ export function WorkspaceInspector({
           type="button"
           className={activeTab === "branches" ? "pane-tab active" : "pane-tab"}
           aria-pressed={activeTab === "branches"}
-          onClick={() => setActiveTab("branches")}
+          onClick={() => selectTab("branches")}
         >
           <GitFork size={14} />
           <span>分支</span>
@@ -193,7 +199,7 @@ export function WorkspaceInspector({
           type="button"
           className={activeTab === "session" ? "pane-tab active" : "pane-tab"}
           aria-pressed={activeTab === "session"}
-          onClick={() => setActiveTab("session")}
+          onClick={() => selectTab("session")}
         >
           <BookOpen size={14} />
           <span>设置</span>
@@ -203,7 +209,7 @@ export function WorkspaceInspector({
           type="button"
           className={activeTab === "prompt" ? "pane-tab active" : "pane-tab"}
           aria-pressed={activeTab === "prompt"}
-          onClick={() => setActiveTab("prompt")}
+          onClick={() => selectTab("prompt")}
         >
           <Globe2 size={14} />
           <span>Prompt</span>
@@ -249,7 +255,11 @@ export function WorkspaceInspector({
         </CollapsibleSection>
       )}
 
-      {showPrompt && <GlobalPromptPanel onError={onError} />}
+      {promptVisited && (
+        <div hidden={!showPrompt}>
+          <GlobalPromptPanel onError={onError} />
+        </div>
+      )}
 
       {showSessionSettings && (
         <>

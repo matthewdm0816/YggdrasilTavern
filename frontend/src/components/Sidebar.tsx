@@ -73,7 +73,13 @@ export function Sidebar({
   initialTab = "sessions"
 }: Props) {
   const [activeTab, setActiveTab] = useState<SidebarTab>(initialTab);
+  const [visitedTabs, setVisitedTabs] = useState(() => new Set<SidebarTab>([initialTab]));
   const [refreshing, setRefreshing] = useState(false);
+
+  function selectTab(tab: SidebarTab) {
+    setVisitedTabs((current) => new Set(current).add(tab));
+    setActiveTab(tab);
+  }
 
   async function handleRefresh() {
     setRefreshing(true);
@@ -109,7 +115,7 @@ export function Sidebar({
             type="button"
             className={activeTab === "sessions" ? "pane-tab active" : "pane-tab"}
             aria-pressed={activeTab === "sessions"}
-            onClick={() => setActiveTab("sessions")}
+            onClick={() => selectTab("sessions")}
           >
             <MessageSquarePlus size={15} />
             <span>会话</span>
@@ -119,7 +125,7 @@ export function Sidebar({
             type="button"
             className={activeTab === "resources" ? "pane-tab active" : "pane-tab"}
             aria-pressed={activeTab === "resources"}
-            onClick={() => setActiveTab("resources")}
+            onClick={() => selectTab("resources")}
           >
             <BookOpen size={15} />
             <span title="角色与世界书">角色</span>
@@ -129,7 +135,7 @@ export function Sidebar({
             type="button"
             className={activeTab === "settings" ? "pane-tab active" : "pane-tab"}
             aria-pressed={activeTab === "settings"}
-            onClick={() => setActiveTab("settings")}
+            onClick={() => selectTab("settings")}
           >
             <SlidersHorizontal size={15} />
             <span title="设置与导入">设置</span>
@@ -137,8 +143,8 @@ export function Sidebar({
         </nav>
 
         <div className="pane-tab-body">
-          {activeTab === "sessions" && (
-            <>
+          {visitedTabs.has("sessions") && (
+            <div hidden={activeTab !== "sessions"}>
               <SessionListPanel
                 characters={characters}
                 worldbooks={worldbooks}
@@ -158,22 +164,24 @@ export function Sidebar({
                 <Settings size={16} />
                 模型与连接设置
               </button>
-            </>
+            </div>
           )}
 
-          {activeTab === "resources" && (
-            <SidebarResources
-              profiles={profiles}
-              characters={characters}
-              worldbooks={worldbooks}
-              onChanged={onRefresh}
-              onError={onError}
-              mode="resources"
-            />
+          {visitedTabs.has("resources") && (
+            <div hidden={activeTab !== "resources"}>
+              <SidebarResources
+                profiles={profiles}
+                characters={characters}
+                worldbooks={worldbooks}
+                onChanged={onRefresh}
+                onError={onError}
+                mode="resources"
+              />
+            </div>
           )}
 
-          {activeTab === "settings" && (
-            <>
+          {visitedTabs.has("settings") && (
+            <div hidden={activeTab !== "settings"}>
               <button className="secondary-button sidebar-settings-button" type="button" onClick={onOpenSettings}>
                 <Settings size={16} />
                 模型与连接设置
@@ -187,7 +195,7 @@ export function Sidebar({
                 onError={onError}
                 mode="imports"
               />
-            </>
+            </div>
           )}
         </div>
       </aside>

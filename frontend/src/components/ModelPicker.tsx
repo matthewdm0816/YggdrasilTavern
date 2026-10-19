@@ -49,6 +49,8 @@ export function ModelPicker({ profiles, activeProfileId, onActiveProfileChange, 
   const changingRef = useRef(false);
   const activeProfile = profiles.find((profile) => profile.id === activeProfileId);
   const activeModel = activeProfile ? savedModels[activeProfile.id] || activeProfile.model : "";
+  // Groups are ordered by connection name; the id keeps duplicate names deterministic.
+  const orderedProfiles = [...profiles].sort((a, b) => a.name.localeCompare(b.name, "en") || a.id.localeCompare(b.id));
 
   // A refreshed list is the authoritative server state, including settings edits.
   useEffect(() => { setSavedModels({}); }, [profiles]);
@@ -97,9 +99,11 @@ export function ModelPicker({ profiles, activeProfileId, onActiveProfileChange, 
             onChange={(event) => void selectModel(event.target.value)}
           >
             {!activeProfile && <option value="">{profiles.length ? "请选择模型" : "尚未配置模型"}</option>}
-            {profiles.map((profile) => {
+            {orderedProfiles.map((profile) => {
               const currentModel = savedModels[profile.id] || profile.model;
-              const modelIds = [...new Set([currentModel, ...profile.model_catalog.map((model) => model.id)])];
+              // Sort peers alphabetically inside their Profile group; groups stay separate.
+              const modelIds = [...new Set([currentModel, ...profile.model_catalog.map((model) => model.id)])]
+                .sort((a, b) => a.localeCompare(b, "en"));
               return (
                 <optgroup key={profile.id} label={profile.name}>
                   {modelIds.map((model) => <option key={model} value={choiceValue(profile.id, model)}>{model} · {profile.name}</option>)}

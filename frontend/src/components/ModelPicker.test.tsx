@@ -10,6 +10,14 @@ const profile: APIProfile = {
   model_catalog: [{ id: "model-other" }]
 };
 
+function optionLabels(html: string, groupLabel: string): string[] {
+  const start = html.indexOf(`<optgroup label="${groupLabel}"`);
+  if (start < 0) throw new Error(`optgroup ${groupLabel} not found`);
+  const end = html.indexOf("</optgroup>", start);
+  return [...html.slice(start, end).matchAll(/<option[^>]*>([^<]+)<\/option>/g)]
+    .map((match) => match[1].split(" · ")[0]);
+}
+
 afterEach(() => { vi.restoreAllMocks(); });
 
 describe("ModelPicker", () => {
@@ -20,6 +28,28 @@ describe("ModelPicker", () => {
     expect(html).toContain("model-other · Example service");
     expect(html).toContain("打开模型与连接设置");
     expect(html).not.toContain(profile.base_url);
+  });
+
+  it("sorts models alphabetically inside each connection group without merging groups", () => {
+    const unsorted: APIProfile = {
+      ...profile, id: "profile-two", name: "Unsorted service", model: "zeta-current",
+      model_catalog: [{ id: "gamma" }, { id: "alpha" }, { id: "beta" }]
+    };
+    const html = renderToStaticMarkup(<ModelPicker profiles={[profile, unsorted]} activeProfileId={profile.id} onActiveProfileChange={() => undefined} onOpenSettings={() => undefined} />);
+    expect(optionLabels(html, "Example service")).toEqual(["model-current", "model-other"]);
+    expect(optionLabels(html, "Unsorted service")).toEqual(["alpha", "beta", "gamma", "zeta-current"]);
+    expect(html.indexOf('label="Example service"')).toBeLessThan(html.indexOf('label="Unsorted service"'));
+    expect(optionLabels(html, "Example service")).not.toContain("alpha");
+  });
+
+  it("sorts connection groups by name while keeping each group intact", () => {
+    const zeta: APIProfile = {
+      ...profile, id: "profile-zeta", name: "Zeta service", model: "model-zeta", model_catalog: []
+    };
+    const html = renderToStaticMarkup(<ModelPicker profiles={[zeta, profile]} activeProfileId={profile.id} onActiveProfileChange={() => undefined} onOpenSettings={() => undefined} />);
+    expect(html.indexOf('label="Example service"')).toBeLessThan(html.indexOf('label="Zeta service"'));
+    expect(optionLabels(html, "Example service")).toEqual(["model-current", "model-other"]);
+    expect(optionLabels(html, "Zeta service")).toEqual(["model-zeta"]);
   });
 
   it("provides settings access when no connection is configured", () => {

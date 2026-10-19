@@ -78,6 +78,10 @@ function remoteModelLabel(model: RemoteModelInfo): string {
   return `${model.display_name || model.id}${model.display_name ? ` · ${model.id}` : ""}${limits ? ` · ${limits}` : ""}`;
 }
 
+function modelsById(models: RemoteModelInfo[]): RemoteModelInfo[] {
+  return [...models].sort((a, b) => a.id.localeCompare(b.id, "en"));
+}
+
 function profileConnectionKey(profile: APIProfile): string {
   return JSON.stringify([profile.id, profile.provider_type, profile.base_url, profile.path_override]);
 }
@@ -126,7 +130,8 @@ export function ModelSettingsDialog({
   const editedProfile = profiles.find((item) => item.id === editingProfileId);
   const profileDirty = profileDraftHasChanges(profile, editedProfile);
   const activeConnectionKey = activeProfile ? profileConnectionKey(activeProfile) : "";
-  const activeCatalog = activeProfile?.model_catalog || [];
+  const activeCatalog = modelsById(activeProfile?.model_catalog || []);
+  const orderedDraftModels = modelsById(draftModels);
   const activeRemoteModel = activeCatalog.find((item) => item.id === activeProfile?.model);
   const activeEffectiveLimits = activeProfile
     ? effectiveProfileLimits(activeProfile, activeRemoteModel)
@@ -429,8 +434,8 @@ export function ModelSettingsDialog({
               </select></label>
             <label className="form-field"><span>Base URL</span><input placeholder="https://api.example.com/v1" value={profile.base_url} onChange={(event) => setProfile({ ...profile, base_url: event.target.value })} /></label>
             <label className="form-field"><span>自定义请求路径（可选）</span><input placeholder="默认路径" value={profile.path_override} onChange={(event) => setProfile({ ...profile, path_override: event.target.value })} /></label>
-            <label className="form-field"><span>模型名称</span><input list="profile-draft-models" value={profile.model} onChange={(event) => setProfile({ ...profile, model: event.target.value })} /><datalist id="profile-draft-models">{draftModels.map((item) => <option key={item.id} value={item.id}>{remoteModelLabel(item)}</option>)}</datalist></label>
-            {draftModels.length > 0 && <label className="form-field"><span>模型列表</span><select value={draftModels.some((item) => item.id === profile.model) ? profile.model : ""} onChange={(event) => event.target.value && setProfile({ ...profile, model: event.target.value })}><option value="">选择模型</option>{draftModels.map((item) => <option key={item.id} value={item.id}>{remoteModelLabel(item)}</option>)}</select></label>}
+            <label className="form-field"><span>模型名称</span><input list="profile-draft-models" value={profile.model} onChange={(event) => setProfile({ ...profile, model: event.target.value })} /><datalist id="profile-draft-models">{orderedDraftModels.map((item) => <option key={item.id} value={item.id}>{remoteModelLabel(item)}</option>)}</datalist></label>
+            {draftModels.length > 0 && <label className="form-field"><span>模型列表</span><select value={orderedDraftModels.some((item) => item.id === profile.model) ? profile.model : ""} onChange={(event) => event.target.value && setProfile({ ...profile, model: event.target.value })}><option value="">选择模型</option>{orderedDraftModels.map((item) => <option key={item.id} value={item.id}>{remoteModelLabel(item)}</option>)}</select></label>}
             <div className="model-discovery-row"><p className="model-discovery-notice" role="status">{discoveringDraftModels ? "正在获取模型列表…" : draftModelsNotice}</p><button className="icon-button" type="button" title="重新获取模型列表" aria-label="重新获取模型列表" disabled={discoveringDraftModels} onClick={() => setDiscoveryAttempt((value) => value + 1)}><CloudDownload size={15} /></button></div>
             <label className="form-field">
               <span>API Key</span>

@@ -1,6 +1,13 @@
 import { FormEvent, ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { LockKeyhole, LogIn, RefreshCw, ShieldCheck, WifiOff } from "lucide-react";
 import { api, AUTH_REQUIRED_EVENT, AuthStatus } from "../lib/api";
+import { AccountContext } from "./AccountContext";
+import { setStorageUser } from "../lib/userStorage";
+import { useAppStore } from "../state/useAppStore";
+import { applyFontSizeSettings } from "./DisplaySettings";
+import { applyAccountTheme } from "../features/theme/useTheme";
+
+const ACCOUNT_CHANGED_KEY = "yggdrasil-tavern.account-changed";
 
 type Props = {
   children: ReactNode;
@@ -28,23 +35,43 @@ export function AuthGate({ children }: Props) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [accountStatus, setAccountStatus] = useState<AuthStatus | null>(null);
+  const accountIdRef = useRef<string | null>(null);
   const requestRevisionRef = useRef(0);
 
-  const checkStatus = useCallback(async () => {
+  const acceptStatus = useCallback((status: AuthStatus) => {
+    const nextId = status.user?.id || null;
+    if (accountIdRef.current !== nextId || !authAllowsApplication(status)) {
+      useAppStore.setState({ selectedSessionId: null, drafts: {}, edits: {} });
+    }
+    accountIdRef.current = nextId;
+    setStorageUser(status.user || null);
+    applyAccountTheme();
+    applyFontSizeSettings();
+    setAccountStatus(status);
+    setPhase(authAllowsApplication(status) ? "ready" : "login");
+  }, []);
+
+  function broadcastChange() {
+    try { window.localStorage.setItem(ACCOUNT_CHANGED_KEY, `${Date.now()}:${Math.random()}`); }
+    catch (cause) { console.error("无法通知其他页面登录状态变化", cause); }
+  }
+
+  const checkStatus = useCallback(async (background = false) => {
     const revision = ++requestRevisionRef.current;
-    setPhase("checking");
+    if (!background) setPhase("checking");
     setCheckError(null);
     try {
       const status = await api.authStatus();
       if (revision !== requestRevisionRef.current) return;
-      setPhase(authAllowsApplication(status) ? "ready" : "login");
+      acceptStatus(status);
     } catch (cause) {
       if (revision !== requestRevisionRef.current) return;
       setCheckError(readableAuthError(cause));
-      setPhase("error");
+      if (!background) setPhase("error");
       console.error("鉴权状态检查失败", cause);
     }
-  }, []);
+  }, [acceptStatus]);
 
   useEffect(() => {
     void checkStatus();
@@ -59,11 +86,23 @@ export function AuthGate({ children }: Props) {
       setPassword("");
       setLoginError("登录会话已过期，请重新登录。");
       setPhase("login");
+      useAppStore.setState({ selectedSessionId: null, drafts: {}, edits: {} });
     }
 
+    function accountChanged(event: StorageEvent) {
+      if (event.key === ACCOUNT_CHANGED_KEY) void checkStatus(true);
+    }
+    function checkOnFocus() { if (phase === "ready") void checkStatus(true); }
+
     window.addEventListener(AUTH_REQUIRED_EVENT, requireLogin);
-    return () => window.removeEventListener(AUTH_REQUIRED_EVENT, requireLogin);
-  }, []);
+    window.addEventListener("storage", accountChanged);
+    window.addEventListener("focus", checkOnFocus);
+    return () => {
+      window.removeEventListener(AUTH_REQUIRED_EVENT, requireLogin);
+      window.removeEventListener("storage", accountChanged);
+      window.removeEventListener("focus", checkOnFocus);
+    };
+  }, [checkStatus, phase]);
 
   async function submitLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -74,14 +113,17 @@ export function AuthGate({ children }: Props) {
     }
 
     setSubmitting(true);
+    const revision = ++requestRevisionRef.current;
     setLoginError(null);
     try {
       const status = await api.authLogin({ username: normalizedUsername, password });
+      if (revision !== requestRevisionRef.current) return;
       if (!authAllowsApplication(status)) {
         throw new Error("服务器没有确认登录状态，请重试。");
       }
       setPassword("");
-      setPhase("ready");
+      acceptStatus(status);
+      broadcastChange();
     } catch (cause) {
       setPassword("");
       setLoginError(readableAuthError(cause));
@@ -91,8 +133,23 @@ export function AuthGate({ children }: Props) {
     }
   }
 
-  if (phase === "ready") {
-    return <>{children}</>;
+  async function logout() {
+    requestRevisionRef.current += 1;
+    const status = await api.authLogout();
+    acceptStatus(status);
+    broadcastChange();
+  }
+
+  function updateStatus(status: AuthStatus) {
+    requestRevisionRef.current += 1;
+    acceptStatus(status);
+    broadcastChange();
+  }
+
+  if (phase === "ready" && accountStatus) {
+    return <AccountContext.Provider value={{ status: accountStatus, updateStatus, logout, statusError: checkError }}>
+      <div key={accountStatus.user?.id || "local"} style={{ display: "contents" }}>{children}</div>
+    </AccountContext.Provider>;
   }
 
   return (

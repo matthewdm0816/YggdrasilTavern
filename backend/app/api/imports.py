@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from .. import models, schemas
 from ..database import get_db
+from ..auth import require_admin
 from ..services.st_directory_import import apply_plan, backup_sqlite, build_plan, plan_report
 from ..services.st_directory_source import read_source
 
@@ -19,6 +20,7 @@ router = APIRouter()
 
 @router.post("/imports/sillytavern/preview", response_model=schemas.SillyTavernImportReport)
 def preview_import(payload: schemas.SillyTavernPreviewRequest, request: Request, db: Session = Depends(get_db)):
+    require_admin(request)
     try:
         files, manifest, source = read_source(payload.directory, ssh_host=payload.ssh_host, user=payload.user)
         plan = build_plan(files, manifest, source)
@@ -36,18 +38,22 @@ def preview_import(payload: schemas.SillyTavernPreviewRequest, request: Request,
                 raise HTTPException(status_code=429, detail="已有 4 个导入预览待处理，请先完成导入或等待 15 分钟后重试")
             token = secrets.token_urlsafe(32)
             row = db.get(models.GlobalPromptConfig, "default")
-            staged[token] = (now + 900, plan, row.revision if row else 0)
+            staged[token] = (now + 900, plan, row.revision if row else 0, getattr(request.state, "auth_username", None))
             report["token"] = token
     return report
 
 
 @router.post("/imports/sillytavern/apply", response_model=schemas.SillyTavernImportReport)
 def commit_import(payload: schemas.SillyTavernApplyRequest, request: Request, db: Session = Depends(get_db)):
+    require_admin(request)
     with request.app.state.st_import_lock:
-        staged = request.app.state.st_import_plans.pop(payload.token, None)
+        staged = request.app.state.st_import_plans.get(payload.token)
+        if staged and staged[3] != getattr(request.state, "auth_username", None):
+            raise HTTPException(status_code=404, detail="导入预览不存在")
+        request.app.state.st_import_plans.pop(payload.token, None)
         if staged is None or staged[0] <= time.monotonic():
             raise HTTPException(status_code=410, detail="导入预览已使用或超过 15 分钟，请重新预览")
-        _, plan, revision = staged
+        _, plan, revision, _ = staged
         row = db.get(models.GlobalPromptConfig, "default")
         if payload.activate and (row.revision if row else 0) != revision:
             raise HTTPException(status_code=409, detail="预览后全局提示词已被修改，请重新预览再导入")

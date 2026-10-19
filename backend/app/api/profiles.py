@@ -33,6 +33,8 @@ async def discover_profile_models(profile: models.APIProfile) -> schemas.ModelsR
 @router.post("/api-profiles/models/discover", response_model=schemas.ModelsRefreshOut)
 async def discover_api_profile_models(payload: schemas.ModelsDiscoverIn, db: Session = Depends(get_db)) -> schemas.ModelsRefreshOut:
     stored = db.get(models.APIProfile, payload.profile_id) if payload.profile_id else None
+    if stored and stored.api_key_env and not stored.api_key and not db.info.get("allow_server_credentials", True):
+        raise HTTPException(403, "此账号需要填写自己的 API Key，不能读取服务器环境变量")
     key = (payload.api_key or "").strip()
     key_env = ""
     if not key and stored:
@@ -55,6 +57,8 @@ def list_api_profiles(db: Session = Depends(get_db)) -> List[models.APIProfile]:
 
 @router.post("/api-profiles", response_model=schemas.APIProfileOut)
 def create_api_profile(payload: schemas.APIProfileCreate, db: Session = Depends(get_db)) -> models.APIProfile:
+    if payload.api_key_env and not db.info.get("allow_server_credentials", True):
+        raise HTTPException(403, "普通用户请填写自己的 API Key，不能读取服务器环境变量")
     profile = models.APIProfile(**_api_profile_write_data(payload))
     db.add(profile)
     db.commit()
@@ -68,6 +72,8 @@ def update_api_profile(profile_id: str, payload: schemas.APIProfileUpdate, db: S
     if not profile:
         raise HTTPException(status_code=404, detail="API profile not found")
     data = _api_profile_write_data(payload)
+    if data.get("api_key_env") and not db.info.get("allow_server_credentials", True):
+        raise HTTPException(403, "普通用户请填写自己的 API Key，不能读取服务器环境变量")
     routing_changed = any(
         field in data and data[field] != getattr(profile, field)
         for field in ("provider_type", "base_url", "path_override")

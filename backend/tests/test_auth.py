@@ -2,9 +2,10 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
-from app.auth import AUTH_COOKIE_NAME, authenticated_username, create_session_token
+from app.auth import AUTH_COOKIE_NAME
 from app.config import Settings
 from app.main import create_app
+from app.database import Database
 
 
 AUTH_VALUES = {
@@ -21,7 +22,7 @@ def settings(**overrides) -> Settings:
 
 
 def app_with_probe(app_settings: Settings):
-    app = create_app(init_on_startup=False, settings=app_settings)
+    app = create_app(init_on_startup=False, settings=app_settings, database=Database("sqlite:///:memory:"))
 
     @app.get("/api/private-probe")
     def private_probe():
@@ -38,8 +39,11 @@ def test_auth_is_disabled_by_default_and_does_not_block_api():
         "enabled": False,
         "authenticated": True,
         "username": None,
+        "user": None,
+        "can_setup": True,
     }
     assert client.get("/api/private-probe").json() == {"ok": True}
+    assert client.get("/api/private-probe").headers["cache-control"] == "no-store"
 
 
 def test_enabled_auth_login_status_protection_and_logout():
@@ -50,6 +54,8 @@ def test_enabled_auth_login_status_protection_and_logout():
         "enabled": True,
         "authenticated": False,
         "username": None,
+        "user": None,
+        "can_setup": False,
     }
     protected = client.get("/api/private-probe", headers={"Origin": "http://localhost:5173"})
     assert protected.status_code == 401
@@ -68,7 +74,9 @@ def test_enabled_auth_login_status_protection_and_logout():
         json={"username": "owner", "password": "correct horse battery staple"},
     )
     assert login.status_code == 200
-    assert login.json() == {"enabled": True, "authenticated": True, "username": "owner"}
+    assert login.json()["authenticated"] is True
+    assert login.json()["user"]["username"] == "owner"
+    assert login.json()["user"]["is_admin"] is True
     cookie_header = login.headers["set-cookie"].lower()
     assert f"{AUTH_COOKIE_NAME}=" in cookie_header
     assert "httponly" in cookie_header
@@ -80,29 +88,31 @@ def test_enabled_auth_login_status_protection_and_logout():
     assert client.get("/api/auth/status").json()["authenticated"] is True
 
     logout = client.post("/api/auth/logout")
-    assert logout.json() == {"enabled": True, "authenticated": False, "username": None}
+    assert logout.json() == {"enabled": True, "authenticated": False, "username": None, "user": None, "can_setup": False}
     assert client.get("/api/private-probe").status_code == 401
 
 
 def test_tampered_and_expired_session_cookies_are_rejected():
-    app_settings = settings()
-    token = create_session_token(app_settings, now=1_000)
-    assert authenticated_username(token, app_settings, now=1_001) == "owner"
-    assert authenticated_username(token, app_settings, now=4_600) is None
+    from sqlalchemy import update
+    from app.accounts import sessions
 
-    payload, signature = token.split(".", 1)
-    replacement = "A" if signature[-1] != "A" else "B"
-    tampered = f"{payload}.{signature[:-1]}{replacement}"
-    assert authenticated_username(tampered, app_settings, now=1_001) is None
-
-    client = TestClient(app_with_probe(app_settings))
-    client.cookies.set(AUTH_COOKIE_NAME, tampered)
-    response = client.get("/api/private-probe")
+    app = app_with_probe(settings())
+    client = TestClient(app)
+    client.post('/api/auth/login', json={'username': 'owner', 'password': 'correct horse battery staple'})
+    token = client.cookies.get(AUTH_COOKIE_NAME)
+    replacement = 'A' if token[-1] != 'A' else 'B'
+    client.cookies.set(AUTH_COOKIE_NAME, token[:-1] + replacement)
+    response = client.get('/api/private-probe')
     assert response.status_code == 401
-    assert AUTH_COOKIE_NAME in response.headers.get("set-cookie", "")
+    assert AUTH_COOKIE_NAME in response.headers.get('set-cookie', '')
 
-    client.cookies.set(AUTH_COOKIE_NAME, "%%%not-base64%%%.signature")
-    assert client.get("/api/auth/status").json()["authenticated"] is False
+    client.cookies.clear()
+    client.cookies.set(AUTH_COOKIE_NAME, token)
+    with app.state.accounts._engine.begin() as connection:
+        connection.execute(update(sessions).values(expires_at=1))
+    assert client.get('/api/private-probe').status_code == 401
+    client.cookies.set(AUTH_COOKIE_NAME, '%%%not-a-session%%%')
+    assert client.get('/api/auth/status').json()['authenticated'] is False
 
 
 def test_unicode_credentials_are_supported():

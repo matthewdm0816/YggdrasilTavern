@@ -4,6 +4,7 @@ import { api, APIProfile, CharacterSummary, WorldBook } from "../lib/api";
 import { CollapsibleSection } from "./CollapsibleSection";
 import { CharacterManager, WorldbookManager } from "./ResourceEditors";
 import { SillyTavernImportPanel } from "./SillyTavernImportPanel";
+import { useAccount } from "./AccountContext";
 
 type Props = {
   profiles: APIProfile[];
@@ -19,6 +20,7 @@ function errorDetail(cause: unknown): string {
 }
 
 export function SidebarResources({ profiles, characters, worldbooks, onChanged, onError, mode = "all" }: Props) {
+  const account = useAccount();
   const [chubPath, setChubPath] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -163,7 +165,7 @@ export function SidebarResources({ profiles, characters, worldbooks, onChanged, 
               </div>
             </div>
           </CollapsibleSection>
-          <SillyTavernImportPanel profiles={profiles} onChanged={onChanged} onError={onError} />
+          {(!account?.status.enabled || account.status.user?.is_admin) && <SillyTavernImportPanel profiles={profiles} onChanged={onChanged} onError={onError} />}
         </>
       )}
     </>

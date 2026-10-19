@@ -9,6 +9,7 @@ import os
 from typing import Any, AsyncIterator, Dict, List, Optional
 
 import httpx
+from sqlalchemy.orm import object_session
 
 from .. import models, schemas
 from .errors import ApplicationError
@@ -83,6 +84,9 @@ def models_endpoint_for(profile: models.APIProfile) -> str:
 def _api_key(profile: models.APIProfile) -> str:
     key = (profile.api_key or "").strip()
     if not key and profile.api_key_env:
+        db = object_session(profile)
+        if db is not None and not db.info.get("allow_server_credentials", True):
+            raise ApplicationError(status_code=403, detail="此账号需要填写自己的 API Key，不能读取服务器环境变量")
         key = (os.getenv(profile.api_key_env) or "").strip()
     if not key:
         raise ApplicationError(status_code=400, detail="此 API Profile 尚未配置 API Key")

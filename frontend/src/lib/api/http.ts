@@ -1,8 +1,10 @@
+import { accountHeaders } from "../userStorage";
+
 export const API_BASE = import.meta.env.VITE_API_BASE || "";
 export const AUTH_REQUIRED_EVENT = "yggdrasil:auth-required";
 
 export function notifyAuthenticationRequired(path: string, response: Response): void {
-  if (response.status !== 401 || path === "/api/auth/login" || typeof window === "undefined") return;
+  if ((response.status !== 401 && response.headers.get("X-Yggdrasil-Account-Changed") !== "1") || path === "/api/auth/login" || typeof window === "undefined") return;
   window.dispatchEvent(new Event(AUTH_REQUIRED_EVENT));
 }
 
@@ -48,6 +50,7 @@ export async function request<T>(path: string, options: RequestInit = {}): Promi
     credentials: "include",
     headers: {
       "Content-Type": "application/json",
+      ...accountHeaders(),
       ...(options.headers || {})
     }
   });
@@ -61,7 +64,7 @@ export async function request<T>(path: string, options: RequestInit = {}): Promi
 export async function upload<T>(path: string, file: File): Promise<T> {
   const form = new FormData();
   form.append("file", file);
-  const response = await fetch(`${API_BASE}${path}`, { method: "POST", body: form, credentials: "include" });
+  const response = await fetch(`${API_BASE}${path}`, { method: "POST", body: form, credentials: "include", headers: accountHeaders() });
   if (!response.ok) {
     notifyAuthenticationRequired(path, response);
     throw new Error(await responseError(response));
@@ -70,7 +73,7 @@ export async function upload<T>(path: string, file: File): Promise<T> {
 }
 
 export async function download(path: string, fallbackName: string): Promise<void> {
-  const response = await fetch(`${API_BASE}${path}`, { credentials: "include" });
+  const response = await fetch(`${API_BASE}${path}`, { credentials: "include", headers: accountHeaders() });
   if (!response.ok) {
     notifyAuthenticationRequired(path, response);
     throw new Error(await responseError(response));

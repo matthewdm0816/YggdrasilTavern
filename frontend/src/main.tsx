@@ -1,4 +1,5 @@
 import React from "react";
+import { useState } from "react";
 import ReactDOM from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import App from "./AppShell";
@@ -13,15 +14,16 @@ import "./styles/mobile.css";
 void initializeTheme();
 applyFontSizeSettings();
 
-const client = new QueryClient();
+function AccountApplication() {
+  const [client] = useState(() => new QueryClient());
+  return <QueryClientProvider client={client}><App /></QueryClientProvider>;
+}
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <ThemeErrorNotice />
     <AuthGate>
-      <QueryClientProvider client={client}>
-        <App />
-      </QueryClientProvider>
+      <AccountApplication />
     </AuthGate>
   </React.StrictMode>
 );

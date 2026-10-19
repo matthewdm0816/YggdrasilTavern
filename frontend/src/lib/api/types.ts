@@ -260,6 +260,10 @@ export type AuthStatus = {
   enabled: boolean;
   authenticated: boolean;
   username: string | null;
+  user?: UserProfile | null;
+  can_setup?: boolean;
 };
+
+export type UserProfile = components["schemas"]["UserOut"];
 
 export type AuthLogin = components["schemas"]["LoginRequest"];

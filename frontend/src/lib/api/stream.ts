@@ -1,4 +1,5 @@
 import type { GenerateInput } from "./contracts";
+import { accountHeaders } from "../userStorage";
 import { API_BASE, notifyAuthenticationRequired, responseError } from "./http";
 import { SseParser, type SseEvent } from "./sse";
 import type { Message } from "./types";
@@ -104,7 +105,7 @@ export async function streamGenerate(
   const response = await fetch(API_BASE + path, {
     method: "POST",
     credentials: "include",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...accountHeaders() },
     body: JSON.stringify(payload),
     signal
   });

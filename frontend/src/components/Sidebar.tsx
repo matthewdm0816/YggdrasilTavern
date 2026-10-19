@@ -2,6 +2,7 @@ import { useState } from "react";
 import { BookOpen, MessageSquarePlus, RefreshCcw, Settings, SlidersHorizontal, X } from "lucide-react";
 import { api, APIProfile, CharacterSummary, ChatSession, WorldBook } from "../lib/api";
 import { DisplaySettings } from "./DisplaySettings";
+import { AccountPanel } from "./AccountPanel";
 import {
   fallbackProfileIdAfterDelete,
   formatTokenLimit,
@@ -187,6 +188,7 @@ export function Sidebar({
                 模型与连接设置
               </button>
               <DisplaySettings />
+              <AccountPanel />
               <SidebarResources
                 profiles={profiles}
                 characters={characters}

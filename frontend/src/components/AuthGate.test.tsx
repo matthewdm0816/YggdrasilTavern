@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { api, AUTH_REQUIRED_EVENT, streamGenerate } from "../lib/api";
 import { AuthGate, authAllowsApplication, readableAuthError } from "./AuthGate";
+import { setStorageUser } from "../lib/userStorage";
 
 function jsonResponse(payload: unknown, status = 200): Response {
   return new Response(JSON.stringify(payload), {
@@ -12,6 +13,7 @@ function jsonResponse(payload: unknown, status = 200): Response {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  setStorageUser(null);
 });
 
 describe("AuthGate", () => {
@@ -31,6 +33,7 @@ describe("AuthGate", () => {
 
 describe("authenticated API transport", () => {
   it("includes cookies for ordinary requests, uploads, downloads, and streams", async () => {
+    setStorageUser({ id: "alice", is_owner: false });
     const calls: Array<{ url: string; options: RequestInit }> = [];
     const fetchMock = vi.fn(async (input: RequestInfo | URL, options: RequestInit = {}) => {
       const url = String(input);
@@ -57,7 +60,10 @@ describe("authenticated API transport", () => {
     await streamGenerate("session-id", { api_profile_id: "profile-id" }, {});
 
     expect(calls).toHaveLength(4);
-    for (const call of calls) expect(call.options.credentials).toBe("include");
+    for (const call of calls) {
+      expect(call.options.credentials).toBe("include");
+      expect(new Headers(call.options.headers).get("X-Yggdrasil-User")).toBe("alice");
+    }
     expect(calls[3].options.body).toBe(JSON.stringify({ api_profile_id: "profile-id" }));
   });
 
@@ -89,5 +95,17 @@ describe("authenticated API transport", () => {
 
     await expect(api.authLogin({ username: "owner", password: "wrong" })).rejects.toThrow("Authentication required");
     expect(authRequiredCount).toBe(1);
+  });
+
+  it("requires a fresh login when the cookie account differs from the page account", async () => {
+    const browserWindow = new EventTarget();
+    const listener = vi.fn();
+    browserWindow.addEventListener(AUTH_REQUIRED_EVENT, listener);
+    vi.stubGlobal("window", browserWindow);
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ detail: "账号已切换" }), {
+      status: 409, headers: { "Content-Type": "application/json", "X-Yggdrasil-Account-Changed": "1" }
+    })));
+    await expect(api.characters()).rejects.toThrow("账号已切换");
+    expect(listener).toHaveBeenCalledOnce();
   });
 });

@@ -10,12 +10,13 @@ import { WorkspaceInspector } from "./components/WorkspaceInspector";
 import { ModelPicker } from "./components/ModelPicker";
 import { useMediaQuery } from "./lib/useMediaQuery";
 import { useTheme } from "./features/theme";
+import { userStorageKey } from "./lib/userStorage";
 
 const ACTIVE_PROFILE_STORAGE_KEY = "yggdrasil-tavern.active-api-profile";
 
 function loadActiveProfileId(): string {
   try {
-    return window.localStorage.getItem(ACTIVE_PROFILE_STORAGE_KEY) || "";
+    return window.localStorage.getItem(userStorageKey(ACTIVE_PROFILE_STORAGE_KEY)) || "";
   } catch (cause) {
     console.error("Unable to read the active API Profile from localStorage.", cause);
     return "";
@@ -66,8 +67,8 @@ export default function AppShell() {
 
   useEffect(() => {
     try {
-      if (activeProfileId) window.localStorage.setItem(ACTIVE_PROFILE_STORAGE_KEY, activeProfileId);
-      else window.localStorage.removeItem(ACTIVE_PROFILE_STORAGE_KEY);
+      if (activeProfileId) window.localStorage.setItem(userStorageKey(ACTIVE_PROFILE_STORAGE_KEY), activeProfileId);
+      else window.localStorage.removeItem(userStorageKey(ACTIVE_PROFILE_STORAGE_KEY));
     } catch (cause) {
       console.error("Unable to persist the active API Profile to localStorage.", cause);
     }

@@ -50,6 +50,92 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/auth/setup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Setup */
+        post: operations["setup_api_auth_setup_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Own Profile */
+        patch: operations["update_own_profile_api_auth_profile_patch"];
+        trace?: never;
+    };
+    "/api/auth/password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Change Password */
+        post: operations["change_password_api_auth_password_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Users */
+        get: operations["list_users_api_auth_users_get"];
+        put?: never;
+        /** Create User */
+        post: operations["create_user_api_auth_users_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/users/{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update User */
+        patch: operations["update_user_api_auth_users__user_id__patch"];
+        trace?: never;
+    };
     "/api/health": {
         parameters: {
             query?: never;
@@ -813,6 +899,12 @@ export interface components {
             authenticated: boolean;
             /** Username */
             username?: string | null;
+            user?: components["schemas"]["UserOut"] | null;
+            /**
+             * Can Setup
+             * @default false
+             */
+            can_setup: boolean;
         };
         /** BindCredentialRequest */
         BindCredentialRequest: {
@@ -1537,6 +1629,18 @@ export interface components {
             /** Message */
             message?: string | null;
         };
+        /** OwnProfileUpdate */
+        OwnProfileUpdate: {
+            /** Display Name */
+            display_name: string;
+        };
+        /** PasswordChange */
+        PasswordChange: {
+            /** Current Password */
+            current_password: string;
+            /** Password */
+            password: string;
+        };
         /** PromptDiagnostic */
         PromptDiagnostic: {
             /**
@@ -1855,6 +1959,42 @@ export interface components {
              */
             status: string;
         };
+        /** UserCreate */
+        UserCreate: {
+            /** Username */
+            username: string;
+            /** Password */
+            password: string;
+            /**
+             * Display Name
+             * @default
+             */
+            display_name: string;
+        };
+        /** UserOut */
+        UserOut: {
+            /** Id */
+            id: string;
+            /** Username */
+            username: string;
+            /** Display Name */
+            display_name: string;
+            /** Is Admin */
+            is_admin: boolean;
+            /** Active */
+            active: boolean;
+            /** Is Owner */
+            is_owner: boolean;
+        };
+        /** UserUpdate */
+        UserUpdate: {
+            /** Display Name */
+            display_name?: string | null;
+            /** Password */
+            password?: string | null;
+            /** Active */
+            active?: boolean | null;
+        };
         /** ValidationError */
         ValidationError: {
             /** Location */
@@ -2163,6 +2303,193 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AuthStatus"];
+                };
+            };
+        };
+    };
+    setup_api_auth_setup_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_own_profile_api_auth_profile_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OwnProfileUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    change_password_api_auth_password_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordChange"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_users_api_auth_users_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserOut"][];
+                };
+            };
+        };
+    };
+    create_user_api_auth_users_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_user_api_auth_users__user_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

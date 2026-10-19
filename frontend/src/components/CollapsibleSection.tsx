@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
+import { userStorageKey } from "../lib/userStorage";
 
 type Props = {
   contentId: string;
@@ -16,7 +17,7 @@ function readPersistedState(storageKey: string, defaultExpanded: boolean) {
   if (typeof window === "undefined") return defaultExpanded;
 
   try {
-    const storedValue = window.localStorage.getItem(storageKey);
+    const storedValue = window.localStorage.getItem(userStorageKey(storageKey));
     if (storedValue === null) return defaultExpanded;
     if (storedValue === "true") return true;
     if (storedValue === "false") return false;
@@ -53,7 +54,7 @@ export function CollapsibleSection({
 
       if (typeof window !== "undefined") {
         try {
-          window.localStorage.setItem(storageKey, String(next));
+          window.localStorage.setItem(userStorageKey(storageKey), String(next));
         } catch (error) {
           console.error(
             `Failed to save collapsible section state to localStorage key "${storageKey}":`,

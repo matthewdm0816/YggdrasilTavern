@@ -7,12 +7,23 @@ import type {
 import { download, request, upload } from "./http";
 import type { components } from "./generated";
 import type {
-  APIProfile, AuthLogin, AuthStatus, Character, CharacterSummary,
+  APIProfile, AuthLogin, AuthStatus, UserProfile, Character, CharacterSummary,
   ChatSession, ContextPreview, GlobalPromptConfig, Message,
   SessionFolder, SessionTree, WorldBook,
   SillyTavernImportReport, ImportedResource, SavedCredential, SessionDefaults
 } from "./types";
 export const api = {
+  setupAccounts: (payload: components["schemas"]["UserCreate"]) =>
+    request<AuthStatus>("/api/auth/setup", { method: "POST", body: JSON.stringify(payload) }),
+  updateUserProfile: (display_name: string) =>
+    request<UserProfile>("/api/auth/profile", { method: "PATCH", body: JSON.stringify({ display_name }) }),
+  changePassword: (current_password: string, password: string) =>
+    request<AuthStatus>("/api/auth/password", { method: "POST", body: JSON.stringify({ current_password, password }) }),
+  users: () => request<UserProfile[]>("/api/auth/users"),
+  createUser: (payload: components["schemas"]["UserCreate"]) =>
+    request<UserProfile>("/api/auth/users", { method: "POST", body: JSON.stringify(payload) }),
+  updateUser: (id: string, payload: components["schemas"]["UserUpdate"]) =>
+    request<UserProfile>(`/api/auth/users/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(payload) }),
   previewSillyTavern: (payload: { ssh_host: string; directory: string; user: string }) =>
     request<SillyTavernImportReport>("/api/imports/sillytavern/preview", { method: "POST", body: JSON.stringify(payload) }),
   applySillyTavern: (token: string, activate: boolean) =>

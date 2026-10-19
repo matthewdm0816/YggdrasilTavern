@@ -10,6 +10,7 @@ from .api.router import router
 from .auth import AuthenticationMiddleware, router as auth_router
 from .config import Settings, get_settings
 from .database import Database
+from .accounts import Accounts
 from .services.errors import ApplicationError
 
 
@@ -21,20 +22,24 @@ def create_app(
     settings = settings or get_settings()
     owns_database = database is None
     database = database or Database(settings.database_url)
+    accounts = Accounts(settings, database)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         try:
             if init_on_startup:
                 database.initialize()
+                accounts.initialize()
             yield
         finally:
+            accounts.dispose()
             if owns_database:
                 database.dispose()
 
     app = FastAPI(title="YggdrasilTavern API", version="0.1.0", lifespan=lifespan)
     app.state.settings = settings
     app.state.database = database
+    app.state.accounts = accounts
     app.state.st_import_lock = RLock()
     app.state.st_import_plans = {}
 
@@ -65,13 +70,14 @@ def create_app(
     # Authentication is inner and CORS is outer so even 401 responses include
     # the browser's required cross-origin headers.  The pure ASGI auth layer
     # also leaves generation streams unbuffered.
-    app.add_middleware(AuthenticationMiddleware, settings=settings)
+    app.add_middleware(AuthenticationMiddleware, settings=settings, accounts=accounts)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origin_list,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        expose_headers=["X-Yggdrasil-Account-Changed"],
     )
 
     return app

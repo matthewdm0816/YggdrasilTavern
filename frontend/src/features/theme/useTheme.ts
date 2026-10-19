@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { userStorageKey } from "../../lib/userStorage";
 import bundledSource from "../../../public/themes.json";
 import { loadThemeConfig } from "./loadConfig";
 import { buildThemeVariables, parseThemeConfig, resolveThemeMode, ThemeDefinition, ThemeMode, ResolvedThemeMode } from "./schema";
@@ -43,7 +44,7 @@ function reportConfigError(message: string, cause?: unknown): void {
 
 function persist(key: string, value: string): void {
   try {
-    window.localStorage.setItem(key, value);
+    window.localStorage.setItem(userStorageKey(key), value);
   } catch (cause) {
     reportStorageError("无法保存主题选择", cause);
   }
@@ -117,8 +118,8 @@ export function initializeTheme(): Promise<void> {
   initialized = true;
   let mode: ThemeMode = "system";
   try {
-    const savedMode = window.localStorage.getItem(THEME_MODE_STORAGE_KEY);
-    const savedId = window.localStorage.getItem(THEME_ID_STORAGE_KEY);
+    const savedMode = window.localStorage.getItem(userStorageKey(THEME_MODE_STORAGE_KEY));
+    const savedId = window.localStorage.getItem(userStorageKey(THEME_ID_STORAGE_KEY));
     if (savedMode === "light" || savedMode === "dark" || savedMode === "system") mode = savedMode;
     else if (savedMode !== null) reportStorageError("已保存的明暗模式无效，改用跟随系统", savedMode);
     if (savedId) preferredThemeId = savedId;
@@ -131,4 +132,20 @@ export function initializeTheme(): Promise<void> {
     if (current.mode === "system") apply(current.themeId, current.mode);
   });
   return reloadThemes();
+}
+
+export function applyAccountTheme(): void {
+  preferredThemeId = null;
+  storageError = null;
+  let mode: ThemeMode = "system";
+  try {
+    const savedMode = window.localStorage.getItem(userStorageKey(THEME_MODE_STORAGE_KEY));
+    const savedId = window.localStorage.getItem(userStorageKey(THEME_ID_STORAGE_KEY));
+    if (savedMode === "light" || savedMode === "dark" || savedMode === "system") mode = savedMode;
+    preferredThemeId = savedId;
+  } catch (cause) {
+    reportStorageError("无法读取此账号的主题选择", cause);
+  }
+  apply(preferredThemeId && config.themes.some((theme) => theme.id === preferredThemeId) ? preferredThemeId : config.defaultThemeId, mode);
+  refreshError();
 }

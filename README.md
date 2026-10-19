@@ -4,7 +4,7 @@
 
 YggdrasilTavern is a local-first role-play chat workbench built around a real conversation tree. Branches are not visual copies of a linear transcript: every swipe, edit, regeneration, and alternate greeting is a persistent sibling node, and only the currently selected path is compiled into the next model request.
 
-The current milestone is a single-user local web application. It combines a FastAPI/SQLite backend with a responsive React interface and supports common SillyTavern character and worldbook formats without attempting to clone SillyTavern wholesale.
+The application supports multi-user login with independent profiles. It combines a FastAPI/SQLite backend with a responsive React interface and supports common SillyTavern character and worldbook formats without attempting to clone SillyTavern wholesale.
 
 ## Why a real tree?
 
@@ -219,7 +219,7 @@ For a self-signed or private-CA certificate:
 - Trust the issuing CA or certificate on every client device and verify its fingerprint through a separate trusted channel. Trusting it on the server computer does not automatically trust it on phones or other PCs.
 - Keep the private key outside the repository and restrict access to it. Never commit it.
 
-Plain HTTP LAN mode provides authentication but no transport encryption. The password, signed session cookie, prompts, and responses can be observed or modified by someone with access to the network. Use it only on an isolated trusted LAN; prefer HTTPS, restrict the frontend port with the host firewall, and never expose this development server directly to the public Internet.
+Plain HTTP LAN mode provides authentication but no transport encryption. The password, session cookie, prompts, and responses can be observed or modified by someone with access to the network. Use it only on an isolated trusted LAN; prefer HTTPS, restrict the frontend port with the host firewall, and never expose this development server directly to the public Internet.
 
 ### Manual development startup
 
@@ -254,6 +254,18 @@ The Vite development server proxies `/api` to `http://127.0.0.1:8000` by default
 
 The browser's currently selected API Profile is used for the next generation; changing it requires no application restart and does not rewrite a chat-session setting.
 
+## Multi-user login and independent profiles
+
+Open **设置 → 用户资料与登录** on the server computer and use **启用并登录管理员** to create the first administrator. Existing authenticated installations bootstrap this administrator from the configured username and password on first startup. The account registry becomes authoritative afterward; changing a password in the UI is preserved across restarts.
+
+The administrator can create users, disable or re-enable users, and reset user passwords. Every user can edit their display name, change their own password, and log out. Existing resources stay with the first administrator. New users start with empty, independent SQLite databases covering characters and avatars, sessions and messages, generation records, API keys and model settings, worldbooks, Regex, prompt configuration, imported resources and session defaults. Resource APIs always use the logged-in user's database, including for administrators.
+
+Browser preferences (theme, font sizes, expanded sections and selected API configuration) are stored separately for each account in that browser. Logging out discards page caches and drafts. Tabs sharing a cookie store share the login; account changes notify other tabs and requests carry the expected account ID to prevent stale tabs from acting on a different account. Use separate browser profiles to stay logged into several accounts simultaneously.
+
+For `treechat.db`, the registry is `treechat.db.users/accounts.db` and additional user databases are `treechat.db.users/<user-id>.db`. Back up and migrate both the original database and the entire sibling directory, using SQLite online backups while running. Once accounts exist, authentication remains required even if `YGGDRASIL_AUTH_ENABLED=false`. Multi-user mode requires SQLite.
+
+Passwords use salted scrypt hashes. Login tokens are random and only their SHA-256 hashes are stored; logout revokes the current token, while password changes, resets and disabling revoke that user's previous sessions. Server-directory/SSH imports are administrator-only. Other users can upload cards/worldbooks, use Chub imports and supply their own API keys; server environment credentials are reserved for administrators.
+
 ## Data and security
 
 - The default database is `treechat.db` in the repository root when started with the provided scripts.
@@ -269,7 +281,7 @@ The browser's currently selected API Profile is used for the next generation; ch
 
 For legacy/API-only Profiles, `api_key_env` can reference a variable already present in the backend process environment; a directly stored Key takes precedence. Do not assume arbitrary provider keys written to `backend\.env` are exported into the process environment.
 
-The default startup remains loopback-only. Explicit `-Lan` mode exposes only the Vite port and enables signed-cookie authentication in the backend; use the HTTPS certificate options on any LAN that is not fully trusted. This remains a development server, not a hardened public deployment.
+The default startup remains loopback-only. Explicit `-Lan` mode exposes only the Vite port and enables server-side session authentication in the backend; use the HTTPS certificate options on any LAN that is not fully trusted. This remains a development server, not a hardened public deployment.
 
 Provider generation, remote model discovery, and Chub imports make outbound network requests.
 
@@ -334,7 +346,7 @@ treechat.db                        Runtime database; ignored by Git
 - No complete SillyTavern recursive World Info implementation.
 - Character/worldbook import targets common real-world formats, not every edge of every specification revision.
 - Token counts are estimated when a provider does not report complete usage.
-- Local single-user operation only; this is not a hardened multi-user deployment.
+- SQLite multi-user profiles with administrator-managed accounts; use HTTPS when exposing the service beyond localhost.
 - The current application UI is primarily Simplified Chinese; the English README does not imply full UI internationalization.
 ## SillyTavern directory import
 

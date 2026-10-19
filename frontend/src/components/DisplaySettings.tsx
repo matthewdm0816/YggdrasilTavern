@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Type } from "lucide-react";
 import { CollapsibleSection } from "./CollapsibleSection";
+import { userStorageKey } from "../lib/userStorage";
 
 const storageKey = "yggdrasil-tavern.font-sizes";
 const defaults = { desktop: 14, mobile: 10 };
@@ -8,7 +9,7 @@ const defaults = { desktop: 14, mobile: 10 };
 export function loadSizes() {
   if (typeof window === "undefined") return defaults;
   try {
-    const stored = window.localStorage.getItem(storageKey);
+    const stored = window.localStorage.getItem(userStorageKey(storageKey));
     if (!stored) return defaults;
     const parsed = JSON.parse(stored);
     if (parsed && typeof parsed.desktop === "number" && parsed.desktop >= 12 && parsed.desktop <= 22
@@ -37,7 +38,7 @@ export function DisplaySettings() {
   useEffect(() => {
     applyFontSizeSettings(sizes);
     try {
-      window.localStorage.setItem(storageKey, JSON.stringify({ version: 3, ...sizes }));
+      window.localStorage.setItem(userStorageKey(storageKey), JSON.stringify({ version: 3, ...sizes }));
       setError(null);
     } catch (cause) {
       console.error("字号已应用，但无法保存到浏览器。", cause);

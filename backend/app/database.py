@@ -80,5 +80,12 @@ class Database:
 
 def get_db(request: Request) -> Generator[Session, None, None]:
     database: Database = request.app.state.database
+    accounts = request.app.state.accounts
+    if accounts.enabled:
+        user = getattr(request.state, "auth_user", None)
+        if user is None:
+            raise RuntimeError("Authenticated user is missing when selecting a profile database")
+        database = accounts.workspace(user)
     with database.open_session() as db:
+        db.info["allow_server_credentials"] = not accounts.enabled or request.state.auth_user["is_admin"]
         yield db

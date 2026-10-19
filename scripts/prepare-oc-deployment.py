@@ -39,16 +39,22 @@ def main():
     database = release / "treechat.db"
     if hashlib.sha256(database.read_bytes()).hexdigest() != manifest["database_sha256"]:
         raise ValueError("Deployment database snapshot hash mismatch")
+    for name, expected in manifest.get("account_databases", {}).items():
+        if hashlib.sha256((release / name).read_bytes()).hexdigest() != expected:
+            raise ValueError(f"Deployment account database snapshot hash mismatch: {name}")
     uv = Path.home() / ".local/bin/uv"
     if not uv.is_file():
         raise FileNotFoundError("Install the official uv binary before preparing the release")
     run([str(uv), "sync", "--frozen", "--no-dev", "--python", "3.12"], cwd=release)
     shared_db = shared / "treechat.db"
     shared_env = shared / "backend.env"
-    if shared_db.exists() or shared_env.exists():
+    shared_accounts = shared / "treechat.db.users"
+    if shared_db.exists() or shared_env.exists() or shared_accounts.exists():
         raise FileExistsError("Shared application data already exists; refusing to overwrite it")
     shutil.move(database, shared_db)
     shutil.move(release / "backend/.env", shared_env)
+    if (release / "treechat.db.users").is_dir():
+        shutil.move(release / "treechat.db.users", shared_accounts)
     shared_db.chmod(0o600)
     shared_env.chmod(0o600)
     env_script = (

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
 import { Message, RegexRule } from "../lib/api";
-import { transformMessageContent } from "../lib/regex";
+import { DisplayBlock, transformMessageContent } from "../lib/regex";
 import { MarkdownMessage } from "./MarkdownMessage";
 
 type Props = {
@@ -10,8 +10,29 @@ type Props = {
   rules: RegexRule[];
 };
 
+type RenderGroup =
+  | { kind: "markdown"; id: string; text: string }
+  | { kind: "veil"; block: DisplayBlock };
+
+// Consecutive plain blocks are rendered by one MarkdownMessage so that paragraph
+// and list spacing stays markdown-normal instead of stacking a margin per block.
+function groupBlocks(blocks: DisplayBlock[]): RenderGroup[] {
+  const groups: RenderGroup[] = [];
+  for (const block of blocks) {
+    if (block.veiled) {
+      groups.push({ kind: "veil", block });
+      continue;
+    }
+    const last = groups[groups.length - 1];
+    if (last?.kind === "markdown") last.text += block.text;
+    else groups.push({ kind: "markdown", id: block.id, text: block.text });
+  }
+  return groups;
+}
+
 export function RegexMessage({ content, role, rules }: Props) {
   const blocks = useMemo(() => transformMessageContent(content, role, rules), [content, role, rules]);
+  const groups = useMemo(() => groupBlocks(blocks), [blocks]);
   const [revealed, setRevealed] = useState<Set<string>>(new Set());
 
   useEffect(() => setRevealed(new Set()), [content, rules]);
@@ -27,8 +48,13 @@ export function RegexMessage({ content, role, rules }: Props) {
 
   return (
     <div className="regex-message">
-      {blocks.map((block) => {
-        if (!block.veiled) return block.text.trim() ? <MarkdownMessage key={block.id} content={block.text} /> : <span key={block.id}>{block.text}</span>;
+      {groups.map((group) => {
+        if (group.kind === "markdown") {
+          return group.text.trim()
+            ? <MarkdownMessage key={group.id} content={group.text} />
+            : <span key={group.id}>{group.text}</span>;
+        }
+        const block = group.block;
         const isRevealed = revealed.has(block.id);
         return (
           <div

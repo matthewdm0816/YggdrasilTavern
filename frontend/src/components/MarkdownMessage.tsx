@@ -1,4 +1,5 @@
 import ReactMarkdown from "react-markdown";
+import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 
 type Props = {
@@ -9,7 +10,7 @@ export function MarkdownMessage({ content }: Props) {
   return (
     <div className="message-content markdown-body">
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={[remarkGfm, remarkBreaks]}
         components={{
           // Open links in new tab
           a: ({ node, ...props }) => <a {...props} target="_blank" rel="noopener noreferrer" />,

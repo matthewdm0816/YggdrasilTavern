@@ -978,6 +978,9 @@ textarea:focus {
 /* Markdown rendering inside messages */
 .markdown-body {
   margin: 12px 0;
+  /* Markdown output already carries block structure; inheriting pre-wrap from
+     .message-content turns the newlines ReactMarkdown emits into blank lines. */
+  white-space: normal;
   line-height: 1.65;
   word-break: break-word;
 }

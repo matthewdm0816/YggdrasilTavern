@@ -5,9 +5,9 @@ import { buildThemeVariables, parseThemeConfig, resolveThemeMode } from "./schem
 const clone = () => JSON.parse(JSON.stringify(source)) as typeof source;
 
 describe("runtime theme configuration", () => {
-  it("validates both supplied themes and migrates the original palette completely", () => {
+  it("validates all supplied themes and migrates the original palette completely", () => {
     const config = parseThemeConfig(source);
-    expect(config.themes.map((item) => item.id)).toEqual(["default", "purple"]);
+    expect(config.themes.map((item) => item.id)).toEqual(["default", "purple", "claude"]);
     const light = buildThemeVariables(config.themes[0], "light");
     const dark = buildThemeVariables(config.themes[0], "dark");
     expect(light["--bg"]).toBe("#f4f2ee");
@@ -21,6 +21,18 @@ describe("runtime theme configuration", () => {
     expect(light["--color-primary"]).toBe(light["--green"]);
     expect(light["--sidebar-width"]).toBe("260px");
     expect(light["--message-max-width"]).toBe("760px");
+  });
+
+  it("provides a Claude-style palette for both light and dark modes", () => {
+    const config = parseThemeConfig(source);
+    const claude = config.themes.find((item) => item.id === "claude");
+    if (!claude) throw new Error("themes.json 中缺少 claude 皮肤");
+    const light = buildThemeVariables(claude, "light");
+    const dark = buildThemeVariables(claude, "dark");
+    expect(light["--bg"]).toBe("#faf9f5");
+    expect(dark["--bg"]).toBe("#1f1e1d");
+    expect(light["--color-primary"]).toBe("#b95836");
+    expect(dark["--color-primary"]).toBe("#d97757");
   });
 
   it("reports a misspelled field at its exact location", () => {

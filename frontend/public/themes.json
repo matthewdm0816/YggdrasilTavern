@@ -227,6 +227,119 @@
         "inspectorWidth": 320,
         "messageMaxWidth": 760
       }
+    },
+    {
+      "id": "claude",
+      "label": "Claude 暖石",
+      "description": "参照 Claude Code 与 Claude Web 的暖米色背景、石灰色界面和赤陶橙强调色。",
+      "modes": {
+        "light": {
+          "colors": {
+            "background": "#faf9f5",
+            "panel": "#ffffff",
+            "panelStrong": "#f0eee6",
+            "border": "#e4e0d7",
+            "text": "#1f1e1d",
+            "textMuted": "#6b6860",
+            "primary": "#b95836",
+            "primaryHover": "#a34b2c",
+            "danger": "#a63d35",
+            "warning": "#98651c",
+            "link": "#3b6a8b",
+            "surface": "#ffffff",
+            "surfaceHover": "#f1eee6",
+            "surfaceSelected": "#f8e9e1",
+            "chatBackground": "#faf9f5",
+            "surfaceSoft": "#f7f5ef",
+            "chipBackground": "#f0eee6",
+            "warningBackground": "#fcf6ea",
+            "warningText": "#554329",
+            "dangerBackground": "#fcf0ee",
+            "veilBackground": "#eae7df",
+            "codeBackground": "#2b2a27",
+            "codeText": "#f3f1ea",
+            "skeletonLow": "#ece8df",
+            "skeletonHigh": "#f8f5ee",
+            "glassBackground": "rgba(255, 253, 249, 0.96)",
+            "revealBackground": "rgba(255, 255, 255, 0.8)",
+            "checkerA": "#edeae2",
+            "checkerB": "#faf9f5",
+            "buttonText": "#ffffff",
+            "accentText": "#a94e2f",
+            "overlay": "rgba(31, 30, 29, 0.55)",
+            "userBorder": "#3b6a8b",
+            "assistantBorder": "#d97757"
+          },
+          "shadows": {
+            "panel": "0 12px 32px rgba(31, 30, 29, 0.08)",
+            "modal": "0 25px 80px rgba(24, 22, 19, 0.26)",
+            "drawer": "0 18px 60px rgba(24, 22, 19, 0.28)"
+          }
+        },
+        "dark": {
+          "colors": {
+            "background": "#1f1e1d",
+            "panel": "#262624",
+            "panelStrong": "#2e2d2a",
+            "border": "#3e3d38",
+            "text": "#f0eee6",
+            "textMuted": "#a5a29a",
+            "primary": "#d97757",
+            "primaryHover": "#e68b6b",
+            "danger": "#f0928a",
+            "warning": "#e5b26e",
+            "link": "#9bbfdd",
+            "surface": "#262624",
+            "surfaceHover": "#302f2c",
+            "surfaceSelected": "#3b2b23",
+            "chatBackground": "#1f1e1d",
+            "surfaceSoft": "#2a2926",
+            "chipBackground": "#302f2c",
+            "warningBackground": "#332a1b",
+            "warningText": "#e3c79a",
+            "dangerBackground": "#35211f",
+            "veilBackground": "#2f2e2b",
+            "codeBackground": "#171615",
+            "codeText": "#f0eee6",
+            "skeletonLow": "#2a2926",
+            "skeletonHigh": "#3a3833",
+            "glassBackground": "rgba(38, 37, 35, 0.96)",
+            "revealBackground": "rgba(46, 45, 42, 0.9)",
+            "checkerA": "#353430",
+            "checkerB": "#262624",
+            "buttonText": "#1f1e1d",
+            "accentText": "#e8a283",
+            "overlay": "rgba(12, 11, 10, 0.68)",
+            "userBorder": "#9bbfdd",
+            "assistantBorder": "#d97757"
+          },
+          "shadows": {
+            "panel": "0 12px 32px rgba(0, 0, 0, 0.42)",
+            "modal": "0 25px 80px rgba(0, 0, 0, 0.62)",
+            "drawer": "0 18px 60px rgba(0, 0, 0, 0.56)"
+          }
+        }
+      },
+      "typography": {
+        "fontUI": "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif",
+        "fontMessage": "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif",
+        "fontSizeUI": 14,
+        "fontSizeMessage": 15,
+        "lineHeightMessage": 1.65
+      },
+      "shape": {
+        "radiusSmall": 6,
+        "radiusMedium": 8,
+        "radiusLarge": 12
+      },
+      "spacing": {
+        "unit": 4
+      },
+      "layout": {
+        "sidebarWidth": 260,
+        "inspectorWidth": 320,
+        "messageMaxWidth": 760
+      }
     }
   ]
 }

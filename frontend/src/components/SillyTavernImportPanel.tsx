@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download } from "lucide-react";
 import { api, APIProfile, SillyTavernImportReport } from "../lib/api";
+import { sortByName } from "../lib/order";
 import { CollapsibleSection } from "./CollapsibleSection";
 
 const labels: Record<string, string> = {
@@ -28,6 +29,7 @@ export function SillyTavernImportPanel({ profiles, onChanged, onError }: {
   const resources = useQuery({ queryKey: ["imported-resources", kind], queryFn: () => api.importedResources(kind) });
   const credentials = useQuery({ queryKey: ["saved-credentials"], queryFn: api.savedCredentials });
   const viewed = resources.data?.find((item) => item.id === viewId);
+  const orderedProfiles = sortByName(profiles);
   const detail = (cause: unknown) => cause instanceof Error ? cause.message : String(cause);
 
   async function preview() {
@@ -99,7 +101,7 @@ export function SillyTavernImportPanel({ profiles, onChanged, onError }: {
     <label className="form-field"><span>配置名称</span><select value={viewId} onChange={(e) => setViewId(e.target.value)}><option value="">选择配置</option>{resources.data?.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
     {resources.error && <p className="field-error">配置读取失败：{detail(resources.error)}</p>}
     {viewed && <details open><summary>{viewed.name}</summary>{viewed.warnings.map((warning, i) => <p className="section-help" key={i}>{warning}</p>)}<pre>{JSON.stringify(viewed.raw_json, null, 2)}</pre></details>}
-    <label className="form-field"><span>给 API 配置更换保存的密钥</span><select value={profileId} onChange={(e) => setProfileId(e.target.value)}><option value="">选择 API 配置</option>{profiles.map((profile) => <option value={profile.id} key={profile.id}>{profile.name}</option>)}</select></label>
+    <label className="form-field"><span>给 API 配置更换保存的密钥</span><select value={profileId} onChange={(e) => setProfileId(e.target.value)}><option value="">选择 API 配置</option>{orderedProfiles.map((profile) => <option value={profile.id} key={profile.id}>{profile.name}</option>)}</select></label>
     <label className="form-field"><span>保存的 API Key</span><select value={credentialId} onChange={(e) => setCredentialId(e.target.value)}><option value="">选择密钥</option>{credentials.data?.filter((item) => item.secret_type.startsWith("api_key_")).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
     {credentials.error && <p className="field-error">密钥列表读取失败：{detail(credentials.error)}</p>}
     <button className="secondary-button full-button" disabled={busy || !profileId || !credentialId} onClick={bind}>应用到所选 API 配置</button>

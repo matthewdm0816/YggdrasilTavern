@@ -52,6 +52,19 @@ describe("ModelPicker", () => {
     expect(optionLabels(html, "Zeta service")).toEqual(["model-zeta"]);
   });
 
+  it("keeps every model inside its own connection group instead of flattening the select", () => {
+    const zeta: APIProfile = {
+      ...profile, id: "profile-zeta", name: "Zeta service", model: "model-zeta",
+      model_catalog: [{ id: "delta" }, { id: "charlie" }]
+    };
+    const html = renderToStaticMarkup(<ModelPicker profiles={[zeta, profile]} activeProfileId={profile.id} onActiveProfileChange={() => undefined} onOpenSettings={() => undefined} />);
+    expect(html.match(/<optgroup/g) ?? []).toHaveLength(2);
+    expect(html.match(/<option/g) ?? []).toHaveLength(5);
+    const optionsOutsideGroups = html.split("</optgroup>").map((part) => part.split("<optgroup")[0]).join("").match(/<option/g) ?? [];
+    expect(optionsOutsideGroups).toHaveLength(0);
+    expect(optionLabels(html, "Zeta service")).toEqual(["charlie", "delta", "model-zeta"]);
+  });
+
   it("provides settings access when no connection is configured", () => {
     const html = renderToStaticMarkup(<ModelPicker profiles={[]} activeProfileId="" onActiveProfileChange={() => undefined} onOpenSettings={() => undefined} />);
     expect(html).toContain("尚未配置模型");

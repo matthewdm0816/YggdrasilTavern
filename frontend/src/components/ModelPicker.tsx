@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Settings } from "lucide-react";
 import { api, APIProfile } from "../lib/api";
+import { sortByName } from "../lib/order";
 import "../styles/model-settings.css";
 
 type Props = {
@@ -49,8 +50,8 @@ export function ModelPicker({ profiles, activeProfileId, onActiveProfileChange, 
   const changingRef = useRef(false);
   const activeProfile = profiles.find((profile) => profile.id === activeProfileId);
   const activeModel = activeProfile ? savedModels[activeProfile.id] || activeProfile.model : "";
-  // Groups are ordered by connection name; the id keeps duplicate names deterministic.
-  const orderedProfiles = [...profiles].sort((a, b) => a.name.localeCompare(b.name, "en") || a.id.localeCompare(b.id));
+  // Groups are alphabetical by connection name; peers inside a group are sorted too.
+  const orderedProfiles = sortByName(profiles);
 
   // A refreshed list is the authoritative server state, including settings edits.
   useEffect(() => { setSavedModels({}); }, [profiles]);

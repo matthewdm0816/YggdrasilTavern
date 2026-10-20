@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AlertCircle, CloudDownload, Eye, EyeOff, Pencil, Plus, Trash2, X } from "lucide-react";
 import { api, APIProfile, ProviderType, RemoteModelInfo } from "../lib/api";
+import { sortByName } from "../lib/order";
 
 export type ProfileDraft = {
   name: string;
@@ -132,6 +133,7 @@ export function ModelSettingsDialog({
   const activeConnectionKey = activeProfile ? profileConnectionKey(activeProfile) : "";
   const activeCatalog = modelsById(activeProfile?.model_catalog || []);
   const orderedDraftModels = modelsById(draftModels);
+  const orderedProfiles = sortByName(profiles);
   const activeRemoteModel = activeCatalog.find((item) => item.id === activeProfile?.model);
   const activeEffectiveLimits = activeProfile
     ? effectiveProfileLimits(activeProfile, activeRemoteModel)
@@ -385,7 +387,7 @@ export function ModelSettingsDialog({
             <span>当前连接配置（所有会话共用）</span>
             <select disabled={busy || refreshingProfileId !== null} value={activeProfile?.id || ""} onChange={(event) => { resetProfileEditor(); onActiveProfileChange(event.target.value); }}>
               <option value="">未选择连接配置</option>
-              {profiles.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.model}</option>)}
+              {orderedProfiles.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.model}</option>)}
             </select>
           </label>
           <div className="profile-selector-actions">

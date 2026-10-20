@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Archive, ArchiveRestore, ChevronDown, ChevronRight, Folder, FolderPlus, MessageSquarePlus, Pin, PinOff, Plus, Search, Star, X } from "lucide-react";
 import { api, CharacterSummary, ChatSession, SessionFolder, WorldBook } from "../lib/api";
+import { sortByName } from "../lib/order";
 import { ActionMenu } from "./ActionMenu";
 import { CollapsibleSection } from "./CollapsibleSection";
 
@@ -50,6 +51,7 @@ export function SessionListPanel({
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [newFolderName, setNewFolderName] = useState("");
   const [showFolderInput, setShowFolderInput] = useState(false);
+  const orderedCharacters = sortByName(characters);
 
   useEffect(() => {
     void loadFolders();
@@ -248,7 +250,7 @@ export function SessionListPanel({
                   onChange={(event) => void rebindSessionCharacter(session.id, event.target.value)}
                 >
                   <option value="" disabled>选择角色…</option>
-                  {characters.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                  {orderedCharacters.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
                 </select>
               </label>
             )}
@@ -341,7 +343,7 @@ export function SessionListPanel({
           </div>
           <label className="form-field"><span>扮演角色（必选）</span><select required value={selectedCharacter} onChange={(event) => selectCharacter(event.target.value)}>
             <option value="">请选择角色</option>
-            {characters.map((character) => <option key={character.id} value={character.id}>{character.name}</option>)}
+            {orderedCharacters.map((character) => <option key={character.id} value={character.id}>{character.name}</option>)}
           </select></label>
           <label className="form-field"><span>会话标题（可选）</span><input value={sessionTitle} onChange={(event) => setSessionTitle(event.target.value)} placeholder="默认使用角色名" /></label>
           <fieldset className="compact-check-list">

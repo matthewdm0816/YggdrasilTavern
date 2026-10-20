@@ -1,6 +1,7 @@
 import { ChangeEvent, useEffect, useRef, useState } from "react";
 import { Download, FlipHorizontal2, FlipVertical2, Pencil, Plus, RotateCw, Save, ToggleLeft, ToggleRight, Trash2, Upload, X } from "lucide-react";
 import { api, AvatarTransform, Character, CharacterSummary, WorldBook, WorldBookEntry } from "../lib/api";
+import { ExpandableTextarea } from "./ExpandableTextarea";
 
 type CommonProps = {
   onChanged: () => void;
@@ -190,11 +191,19 @@ export function CharacterManager({ characters, onChanged, onError }: CommonProps
                 <label>标签（逗号分隔）<input value={(draft.tags || []).join(", ")} onChange={(event) => update("tags", event.target.value.split(",").map((item) => item.trim()).filter(Boolean))} /></label>
               </div>
               {([
-                ["description", "角色描述"], ["personality", "性格"], ["scenario", "场景"], ["first_mes", "首条消息"],
-                ["mes_example", "示例对话"], ["system_prompt", "角色 System Prompt"], ["post_history_instructions", "Post-History Instruction"], ["creator_notes", "作者备注"]
-              ] as Array<[keyof Character, string]>).map(([field, label]) => <label key={field}>{label}<textarea value={String(draft[field] || "")} onChange={(event) => update(field, event.target.value)} /></label>)}
+                ["description", "角色描述", 220], ["personality", "性格", 220], ["scenario", "场景", 220], ["first_mes", "首条消息", 220],
+                ["mes_example", "示例对话", 220], ["system_prompt", "角色 System Prompt", 160], ["post_history_instructions", "Post-History Instruction", 160], ["creator_notes", "作者备注", 160]
+              ] as Array<[keyof Character, string, number]>).map(([field, label, minHeight]) => (
+                <ExpandableTextarea
+                  key={field}
+                  label={label}
+                  value={String(draft[field] || "")}
+                  minHeight={minHeight}
+                  onChange={(value) => update(field, value)}
+                />
+              ))}
               <fieldset className="alternate-greetings"><legend>Alternate Greetings（将成为根级 swipes）</legend>
-                {(draft.alternate_greetings || []).map((greeting, index) => <div key={index}><label className="form-field"><span>备选根级开场 {index + 2}</span><textarea value={greeting} onChange={(event) => update("alternate_greetings", draft.alternate_greetings.map((item, itemIndex) => itemIndex === index ? event.target.value : item))} /></label><button className="icon-button danger-button" title="删除这个备选开场" aria-label={`删除备选开场 ${index + 2}`} onClick={() => update("alternate_greetings", draft.alternate_greetings.filter((_, itemIndex) => itemIndex !== index))}><Trash2 size={15} /></button></div>)}
+                {(draft.alternate_greetings || []).map((greeting, index) => <div key={index}><ExpandableTextarea label={`备选根级开场 ${index + 2}`} value={greeting} minHeight={160} onChange={(value) => update("alternate_greetings", draft.alternate_greetings.map((item, itemIndex) => itemIndex === index ? value : item))} /><button className="icon-button danger-button" title="删除这个备选开场" aria-label={`删除备选开场 ${index + 2}`} onClick={() => update("alternate_greetings", draft.alternate_greetings.filter((_, itemIndex) => itemIndex !== index))}><Trash2 size={15} /></button></div>)}
                 <button className="secondary-button" onClick={() => update("alternate_greetings", [...(draft.alternate_greetings || []), ""])}><Plus size={15} />添加 greeting</button>
               </fieldset>
             </div>

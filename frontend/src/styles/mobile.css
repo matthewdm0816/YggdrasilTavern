@@ -53,7 +53,6 @@
   .markdown-body p { margin-bottom: 5px; }
   .thinking-box { margin-top: 4px; }
   .thinking-box summary { padding: 4px 6px; }
-  .message-toolbar { flex-wrap: nowrap; gap: 4px; margin-top: 3px; padding-top: 3px; min-width: 0; }
   .message-stats {
     display: flex;
     flex: 1 1 0;
@@ -67,7 +66,7 @@
   .message-stats::-webkit-scrollbar { display: none; }
   .message-tools { display: flex; flex: 0 0 auto; align-items: center; gap: 2px; white-space: nowrap; }
   .message-tools > *, .message-stats > * { flex-shrink: 0; }
-  .token-pill, .swipe-counter {
+  .swipe-counter {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -75,7 +74,6 @@
     min-height: var(--mobile-control-size);
     font-size: .9rem;
   }
-  .token-pill { padding: 1px 4px; border-radius: 4px; }
   .swipe-counter { min-width: 1.8rem; }
   .message-line { margin-bottom: 6px; }
   .session-title-btn { min-height: 3rem; padding: 3px 4px; gap: 4px; }

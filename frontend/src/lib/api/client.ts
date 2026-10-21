@@ -2,15 +2,15 @@ import type {
   CharacterCreateInput, CharacterUpdateInput, ChubImportInput, ContextPreviewInput, FolderCreateInput,
   FolderUpdateInput, MessageCreateInput, MessageUpdateInput, ProfileCreateInput,
   ProfileUpdateInput, PromptConfigUpdateInput, SessionCreateInput, SessionUpdateInput,
-  SwipeCreateInput, WorldBookCreateInput, WorldBookUpdateInput
+  SwipeCreateInput, WorldbookRegexConfigUpdateInput, WorldBookCreateInput, WorldBookUpdateInput
 } from "./contracts";
 import { download, request, upload } from "./http";
 import type { components } from "./generated";
 import type {
   APIProfile, AuthLogin, AuthStatus, UserProfile, Character, CharacterSummary,
-  ChatSession, ContextPreview, GlobalPromptConfig, Message,
+  ChatSession, ContextPreview, GlobalPromptConfig, GlobalWorldbookRegexConfig, Message,
   SessionFolder, SessionTree, WorldBook,
-  SillyTavernImportReport, ImportedResource, SavedCredential, SessionDefaults
+  SillyTavernImportReport, ImportedResource, SavedCredential
 } from "./types";
 export const api = {
   setupAccounts: (payload: components["schemas"]["UserCreate"]) =>
@@ -32,7 +32,6 @@ export const api = {
   savedCredentials: () => request<SavedCredential[]>("/api/saved-credentials"),
   bindCredential: (profileId: string, credential_id: string) =>
     request<APIProfile>(`/api/api-profiles/${profileId}/credential`, { method: "POST", body: JSON.stringify({ credential_id }) }),
-  sessionDefaults: () => request<SessionDefaults>("/api/settings/session-defaults"),
   authStatus: () => request<AuthStatus>("/api/auth/status"),
   authLogin: (payload: AuthLogin) =>
     request<AuthStatus>("/api/auth/login", { method: "POST", body: JSON.stringify(payload) }),
@@ -51,6 +50,9 @@ export const api = {
   globalPromptConfig: () => request<GlobalPromptConfig>("/api/settings/prompt"),
   updateGlobalPromptConfig: (payload: PromptConfigUpdateInput) =>
     request<GlobalPromptConfig>("/api/settings/prompt", { method: "PUT", body: JSON.stringify(payload) }),
+  globalWorldbookRegexConfig: () => request<GlobalWorldbookRegexConfig>("/api/settings/worldbooks-regex"),
+  updateGlobalWorldbookRegexConfig: (payload: WorldbookRegexConfigUpdateInput) =>
+    request<GlobalWorldbookRegexConfig>("/api/settings/worldbooks-regex", { method: "PUT", body: JSON.stringify(payload) }),
   characters: () => request<CharacterSummary[]>("/api/characters"),
   character: (characterId: string) => request<Character>(`/api/characters/${characterId}`),
   createCharacter: (payload: CharacterCreateInput) =>

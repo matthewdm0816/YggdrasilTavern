@@ -45,17 +45,6 @@ export function regexRulesFromPreset(preset: Record<string, unknown> | undefined
   return Array.isArray(raw) ? raw.filter(isRegexRule).map((rule) => ({ ...rule, scope: rule.scope || "session", targets: [...rule.targets] })) : [];
 }
 
-export function worldbookIdsFromPreset(
-  preset: Record<string, unknown> | undefined,
-  legacyWorldbookId?: string | null
-): string[] {
-  const raw = preset?.worldbook_ids;
-  const ids = [legacyWorldbookId, ...(Array.isArray(raw) ? raw : [])]
-    .filter((item): item is string => typeof item === "string" && Boolean(item.trim()))
-    .map((item) => item.trim());
-  return [...new Set(ids)];
-}
-
 function isPromptSlot(value: unknown): value is PromptSlot {
   if (!value || typeof value !== "object") return false;
   const slot = value as Partial<PromptSlot>;

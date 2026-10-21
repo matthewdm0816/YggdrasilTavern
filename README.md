@@ -32,7 +32,7 @@ This tree model is the core invariant of the project.
 
 ### Sessions and chat
 
-- Independent sessions with their own character, selected tree path, Regex rules, and worldbook bindings. Creating a chat requires a character; when its title is blank, the character name is used automatically.
+- Independent sessions with their own character and selected tree path; worldbooks and Regex rules are one global configuration shared by all of the user's sessions. Creating a chat requires a character; when its title is blank, the character name is used automatically.
 - The active API Profile is a browser-local global selection, not a Profile permanently bound to the current chat session.
 - Session title search, folders, pinning, archiving, and archived-session view.
 - Markdown and GitHub-Flavored Markdown rendering.
@@ -68,7 +68,10 @@ Global structure does not remove session independence:
 | Slot order, names, roles, enabled state | Character and character fields |
 | Custom slots | Selected tree/history path |
 | Explicit slot overrides | User name and greeting behavior |
-| Prompt configuration revision | Regex rules and worldbook selection |
+| Prompt configuration revision | |
+| Enabled worldbooks and Regex rules (a separate, revisioned global configuration) | |
+
+Upgrade note: the first start of the version with global worldbooks and Regex copies the worldbook selection and the Regex rules, each from the most recently updated session that has one, into the global configuration (the same way the global Prompt was migrated). The old per-session values stay in the database but no longer take part in prompts.
 
 Each generation stores the compiled Prompt snapshot, Prompt hash, model, parameters, timing, usage, and terminal status, so older replies retain the configuration that produced them.
 
@@ -106,7 +109,7 @@ PNG card export is not currently provided.
 
 - Import and export common SillyTavern-style worldbook JSON.
 - Import public Chub.ai lorebooks from a URL or `lorebooks/user/slug` path.
-- Bind multiple worldbooks to one session.
+- Enable multiple worldbooks at once; enabled worldbooks apply to every session and are chosen under “全局世界书” in the Inspector.
 - Create and edit entries with primary/secondary keys, constant/selective activation, case sensitivity, whole-word matching, order, content, and before/after-character placement.
 - Configure recent-message scan depth and an activated-lore token budget per book.
 - Preserve unknown imported fields where possible when exporting.
@@ -115,7 +118,7 @@ Lore activation scans the currently selected tree path. Full SillyTavern recursi
 
 ### Regex display and Prompt transformations
 
-Regex rules are currently session-scoped and support four targets:
+Regex rules are a global configuration that applies to every session, edited under “全局 Regex” in the Inspector, and support four targets:
 
 - Chat display
 - User messages
@@ -248,9 +251,9 @@ The Vite development server proxies `/api` to `http://127.0.0.1:8000` by default
 2. Optionally refresh the remote model list, or keep the manually entered model ID.
 3. Import or create a character, then edit its fields and avatar if needed.
 4. Import or create any worldbooks and edit their entries.
-5. Create a chat with a required character, worldbooks, and optional folder. Leave the title blank to use the character name automatically.
+5. Create a chat with a required character and optional folder. Leave the title blank to use the character name automatically.
 6. Chat normally; use swipe controls or the branch map to move through the real tree.
-7. Use the Inspector to edit the global Prompt Profile, configure session Regex/worldbooks, and inspect the final compiled Prompt.
+7. Use the Inspector to edit the global Prompt Profile and the global worldbooks and Regex, and inspect the final compiled Prompt.
 
 The browser's currently selected API Profile is used for the next generation; changing it requires no application restart and does not rewrite a chat-session setting.
 

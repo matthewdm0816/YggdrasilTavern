@@ -159,10 +159,6 @@
   min-width: 0;
 }
 
-.pane-tabs.inspector-tabs {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-}
-
 .pane-tab {
   min-width: 0;
   display: inline-flex;
@@ -226,14 +222,6 @@
   color: var(--accent-text);
 }
 
-.pane-tab-badge.unsaved-dot {
-  min-width: 12px;
-  height: 12px;
-  padding: 0;
-  color: var(--amber);
-  background: transparent;
-  font-size: 1rem;
-}
 
 .pane-tab-body {
   display: flex;
@@ -282,8 +270,7 @@
   justify-content: center;
   gap: 8px;
 }
-.account-subsection { display: grid; gap: 10px; min-width: 0; padding-top: 8px; border-top: 1px solid var(--line); }
-.account-subsection > summary { color: var(--muted); font-size: 0.8125rem; font-weight: 600; cursor: pointer; }
+
 .quick-character-btn {
   padding: 7px 12px;
   font-size: 0.8125rem;
@@ -293,4 +280,5 @@
 .account-panel h3, .account-panel p { margin: 0; overflow-wrap: anywhere; }
 .account-user-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; }
 .account-user-list li { display: grid; gap: 6px; overflow-wrap: anywhere; }
-
+.account-subsection { display: grid; gap: 10px; min-width: 0; padding-top: 8px; border-top: 1px solid var(--line); }
+.account-subsection > summary { color: var(--muted); font-size: 0.8125rem; font-weight: 600; cursor: pointer; }

@@ -57,7 +57,8 @@ describe("Sidebar defaults", () => {
       />
     );
 
-    expect(html).toContain("模型与连接设置");
+    // The connection settings entry lives on the settings tab, not under the session list.
+    expect(html).not.toContain("模型与连接设置");
     expect(html).not.toContain("当前连接配置");
     expect(html).not.toContain("Profile 名称");
     expect(html).toContain("新建会话");
@@ -140,7 +141,6 @@ describe("Sidebar defaults", () => {
 
     expect(sessionsHtml).toContain("侧边栏分区");
     expect(sessionsHtml).toContain("角色与世界书");
-    expect(sessionsHtml).toContain("设置与导入");
     expect(sessionsHtml).not.toContain("Chub.ai 导入");
 
     const resourcesHtml = renderToStaticMarkup(
@@ -174,6 +174,33 @@ describe("Sidebar defaults", () => {
 
     expect(resourcesHtml).toContain("角色卡 (1)");
     expect(resourcesHtml).toContain("世界书 (0)");
-    expect(resourcesHtml).not.toContain("Chub.ai 导入");
+    // Every import path sits next to the resources it creates.
+    expect(resourcesHtml).toContain("Chub.ai 导入");
+    expect(resourcesHtml).toContain('title="1 个角色"');
+  });
+
+  it("shows the character name once when the session title is the same name", () => {
+    const html = renderToStaticMarkup(
+      <Sidebar
+        settingsOpen={false}
+        onCloseSettings={() => undefined}
+        profiles={[]}
+        activeProfileId=""
+        onActiveProfileChange={() => undefined}
+        characters={[{ id: "character-1", name: "Alice", avatar_data_url: "", tags: [], creator: "", character_version: "" }]}
+        worldbooks={[]}
+        sessions={[{ id: "session-1", title: "Alice", character_id: "character-1", folder_id: null, pinned: false, archived: false, preset: {} }]}
+        selectedSessionId="session-1"
+        showArchived={false}
+        onSelectSession={() => undefined}
+        creatingSession={false}
+        createSessionError={null}
+        onCreateSession={async () => { throw new Error("not called"); }}
+        onRefresh={async () => undefined}
+        onToggleArchived={() => undefined}
+      />
+    );
+    expect(html).toContain('class="session-title-text">Alice<');
+    expect(html).not.toContain("session-character-name");
   });
 });

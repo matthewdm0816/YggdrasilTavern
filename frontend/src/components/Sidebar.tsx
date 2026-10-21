@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { BookOpen, MessageSquarePlus, RefreshCcw, Settings, SlidersHorizontal, X } from "lucide-react";
 import { api, APIProfile, CharacterSummary, ChatSession, WorldBook } from "../lib/api";
 import { DisplaySettings } from "./DisplaySettings";
@@ -46,6 +46,7 @@ type Props = {
   onOpenSettings?: () => void;
   onBusyChange?: (busy: boolean) => void;
   onProfileUpdated?: (profile: APIProfile) => void;
+  appearanceControls?: ReactNode;
   initialTab?: SidebarTab;
 };
 
@@ -71,6 +72,7 @@ export function Sidebar({
   onOpenSettings,
   onBusyChange,
   onProfileUpdated,
+  appearanceControls,
   initialTab = "sessions"
 }: Props) {
   const [activeTab, setActiveTab] = useState<SidebarTab>(initialTab);
@@ -130,7 +132,7 @@ export function Sidebar({
           >
             <BookOpen size={15} />
             <span title="角色与世界书">角色</span>
-            <small className="pane-tab-badge">{characters.length + worldbooks.length}</small>
+            <small className="pane-tab-badge" title={`${characters.length} 个角色`}>{characters.length}</small>
           </button>
           <button
             type="button"
@@ -139,7 +141,7 @@ export function Sidebar({
             onClick={() => selectTab("settings")}
           >
             <SlidersHorizontal size={15} />
-            <span title="设置与导入">设置</span>
+            <span>设置</span>
           </button>
         </nav>
 
@@ -148,7 +150,6 @@ export function Sidebar({
             <div hidden={activeTab !== "sessions"}>
               <SessionListPanel
                 characters={characters}
-                worldbooks={worldbooks}
                 sessions={sessions}
                 selectedSessionId={selectedSessionId}
                 showArchived={showArchived}
@@ -161,10 +162,6 @@ export function Sidebar({
                 onError={onError}
                 defaultCollapsible={false}
               />
-              <button className="secondary-button sidebar-settings-button" type="button" onClick={onOpenSettings}>
-                <Settings size={16} />
-                模型与连接设置
-              </button>
             </div>
           )}
 
@@ -176,7 +173,6 @@ export function Sidebar({
                 worldbooks={worldbooks}
                 onChanged={onRefresh}
                 onError={onError}
-                mode="resources"
               />
             </div>
           )}
@@ -187,16 +183,8 @@ export function Sidebar({
                 <Settings size={16} />
                 模型与连接设置
               </button>
-              <DisplaySettings />
+              <DisplaySettings>{appearanceControls}</DisplaySettings>
               <AccountPanel />
-              <SidebarResources
-                profiles={profiles}
-                characters={characters}
-                worldbooks={worldbooks}
-                onChanged={onRefresh}
-                onError={onError}
-                mode="imports"
-              />
             </div>
           )}
         </div>

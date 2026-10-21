@@ -1,18 +1,20 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, X } from "lucide-react";
-import { api, APIProfile, ChatSession } from "./lib/api";
+import { api, APIProfile, ChatSession, RegexRule } from "./lib/api";
 import { useAppStore } from "./state/useAppStore";
 import { useChatController } from "./features/chat/useChatController";
 import { Sidebar } from "./components/Sidebar";
 import { ChatWorkspace } from "./components/ChatWorkspace";
 import { WorkspaceInspector } from "./components/WorkspaceInspector";
 import { ModelPicker } from "./components/ModelPicker";
+import { globalWorldbookRegexQuery } from "./components/GlobalWorldbookRegexPanel";
 import { useMediaQuery } from "./lib/useMediaQuery";
 import { useTheme } from "./features/theme";
 import { userStorageKey } from "./lib/userStorage";
 
 const ACTIVE_PROFILE_STORAGE_KEY = "yggdrasil-tavern.active-api-profile";
+const NO_REGEX_RULES: RegexRule[] = [];
 
 function loadActiveProfileId(): string {
   try {
@@ -46,6 +48,7 @@ export default function AppShell() {
   const profilesQuery = useQuery({ queryKey: ["profiles"], queryFn: api.profiles });
   const charactersQuery = useQuery({ queryKey: ["characters"], queryFn: api.characters });
   const worldbooksQuery = useQuery({ queryKey: ["worldbooks"], queryFn: api.worldbooks });
+  const worldbookRegexQuery = useQuery(globalWorldbookRegexQuery);
   const sessionsQuery = useQuery({
     queryKey: ["sessions", showArchived],
     queryFn: () => api.sessions(showArchived ? { archived: true } : undefined)
@@ -87,10 +90,10 @@ export default function AppShell() {
     const keyboard = (event: KeyboardEvent) => {
       if (event.defaultPrevented) return;
       if (event.key === "Escape") {
-        if (document.querySelector("dialog[open], .action-menu, .forest-tree-dialog")) return;
+        if (document.querySelector("dialog[open], .action-menu, .forest-tree-dialog, .modal-backdrop")) return;
         if (isMobile) setMobilePanel(null); else setRightPreference(false);
       }
-      if (event.key === "Tab" && !document.querySelector("dialog[open], .action-menu, .forest-tree-dialog")) {
+      if (event.key === "Tab" && !document.querySelector("dialog[open], .action-menu, .forest-tree-dialog, .modal-backdrop")) {
         const items = getFocusable();
         const first = items[0], last = items[items.length - 1];
         if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
@@ -127,7 +130,7 @@ export default function AppShell() {
     () => tree?.session || sessionsQuery.data?.find((session) => session.id === selectedSessionId),
     [sessionsQuery.data, selectedSessionId, tree]
   );
-  const queryError = chat.treeQuery.error || sessionsQuery.error || profilesQuery.error || charactersQuery.error || worldbooksQuery.error;
+  const queryError = chat.treeQuery.error || sessionsQuery.error || profilesQuery.error || charactersQuery.error || worldbooksQuery.error || worldbookRegexQuery.error;
   const displayedError = error || chat.error || (queryError instanceof Error ? queryError.message : queryError ? String(queryError) : null);
   const shellClass = [
     "app-shell",
@@ -163,6 +166,8 @@ export default function AppShell() {
             queryClient.invalidateQueries({ queryKey: ["profiles"] }),
             queryClient.invalidateQueries({ queryKey: ["characters"] }),
             queryClient.invalidateQueries({ queryKey: ["worldbooks"] }),
+            // Deleting a worldbook also removes it from the global selection.
+            queryClient.invalidateQueries({ queryKey: globalWorldbookRegexQuery.queryKey }),
             queryClient.invalidateQueries({ queryKey: ["sessions"] }),
             queryClient.invalidateQueries({ queryKey: ["context-preview"] })
           ]);
@@ -170,6 +175,11 @@ export default function AppShell() {
         onToggleArchived={() => setShowArchived(!showArchived)}
         onCloseMobile={() => { setMobilePanel(null); if (!isMobile) setLeftCollapsed(true); }}
         onError={setError}
+        appearanceControls={<>
+          <label className="form-field"><span>皮肤</span><select aria-label="皮肤" value={theme.themeId} onChange={(event) => theme.setThemeId(event.target.value)}>{theme.themes.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
+          <label className="form-field"><span>明暗模式</span><select aria-label="明暗模式" value={theme.mode} onChange={(event) => theme.setMode(event.target.value as "light" | "dark" | "system")}><option value="system">跟随系统</option><option value="light">亮色</option><option value="dark">暗色</option></select></label>
+          <button className="secondary-button" type="button" disabled={theme.loading} onClick={() => void theme.reloadThemes()}>{theme.loading ? "正在读取配置…" : "重读主题配置"}</button>
+        </>}
       />
       <ChatWorkspace
         tree={tree}
@@ -195,12 +205,7 @@ export default function AppShell() {
         canGenerate={Boolean(activeProfileId) && !modelChanging && !profilesQuery.isFetching}
         onQuickCreateSession={(payload) => createSession.mutateAsync(payload)}
         onOpenSettings={openSettings}
-        appearanceControls={<>
-          <label className="form-field"><span>皮肤</span><select aria-label="皮肤" value={theme.themeId} onChange={(event) => theme.setThemeId(event.target.value)}>{theme.themes.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
-          <label className="form-field"><span>明暗模式</span><select aria-label="明暗模式" value={theme.mode} onChange={(event) => theme.setMode(event.target.value as "light" | "dark" | "system")}><option value="system">跟随系统</option><option value="light">亮色</option><option value="dark">暗色</option></select></label>
-          <button type="button" disabled={theme.loading} onClick={() => void theme.reloadThemes()}>{theme.loading ? "正在读取配置…" : "重读主题配置"}</button>
-          <button type="button" data-close-menu onClick={openSettings}>模型与连接设置</button>
-        </>}
+        regexRules={worldbookRegexQuery.data?.regex_rules ?? NO_REGEX_RULES}
         modelPicker={<ModelPicker profiles={profilesQuery.data || []} activeProfileId={activeProfileId} onActiveProfileChange={setActiveProfileId}
           onOpenSettings={openSettings} disabled={chat.streaming || profilesQuery.isFetching} onError={setError} onBusyChange={setPickerBusy} onProfileUpdated={profileUpdated}
           onChanged={async () => { await queryClient.invalidateQueries({ queryKey: ["profiles"] }, { throwOnError: true }); }} />}
@@ -210,7 +215,6 @@ export default function AppShell() {
         selectedSessionId={selectedSessionId}
         activeProfileId={activeProfileId}
         worldbooks={worldbooksQuery.data || []}
-        onSessionUpdated={(sessionId) => chat.reloadTree(sessionId)}
         onOpenTree={openTree}
         onSelectMessage={chat.handleSelectMessage}
         onCloseMobile={closeInspector}

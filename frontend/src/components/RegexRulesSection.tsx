@@ -23,18 +23,11 @@ function id(prefix: string): string {
 }
 
 type Props = {
-  selectedSessionId: string | null;
   regexRules: RegexRule[];
   setRegexRules: (update: SetStateAction<RegexRule[]>) => void;
-  defaultExpanded?: boolean;
 };
 
-export function SessionRegexSection({
-  selectedSessionId,
-  regexRules,
-  setRegexRules,
-  defaultExpanded = false
-}: Props) {
+export function RegexRulesSection({ regexRules, setRegexRules }: Props) {
   function patchRule(index: number, patch: Partial<RegexRule>) {
     setRegexRules((current) => current.map((rule, ruleIndex) => ruleIndex === index ? { ...rule, ...patch } : rule));
   }
@@ -54,18 +47,17 @@ export function SessionRegexSection({
   return (
     <CollapsibleSection
       contentId="inspector-regex-content"
-      title="当前会话 Regex"
+      title="全局 Regex"
       icon={<Eye size={16} />}
       storageKey="yggdrasil-tavern.inspector.regex.expanded"
       className="inspector-section"
-      defaultExpanded={defaultExpanded}
       headerMeta={regexRules.length > 0 ? <span className="quiet-badge">{regexRules.length} 条</span> : undefined}
     >
       <div className="regex-rule-list">
         {regexRules.map((rule, index) => {
           const validation = validateRegex(rule);
           return (
-            <details className={`regex-rule-card ${rule.enabled ? "enabled" : "disabled"}`} key={`${selectedSessionId}:${rule.id}`}>
+            <details className={`regex-rule-card ${rule.enabled ? "enabled" : "disabled"}`} key={rule.id}>
               <summary><span>{rule.name || "未命名 Regex"}</span><small>{rule.enabled ? "已启用" : "已停用"}{validation ? " · 规则有误" : ""}</small></summary>
               <div className="regex-rule-fields">
                 <header>
@@ -104,7 +96,7 @@ export function SessionRegexSection({
           );
         })}
       </div>
-      <button className="secondary-button full-button" type="button" onClick={() => setRegexRules((current) => [...current, { id: id("regex"), name: "新 Regex", enabled: true, scope: "session", pattern: "", flags: "g", replacement: "", targets: ["display"], mode: "replace" }])}><Plus size={15} />添加 Regex</button>
+      <button className="secondary-button full-button" type="button" onClick={() => setRegexRules((current) => [...current, { id: id("regex"), name: "新 Regex", enabled: true, scope: "global", pattern: "", flags: "g", replacement: "", targets: ["display"], mode: "replace" }])}><Plus size={15} />添加 Regex</button>
     </CollapsibleSection>
   );
 }

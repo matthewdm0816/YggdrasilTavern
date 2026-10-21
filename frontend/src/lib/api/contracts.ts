@@ -20,6 +20,7 @@ export type MessageCreateInput = WithRequired<Schema["MessageCreate"], "role">;
 export type MessageUpdateInput = Schema["MessageUpdate"];
 export type SwipeCreateInput = WithRequired<Schema["SwipeCreate"], "content">;
 export type PromptConfigUpdateInput = Schema["GlobalPromptConfigUpdate"];
+export type WorldbookRegexConfigUpdateInput = Schema["GlobalWorldbookRegexConfigUpdate"];
 export type ContextPreviewInput = Schema["ContextPreviewRequest"];
 export type GenerateInput = Schema["GenerateRequest"];
 export type ChubImportInput = Schema["ChubImportRequest"];

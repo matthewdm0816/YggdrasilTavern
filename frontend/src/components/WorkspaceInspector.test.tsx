@@ -26,17 +26,18 @@ function renderInspector(tree: SessionTree, selectedSessionId = tree.session.id)
 }
 
 describe("workspace inspector", () => {
-  it("shows nearby forks first, keeps the complete-tree entry and disables unchanged saves", () => {
+  it("shows nearby branches first, keeps the complete-tree entry and disables unchanged saves", () => {
     const html = renderInspector({
       session: { id: "one", title: "One", preset: {} },
       messages: [message("root-active", null), message("root-alternate", null),
         message("inactive-descendant", "root-alternate")],
       active_path_ids: ["root-active"]
     });
-    expect(html.indexOf("附近分叉")).toBeLessThan(html.indexOf("全局 Prompt Profile"));
+    expect(html.indexOf("附近分支")).toBeLessThan(html.indexOf("全局 Prompt Profile"));
+    expect(html.indexOf("全局 Prompt Profile")).toBeLessThan(html.indexOf("全局世界书"));
     expect(html).toContain("root-alternate");
     expect(html).not.toContain("inactive-descendant");
-    expect(html).toContain("打开完整树");
+    expect(html).toContain("打开完整聊天树");
     expect(html).toContain('class="secondary-button inspector-save" disabled=""');
     expect(html).toContain('aria-label="关闭分支与设置"');
   });
@@ -51,12 +52,12 @@ describe("workspace inspector", () => {
     expect(html).toContain("未选择会话");
   });
 
-  it("supports focused inspector tabs so users can view only session settings or branches", () => {
+  it("groups the global Prompt, worldbooks and Regex in the Prompt tab without branches", () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const html = renderToStaticMarkup(
       <QueryClientProvider client={client}>
         <WorkspaceInspector
-          initialTab="session"
+          initialTab="prompt"
           tree={{
             session: { id: "one", title: "One", preset: {} },
             messages: [message("root-active", null)],
@@ -71,9 +72,11 @@ describe("workspace inspector", () => {
         />
       </QueryClientProvider>
     );
-    expect(html).toContain("当前会话 Regex");
-    expect(html).toContain("当前会话的世界书");
-    expect(html).not.toContain("附近分叉");
-    expect(html).not.toContain("全局 Prompt Profile");
+    expect(html).toContain("全局 Prompt Profile");
+    expect(html).toContain("全局世界书");
+    expect(html).toContain("全局 Regex");
+    expect(html).toContain("保存世界书与 Regex");
+    expect(html).not.toContain("附近分支");
+    expect(html).not.toContain("当前会话的世界书");
   });
 });

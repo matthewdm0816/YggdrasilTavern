@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Type } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
+import { Palette } from "lucide-react";
 import { CollapsibleSection } from "./CollapsibleSection";
 import { userStorageKey } from "../lib/userStorage";
 
@@ -32,7 +32,7 @@ export function applyFontSizeSettings(sizes = loadSizes()) {
   document.documentElement.style.setProperty("--mobile-font-size", `${sizes.mobile}px`);
 }
 
-export function DisplaySettings() {
+export function DisplaySettings({ children }: { children?: ReactNode }) {
   const [sizes, setSizes] = useState(loadSizes);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
@@ -45,7 +45,8 @@ export function DisplaySettings() {
       setError("字号已应用，但无法保存；刷新后可能恢复默认值。");
     }
   }, [sizes]);
-  return <CollapsibleSection contentId="display-settings-content" title="字号设置" icon={<Type size={16} />} storageKey="yggdrasil-tavern.display.expanded">
+  return <CollapsibleSection contentId="display-settings-content" title="外观与字号" icon={<Palette size={16} />} storageKey="yggdrasil-tavern.display.expanded">
+    {children}
     {(["desktop", "mobile"] as const).map((target) => <label className="form-field font-size-setting" key={target}>
       <span>{target === "desktop" ? "电脑字号" : "移动端字号"} · {sizes[target]} px</span>
       <input aria-label={target === "desktop" ? "电脑字号" : "移动端字号"} type="range" min={target === "mobile" ? 10 : 12} max="22" step="1" value={sizes[target]} onChange={(event) => setSizes((current) => ({ ...current, [target]: Number(event.target.value) }))} />

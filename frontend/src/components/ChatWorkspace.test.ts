@@ -24,7 +24,7 @@ describe("getMessagePresentation", () => {
     expect(getMessagePresentation({ role: "assistant", status: "complete" })).toEqual({
       isStreaming: false,
       rowClassName: "message-row assistant",
-      statusLabel: "complete"
+      statusLabel: "已完成"
     });
   });
 });

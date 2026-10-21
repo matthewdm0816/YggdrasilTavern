@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Archive, ArchiveRestore, ChevronDown, ChevronRight, Folder, FolderPlus, MessageSquarePlus, Pin, PinOff, Plus, Search, Star, X } from "lucide-react";
-import { api, CharacterSummary, ChatSession, SessionFolder, WorldBook } from "../lib/api";
+import { api, CharacterSummary, ChatSession, SessionFolder } from "../lib/api";
 import { sortByName } from "../lib/order";
 import { ActionMenu } from "./ActionMenu";
 import { CollapsibleSection } from "./CollapsibleSection";
@@ -11,7 +11,6 @@ export function titleForSelectedCharacter(currentTitle: string, currentCharacter
 
 type Props = {
   characters: CharacterSummary[];
-  worldbooks: WorldBook[];
   sessions: ChatSession[];
   selectedSessionId: string | null;
   showArchived: boolean;
@@ -27,7 +26,6 @@ type Props = {
 
 export function SessionListPanel({
   characters,
-  worldbooks,
   sessions,
   selectedSessionId,
   showArchived,
@@ -42,7 +40,6 @@ export function SessionListPanel({
 }: Props) {
   const [sessionTitle, setSessionTitle] = useState("");
   const [selectedCharacter, setSelectedCharacter] = useState("");
-  const [selectedWorldbooks, setSelectedWorldbooks] = useState<string[]>([]);
   const [selectedFolderId, setSelectedFolderId] = useState("");
   const [sessionEditorOpen, setSessionEditorOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -81,10 +78,12 @@ export function SessionListPanel({
     }
   }
 
-  async function deleteFolder(folderId: string) {
+  async function deleteFolder(folder: SessionFolder) {
+    const count = sessions.filter((session) => session.folder_id === folder.id).length;
+    if (!window.confirm(`删除文件夹“${folder.name}”？${count ? `其中的 ${count} 个会话会移出文件夹，不会被删除。` : ""}`)) return;
     setBusy(true);
     try {
-      await api.deleteFolder(folderId);
+      await api.deleteFolder(folder.id);
       await loadFolders();
       await onRefresh();
     } catch (exc) {
@@ -172,9 +171,8 @@ export function SessionListPanel({
       await onCreateSession({
         title: sessionTitle.trim() || character.name,
         character_id: character.id,
-        worldbook_id: selectedWorldbooks[0] || null,
         folder_id: selectedFolderId || null,
-        preset: { auto_greeting: true, worldbook_ids: selectedWorldbooks }
+        preset: { auto_greeting: true }
       });
       resetSessionEditor();
     } catch {
@@ -182,29 +180,20 @@ export function SessionListPanel({
     }
   }
 
-  async function createSessionDraft() {
+  function createSessionDraft() {
     setSessionTitle("");
     setSelectedCharacter(characters[0]?.id || "");
     if (characters[0]?.name) {
       setSessionTitle(characters[0].name);
     }
-    setSelectedWorldbooks([]);
     setSelectedFolderId("");
     setSessionEditorOpen(true);
-    try {
-      const defaults = await api.sessionDefaults();
-      const ids = defaults.preset?.worldbook_ids;
-      setSelectedWorldbooks(Array.isArray(ids) ? ids.filter((value): value is string => typeof value === "string" && worldbooks.some((book) => book.id === value)) : []);
-    } catch (cause) {
-      onError?.(`新会话默认设置读取失败：${cause instanceof Error ? cause.message : String(cause)}`);
-    }
   }
 
   function resetSessionEditor() {
     setSessionEditorOpen(false);
     setSessionTitle("");
     setSelectedCharacter("");
-    setSelectedWorldbooks([]);
     setSelectedFolderId("");
   }
 
@@ -227,7 +216,7 @@ export function SessionListPanel({
           </span>
           <span className="session-title-copy">
             <span className="session-title-text">{session.title}</span>
-            <span className="session-character-name">{character?.name || (!session.character_id ? "未绑定角色" : "角色不可用")}</span>
+            {character?.name !== session.title && <span className="session-character-name">{character?.name || (!session.character_id ? "未绑定角色" : "角色不可用")}</span>}
           </span>
           {session.pinned && <Star size={13} className="pin-icon" aria-label="已置顶" />}
         </button>
@@ -283,8 +272,8 @@ export function SessionListPanel({
             <span>{folder.name}</span>
             <span className="folder-count">{folderSessions.length}</span>
           </button>
-          <button className="icon-button-sm" type="button" title="删除文件夹" onClick={() => void deleteFolder(folder.id)}>
-            <span style={{ fontSize: 11, lineHeight: 1 }}>x</span>
+          <button className="icon-button-sm" type="button" title="删除文件夹" aria-label={`删除文件夹“${folder.name}”`} disabled={busy} onClick={() => void deleteFolder(folder)}>
+            <X size={12} />
           </button>
         </div>
         {expanded && (
@@ -329,7 +318,7 @@ export function SessionListPanel({
           >
             <Archive size={14} />
           </button>
-          <button className="icon-button" type="button" title="新建会话" aria-label="新建会话" onClick={() => void createSessionDraft()}>
+          <button className="icon-button" type="button" title="新建会话" aria-label="新建会话" onClick={createSessionDraft}>
             <Plus size={16} />
           </button>
         </div>
@@ -346,20 +335,6 @@ export function SessionListPanel({
             {orderedCharacters.map((character) => <option key={character.id} value={character.id}>{character.name}</option>)}
           </select></label>
           <label className="form-field"><span>会话标题（可选）</span><input value={sessionTitle} onChange={(event) => setSessionTitle(event.target.value)} placeholder="默认使用角色名" /></label>
-          <fieldset className="compact-check-list">
-            <legend>绑定多个世界书（可留空）</legend>
-            {worldbooks.map((book) => (
-              <label key={book.id}>
-                <input
-                  type="checkbox"
-                  checked={selectedWorldbooks.includes(book.id)}
-                  onChange={() => setSelectedWorldbooks((current) => current.includes(book.id) ? current.filter((id) => id !== book.id) : [...current, book.id])}
-                />
-                {book.name}
-              </label>
-            ))}
-            {!worldbooks.length && <span className="muted">暂无世界书</span>}
-          </fieldset>
           <label className="form-field"><span>保存位置</span><select value={selectedFolderId} onChange={(event) => setSelectedFolderId(event.target.value)}>
             <option value="">不放入文件夹</option>
             {folders.map((f) => (

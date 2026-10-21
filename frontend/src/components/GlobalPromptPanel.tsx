@@ -107,7 +107,7 @@ export function GlobalPromptPanel({ onError }: Props) {
         icon={<Globe2 size={16} />}
         storageKey="yggdrasil-tavern.inspector.global-prompt.expanded"
         className="inspector-section prompt-profile-section"
-        headerMeta={<span className="quiet-badge">全部会话 · r{promptRevision}</span>}
+        headerMeta={<span className="quiet-badge">全部会话</span>}
       >
 
         {!!importedPrompts.data?.length && <label className="form-field"><span>导入的 SillyTavern 提示词预设</span><select value={importedPromptId} onChange={(event) => {

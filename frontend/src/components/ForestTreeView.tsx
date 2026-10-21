@@ -14,6 +14,8 @@ import {
 } from "lucide-react";
 import { Message, SessionTree } from "../lib/api";
 import { sortMessages } from "../lib/tree";
+import { markdownPreviewText } from "../lib/markdownPreview";
+import { messageErrorText, messageStatusLabel } from "../lib/messageStatus";
 
 type Props = {
   tree: SessionTree;
@@ -49,13 +51,13 @@ function roleLabel(role: Message["role"]): string {
 }
 
 function messageSummary(message: Message): string {
-  const compact = message.content.replace(/\s+/g, " ").trim();
+  const compact = markdownPreviewText(message.content);
   if (!compact) return "（空消息）";
   return compact.length > 96 ? `${compact.slice(0, 96)}…` : compact;
 }
 
 function searchableMessageText(message: Message): string {
-  return [message.id, message.speaker, roleLabel(message.role), message.role, message.status, message.content, message.thinking_content]
+  return [message.id, message.speaker, roleLabel(message.role), message.role, message.status, messageStatusLabel(message.status), message.content, message.thinking_content]
     .join("\n")
     .toLocaleLowerCase();
 }
@@ -378,7 +380,7 @@ export function ForestTreeView({ tree, onClose, onSelectMessage }: Props) {
             </span>
             <span className="forest-tree-node-tail">
               {isCurrent && <span className="forest-tree-current-badge">当前</span>}
-              <span className={`forest-tree-status status-${message.status}`}>{message.status || "unknown"}</span>
+              <span className={`forest-tree-status status-${message.status}`}>{messageStatusLabel(message.status)}</span>
             </span>
           </button>
         </div>
@@ -391,21 +393,20 @@ export function ForestTreeView({ tree, onClose, onSelectMessage }: Props) {
       <section className="forest-tree-dialog" role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <header className="forest-tree-header">
           <div>
-            <p className="eyebrow">Conversation Forest</p>
-            <h2 id={titleId}>Tree View</h2>
+            <h2 id={titleId}>完整聊天树</h2>
             <p className="forest-tree-instructions">悬停或聚焦可临时预览；点击一次固定预览，再点同一节点即可跳转。</p>
             <p className="forest-tree-stats">{model.roots.length} 棵树 · {tree.messages.length} 个节点 · 当前路径 {tree.active_path_ids.length} 个节点</p>
           </div>
-          <button ref={closeButtonRef} className="icon-button" type="button" title="关闭 Tree View" aria-label="关闭 Tree View" onClick={onClose}><X size={18} /></button>
+          <button ref={closeButtonRef} className="icon-button" type="button" title="关闭完整聊天树" aria-label="关闭完整聊天树" onClick={onClose}><X size={18} /></button>
         </header>
 
         <div className="forest-tree-toolbar">
           <label className="forest-tree-search">
             <Search size={16} aria-hidden="true" />
-            <input type="search" value={searchQuery} placeholder="搜索说话者、状态或 swipe 文本" aria-label="搜索聊天森林" onChange={(event) => setSearchQuery(event.target.value)} />
+            <input type="search" value={searchQuery} placeholder="搜索说话者、状态或分支内容" aria-label="搜索完整聊天树" onChange={(event) => setSearchQuery(event.target.value)} />
             {searchQuery && <button type="button" className="forest-tree-search-clear" aria-label="清除搜索" title="清除搜索" onClick={() => setSearchQuery("")}><X size={14} /></button>}
           </label>
-          <div className="forest-tree-toolbar-actions" aria-label="Tree View 显示控制">
+          <div className="forest-tree-toolbar-actions" aria-label="完整聊天树显示控制">
             <button className="secondary-button" type="button" disabled={!activeLeafId} onClick={locateCurrentNode}><LocateFixed size={15} />定位当前</button>
             <button className="secondary-button" type="button" disabled={!tree.messages.length} onClick={() => setExpandedIds(allExpandableNodeIds(model))}><ChevronsDown size={15} />展开全部</button>
             <button className="secondary-button" type="button" disabled={!tree.messages.length} onClick={() => setExpandedIds(new Set())}><ChevronsUp size={15} />折叠全部</button>
@@ -419,7 +420,7 @@ export function ForestTreeView({ tree, onClose, onSelectMessage }: Props) {
         {selectionError && <div className="forest-tree-error" role="alert">{selectionError}</div>}
 
         <div className="forest-tree-body">
-          <div className="forest-tree-canvas" aria-label="完整聊天森林">
+          <div className="forest-tree-canvas" aria-label="完整聊天树">
             {visibleRows.length > 0 ? (
               <ul className="forest-tree-roots" role="tree" aria-label="全部聊天节点">{visibleRows.map(renderRow)}</ul>
             ) : (
@@ -431,19 +432,19 @@ export function ForestTreeView({ tree, onClose, onSelectMessage }: Props) {
             )}
           </div>
 
-          <aside ref={previewRef} className="forest-tree-preview" id={previewId} aria-label="Swipe 完整预览">
+          <aside ref={previewRef} className="forest-tree-preview" id={previewId} aria-label="分支完整预览">
             {shownMessage ? (
               <>
                 <header className="forest-tree-preview-header">
-                  <div><p className="eyebrow">Swipe Preview</p><h3>{shownMessage.speaker || roleLabel(shownMessage.role)}</h3></div>
+                  <div><p className="eyebrow">分支预览</p><h3>{shownMessage.speaker || roleLabel(shownMessage.role)}</h3></div>
                   <div className="forest-tree-preview-badges">
-                    <span>{roleLabel(shownMessage.role)}</span><span>{shownMessage.status || "unknown"}</span>
+                    <span>{roleLabel(shownMessage.role)}</span><span>{messageStatusLabel(shownMessage.status)}</span>
                     {activePath.has(shownMessage.id) && <span className="active-path">当前路径</span>}
                   </div>
                 </header>
                 <div className="forest-tree-preview-scroll">
                   <pre className="forest-tree-preview-content">{shownMessage.content || "（空消息）"}</pre>
-                  {shownMessage.error && <div className="forest-tree-message-error" role="alert">节点错误：{shownMessage.error}</div>}
+                  {shownMessage.error && <div className="forest-tree-message-error" role="alert">节点错误：{messageErrorText(shownMessage.error)}</div>}
                 </div>
                 <footer className="forest-tree-preview-footer">
                   {pinnedId === shownMessage.id ? (

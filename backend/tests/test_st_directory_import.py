@@ -85,8 +85,9 @@ def test_import_uses_explicit_saved_key_and_keeps_live_key_separate(db):
     assert "test-active-secret" not in json.dumps(result)
     defaults = db.get(models.DefaultSessionConfig, "default")
     assert defaults.api_profile_id == live.id
-    assert defaults.preset["user_name"] == "Ada"
-    assert len(defaults.preset["worldbook_ids"]) == 1
+    assert defaults.preset == {"user_name": "Ada"}
+    shared = db.get(models.GlobalWorldbookRegexConfig, "default")
+    assert shared.worldbook_ids == [resource_id(plan.source, "worldbook", "worlds/Lore.json")]
 
 
 def test_repeat_import_preserves_local_changes_and_reports_remote_changes(db):
@@ -176,9 +177,11 @@ def test_worldbook_scan_depth_does_not_use_prompt_injection_depth(db):
     files["worlds/Lore.json"] = json.dumps(raw).encode()
     plan = make_plan(files)
     apply_plan(db, plan, activate=True)
+    assert db.get(models.GlobalWorldbookRegexConfig, "default").worldbook_ids == [
+        resource_id(plan.source, "worldbook", "worlds/Lore.json")
+    ]
     session = models.ChatSession(
         title="Scan depth", character_id=resource_id(plan.source, "character", "characters/Alice.json"),
-        preset={"worldbook_ids": [resource_id(plan.source, "worldbook", "worlds/Lore.json")]},
     )
     db.add(session)
     db.commit()
@@ -247,7 +250,8 @@ def test_import_api_preview_apply_no_secret_readback_and_new_session_defaults(db
     session = client.post("/api/sessions", json={"character_id": character["id"]})
     assert session.status_code == 200
     assert session.json()["preset"]["user_name"] == "Ada"
-    assert len(session.json()["preset"]["worldbook_ids"]) == 1
+    assert session.json()["preset"]["worldbook_ids"] == []
+    assert len(client.get("/api/settings/worldbooks-regex").json()["worldbook_ids"]) == 1
     assert session.json()["api_profile_id"]
     tree = client.get(f"/api/sessions/{session.json()['id']}/tree").json()
     assert tree["messages"][0]["content"] == "Hi Ada"

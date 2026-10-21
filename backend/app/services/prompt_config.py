@@ -237,9 +237,79 @@ def save_global_prompt_config(
     return saved
 
 
-def parsed_regex_rules(preset: Dict[str, Any] | None) -> List[schemas.RegexRule]:
-    normalized = normalize_regex_rules((preset or {}).get("regex_rules"))
-    return [schemas.RegexRule.model_validate(rule) for rule in normalized]
+def global_worldbook_regex_state(
+    db: Session,
+) -> tuple[List[str], List[schemas.RegexRule], int, Optional[datetime], Optional[str]]:
+    """Read the shared worldbooks and Regex rules without mutating the database.
+
+    A corrupt row compiles prompts without either source, and the returned error
+    is always surfaced as a diagnostic (and as a server error by the settings API).
+    """
+
+    row = db.get(models.GlobalWorldbookRegexConfig, GLOBAL_PROMPT_CONFIG_ID)
+    if row is None:
+        return [], [], 0, None, None
+    try:
+        worldbook_ids = normalize_worldbook_ids(row.worldbook_ids)
+        regex_rules = [schemas.RegexRule.model_validate(rule) for rule in normalize_regex_rules(row.regex_rules)]
+    except ValueError as exc:
+        return [], [], row.revision, row.updated_at, str(exc)
+    return worldbook_ids, regex_rules, row.revision, row.updated_at, None
+
+
+def save_global_worldbook_regex_config(
+    db: Session,
+    *,
+    raw_worldbook_ids: Any,
+    raw_regex_rules: Any,
+    expected_revision: int,
+) -> models.GlobalWorldbookRegexConfig:
+    worldbook_ids = normalize_worldbook_ids(raw_worldbook_ids)
+    regex_rules = normalize_regex_rules(raw_regex_rules)
+    missing = [worldbook_id for worldbook_id in worldbook_ids if db.get(models.WorldBook, worldbook_id) is None]
+    if missing:
+        raise ValueError(f"Unknown worldbook ids: {', '.join(missing)}")
+    row = db.get(models.GlobalWorldbookRegexConfig, GLOBAL_PROMPT_CONFIG_ID)
+    if row is None:
+        if expected_revision != 0:
+            raise PromptConfigConflict("全局世界书与 Regex 已被其他窗口修改，请刷新后重试")
+        row = models.GlobalWorldbookRegexConfig(
+            id=GLOBAL_PROMPT_CONFIG_ID,
+            worldbook_ids=worldbook_ids,
+            regex_rules=regex_rules,
+            revision=1,
+        )
+        db.add(row)
+        try:
+            db.commit()
+        except IntegrityError as exc:
+            db.rollback()
+            raise PromptConfigConflict("全局世界书与 Regex 已被其他窗口创建，请刷新后重试") from exc
+        db.refresh(row)
+        return row
+
+    result = db.execute(
+        update(models.GlobalWorldbookRegexConfig)
+        .where(
+            models.GlobalWorldbookRegexConfig.id == GLOBAL_PROMPT_CONFIG_ID,
+            models.GlobalWorldbookRegexConfig.revision == expected_revision,
+        )
+        .values(
+            worldbook_ids=worldbook_ids,
+            regex_rules=regex_rules,
+            revision=expected_revision + 1,
+            updated_at=models.utc_now(),
+        )
+    )
+    if result.rowcount != 1:
+        db.rollback()
+        raise PromptConfigConflict("全局世界书与 Regex 已被其他窗口修改，请刷新后重试")
+    db.commit()
+    saved = db.get(models.GlobalWorldbookRegexConfig, GLOBAL_PROMPT_CONFIG_ID)
+    if saved is None:
+        raise RuntimeError("全局世界书与 Regex 保存后无法重新读取")
+    db.refresh(saved)
+    return saved
 
 
 def apply_outgoing_regex(

@@ -11,8 +11,7 @@ from .. import models, schemas
 from .prompt_config import (
     apply_outgoing_regex,
     global_prompt_state,
-    parsed_regex_rules,
-    unique_worldbook_ids,
+    global_worldbook_regex_state,
 )
 from .token_counter import count_text_tokens
 from .token_limits import ResolvedTokenLimits, resolve_profile_token_limits
@@ -254,7 +253,8 @@ class PromptInputs:
     path: tuple[PromptMessage, ...]
     worldbook_ids: tuple[str, ...]
     worldbooks: tuple[LoadedWorldBook, ...]
-    worldbook_ids_error: Optional[str]
+    regex_rules: tuple[schemas.RegexRule, ...]
+    worldbook_regex_config_error: Optional[str]
     slots: tuple[schemas.PromptSlot, ...]
     prompt_config_revision: int
     prompt_config_error: Optional[str]
@@ -291,12 +291,8 @@ def load_context_inputs(
         PromptMessage(id=message.id, role=message.role, speaker=message.speaker, content=message.content)
         for message in source_path
     )
-    worldbook_ids_error: Optional[str] = None
-    try:
-        worldbook_ids = unique_worldbook_ids(session.worldbook_id, preset)
-    except ValueError as exc:
-        worldbook_ids = [session.worldbook_id] if session.worldbook_id else []
-        worldbook_ids_error = str(exc)
+    # Worldbooks and Regex rules are global; legacy session values are no longer read.
+    worldbook_ids, regex_rules, _, _, worldbook_regex_config_error = global_worldbook_regex_state(db)
     worldbooks: list[LoadedWorldBook] = []
     for worldbook_id in worldbook_ids:
         worldbook = db.get(models.WorldBook, worldbook_id)
@@ -317,7 +313,8 @@ def load_context_inputs(
         path=path,
         worldbook_ids=tuple(worldbook_ids),
         worldbooks=tuple(worldbooks),
-        worldbook_ids_error=worldbook_ids_error,
+        regex_rules=tuple(rule.model_copy(deep=True) for rule in regex_rules),
+        worldbook_regex_config_error=worldbook_regex_config_error,
         slots=tuple(slot.model_copy(deep=True) for slot in slots),
         prompt_config_revision=prompt_config_revision,
         prompt_config_error=prompt_config_error,
@@ -332,10 +329,12 @@ def compile_context(inputs: PromptInputs) -> schemas.ContextPreviewOut:
     user_name = str(preset.get("user_name") or "User")
     path = list(inputs.path)
     diagnostics: List[schemas.PromptDiagnostic] = []
-    if inputs.worldbook_ids_error:
+    if inputs.worldbook_regex_config_error:
         diagnostics.append(
             schemas.PromptDiagnostic(
-                level="error", code="invalid_worldbook_ids", message=inputs.worldbook_ids_error
+                level="error",
+                code="invalid_global_worldbook_regex_config",
+                message=inputs.worldbook_regex_config_error,
             )
         )
 
@@ -382,11 +381,7 @@ def compile_context(inputs: PromptInputs) -> schemas.ContextPreviewOut:
                 message=inputs.prompt_config_error,
             )
         )
-    try:
-        regex_rules = parsed_regex_rules(preset)
-    except ValueError as exc:
-        regex_rules = []
-        diagnostics.append(schemas.PromptDiagnostic(level="error", code="invalid_regex_rules", message=str(exc)))
+    regex_rules = list(inputs.regex_rules)
 
     compiled_blocks: List[schemas.CompiledPromptBlock] = []
 

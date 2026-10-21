@@ -320,6 +320,19 @@ class RegexRule(BaseModel):
     replacement: str = ""
 
 
+class GlobalWorldbookRegexConfigOut(BaseModel):
+    worldbook_ids: List[str]
+    regex_rules: List[RegexRule]
+    revision: int = 0
+    updated_at: Optional[datetime] = None
+
+
+class GlobalWorldbookRegexConfigUpdate(BaseModel):
+    worldbook_ids: List[str]
+    regex_rules: List[Dict[str, Any]]
+    expected_revision: int = Field(ge=0)
+
+
 class PromptDiagnostic(BaseModel):
     level: Literal["info", "warning", "error"]
     code: str

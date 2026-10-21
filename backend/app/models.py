@@ -62,6 +62,17 @@ class GlobalPromptConfig(TimestampMixin, Base):
     revision: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
 
 
+class GlobalWorldbookRegexConfig(TimestampMixin, Base):
+    """Worldbooks and Regex rules shared by every session of this profile."""
+
+    __tablename__ = "global_worldbook_regex_config"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default="default")
+    worldbook_ids: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    regex_rules: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    revision: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+
+
 class ImportedResource(TimestampMixin, Base):
     """Source ledger and converted/read-only SillyTavern configuration."""
 

@@ -124,3 +124,40 @@ def test_single_generation_migration_preserves_overlapping_partial_messages(tmp_
                    for index in inspect(engine).get_indexes("generation_runs"))
     finally:
         engine.dispose()
+
+
+def test_global_worldbook_regex_migration_takes_latest_session_values(tmp_path, monkeypatch):
+    database_path = tmp_path / "worldbook-regex.db"
+    database_url = f"sqlite:///{database_path.as_posix()}"
+    config = alembic_config(database_url, monkeypatch)
+    command.upgrade(config, "0007_sillytavern_import")
+    engine = create_engine(database_url)
+    old_rule = {"id": "old-rule", "pattern": "a", "replacement": "b", "targets": ["display"], "mode": "replace"}
+    try:
+        with Session(engine, expire_on_commit=False) as db:
+            old_book = models.WorldBook(name="Old")
+            new_book = models.WorldBook(name="New")
+            db.add_all([old_book, new_book])
+            db.flush()
+            older = models.ChatSession(
+                title="Older", preset={"worldbook_ids": [old_book.id], "regex_rules": [old_rule]},
+            )
+            newer = models.ChatSession(
+                title="Newer", worldbook_id=new_book.id, preset={"worldbook_ids": ["deleted-book"], "regex_rules": []},
+            )
+            db.add_all([older, newer])
+            db.commit()
+            db.execute(text("UPDATE sessions SET updated_at = '2026-01-01 00:00:00' WHERE id = :id"), {"id": older.id})
+            db.execute(text("UPDATE sessions SET updated_at = '2026-02-01 00:00:00' WHERE id = :id"), {"id": newer.id})
+            db.commit()
+            new_book_id, newer_id = new_book.id, newer.id
+        command.upgrade(config, "head")
+        with Session(engine) as db:
+            shared = db.get(models.GlobalWorldbookRegexConfig, "default")
+            # Each value comes from the latest session that has one; unknown worldbook ids are dropped.
+            assert shared.worldbook_ids == [new_book_id]
+            assert shared.regex_rules == [old_rule]
+            assert shared.revision == 1
+            assert db.get(models.ChatSession, newer_id).preset["worldbook_ids"] == ["deleted-book"]
+    finally:
+        engine.dispose()

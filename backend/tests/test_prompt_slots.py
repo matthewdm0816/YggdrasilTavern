@@ -93,26 +93,37 @@ def test_compiler_respects_history_barrier_multiple_worldbooks_and_post_history(
         after_book.entries = [
             models.WorldBookEntry(content="After lore", constant=True, position="after_char", order=2)
         ]
-        db.add_all([character, before_book, after_book])
+        ignored_book = models.WorldBook(name="Legacy session book", scan_depth=8, token_budget=100)
+        ignored_book.entries = [models.WorldBookEntry(content="Legacy lore", constant=True, order=3)]
+        db.add_all([character, before_book, after_book, ignored_book])
         db.flush()
+        db.add(models.GlobalWorldbookRegexConfig(
+            id="default",
+            worldbook_ids=[before_book.id, after_book.id],
+            regex_rules=[
+                {
+                    "id": "history-rewrite",
+                    "name": "History rewrite",
+                    "pattern": "secret",
+                    "replacement": "visible",
+                    "flags": "g",
+                    "targets": ["outgoing_prompt"],
+                    "mode": "replace",
+                    "scope": "global",
+                    "enabled": True,
+                }
+            ],
+        ))
+        # Values left in a session by older releases no longer take part in prompts.
         session = models.ChatSession(
             title="slots",
             character_id=character.id,
-            worldbook_id=before_book.id,
+            worldbook_id=ignored_book.id,
             preset={
-                "worldbook_ids": [before_book.id, after_book.id],
+                "worldbook_ids": [ignored_book.id],
                 "regex_rules": [
-                    {
-                        "id": "history-rewrite",
-                        "name": "History rewrite",
-                        "pattern": "secret",
-                        "replacement": "visible",
-                        "flags": "g",
-                        "targets": ["outgoing_prompt"],
-                        "mode": "replace",
-                        "scope": "session",
-                        "enabled": True,
-                    }
+                    {"id": "legacy", "pattern": "visible", "replacement": "legacy", "flags": "g",
+                     "targets": ["outgoing_prompt"], "mode": "replace"}
                 ],
             },
         )
@@ -330,10 +341,17 @@ def test_worldbook_edits_win_on_export_and_delete_cleans_session_sources():
     assert exported["content"] == "new content"
     assert exported["order"] == 42
 
+    saved = client.put(
+        "/api/settings/worldbooks-regex",
+        json={"worldbook_ids": [book["id"]], "regex_rules": [], "expected_revision": 0},
+    ).json()
     assert client.delete(f"/api/worldbooks/{book['id']}").status_code == 200
     tree = client.get(f"/api/sessions/{session['id']}/tree").json()
     assert tree["session"]["worldbook_id"] is None
     assert tree["session"]["preset"]["worldbook_ids"] == []
+    shared = client.get("/api/settings/worldbooks-regex").json()
+    assert shared["worldbook_ids"] == []
+    assert shared["revision"] == saved["revision"] + 1
 
 
 def test_character_list_is_lightweight_and_detail_keeps_original_avatar():
@@ -363,10 +381,10 @@ def test_prompt_inputs_compile_after_database_session_is_closed():
         book.entries = [models.WorldBookEntry(content="Original lore", constant=True)]
         db.add_all([character, book])
         db.flush()
+        db.add(models.GlobalWorldbookRegexConfig(id="default", worldbook_ids=[book.id], regex_rules=[]))
         session = models.ChatSession(
             title="snapshot",
             character_id=character.id,
-            worldbook_id=book.id,
             preset={"user_name": "Owner"},
         )
         db.add(session)
@@ -384,3 +402,50 @@ def test_prompt_inputs_compile_after_database_session_is_closed():
     assert "Original character" in compiled.system
     assert compiled.activated_lore[0].content == "Original lore"
     assert [block.content for block in compiled.compiled_blocks if block.is_history] == ["Original message"]
+
+
+def test_global_worldbooks_and_regex_apply_to_every_session_and_reject_stale_or_invalid_saves():
+    client = _api_client()
+    assert client.get("/api/settings/worldbooks-regex").json() == {
+        "worldbook_ids": [], "regex_rules": [], "revision": 0, "updated_at": None,
+    }
+    book = client.post(
+        "/api/worldbooks",
+        json={"name": "Shared", "entries": [{"keys": [], "content": "Shared lore", "constant": True}]},
+    ).json()
+    character = client.post("/api/characters", json={"name": "Keeper", "description": "secret keeper", "first_mes": ""}).json()
+    sessions = [
+        client.post("/api/sessions", json={"title": title, "character_id": character["id"]}).json()
+        for title in ("first", "second")
+    ]
+    rule = {"id": "shared-rewrite", "pattern": "secret", "replacement": "visible", "flags": "g",
+            "targets": ["outgoing_prompt"], "mode": "replace", "scope": "global"}
+    saved = client.put(
+        "/api/settings/worldbooks-regex",
+        json={"worldbook_ids": [book["id"]], "regex_rules": [rule], "expected_revision": 0},
+    )
+    assert saved.status_code == 200
+    assert saved.json()["revision"] == 1
+    for session in sessions:
+        context = client.post(f"/api/sessions/{session['id']}/context/preview").json()
+        assert context["worldbook_ids"] == [book["id"]]
+        assert [item["content"] for item in context["activated_lore"]] == ["Shared lore"]
+        assert "visible keeper" in context["system"] and "secret" not in context["system"]
+
+    stale = client.put(
+        "/api/settings/worldbooks-regex",
+        json={"worldbook_ids": [], "regex_rules": [], "expected_revision": 0},
+    )
+    assert stale.status_code == 409
+    unknown = client.put(
+        "/api/settings/worldbooks-regex",
+        json={"worldbook_ids": ["does-not-exist"], "regex_rules": [], "expected_revision": 1},
+    )
+    assert unknown.status_code == 422 and "does-not-exist" in unknown.text
+    broken = client.put(
+        "/api/settings/worldbooks-regex",
+        json={"worldbook_ids": [], "regex_rules": [{**rule, "pattern": "("}], "expected_revision": 1},
+    )
+    assert broken.status_code == 422 and "shared-rewrite" in broken.text
+    assert client.get("/api/settings/worldbooks-regex").json()["revision"] == 1
+

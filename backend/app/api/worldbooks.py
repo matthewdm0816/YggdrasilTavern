@@ -134,6 +134,10 @@ def delete_worldbook(worldbook_id: str, db: Session = Depends(get_db)) -> Dict[s
             session.last_activity_at = models.utc_now()
         if session.worldbook_id == worldbook.id:
             session.worldbook_id = None
+    global_config = db.get(models.GlobalWorldbookRegexConfig, "default")
+    if global_config is not None and worldbook.id in (global_config.worldbook_ids or []):
+        global_config.worldbook_ids = [item for item in global_config.worldbook_ids if item != worldbook.id]
+        global_config.revision += 1
     db.delete(worldbook)
     db.commit()
     return {"ok": True}

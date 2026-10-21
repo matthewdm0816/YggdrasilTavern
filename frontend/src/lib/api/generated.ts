@@ -343,6 +343,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/settings/worldbooks-regex": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Global Worldbook Regex Config */
+        get: operations["get_global_worldbook_regex_config_api_settings_worldbooks_regex_get"];
+        /** Update Global Worldbook Regex Config */
+        put: operations["update_global_worldbook_regex_config_api_settings_worldbooks_regex_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/characters": {
         parameters: {
             query?: never;
@@ -1419,6 +1437,31 @@ export interface components {
             /** Expected Revision */
             expected_revision: number;
         };
+        /** GlobalWorldbookRegexConfigOut */
+        GlobalWorldbookRegexConfigOut: {
+            /** Worldbook Ids */
+            worldbook_ids: string[];
+            /** Regex Rules */
+            regex_rules: components["schemas"]["RegexRule"][];
+            /**
+             * Revision
+             * @default 0
+             */
+            revision: number;
+            /** Updated At */
+            updated_at?: string | null;
+        };
+        /** GlobalWorldbookRegexConfigUpdate */
+        GlobalWorldbookRegexConfigUpdate: {
+            /** Worldbook Ids */
+            worldbook_ids: string[];
+            /** Regex Rules */
+            regex_rules: {
+                [key: string]: unknown;
+            }[];
+            /** Expected Revision */
+            expected_revision: number;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -1695,6 +1738,47 @@ export interface components {
             role: "system" | "user" | "assistant";
             /** Content */
             content?: string | null;
+        };
+        /** RegexRule */
+        RegexRule: {
+            /** Id */
+            id: string;
+            /**
+             * Name
+             * @default
+             */
+            name: string;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /**
+             * Scope
+             * @default session
+             * @enum {string}
+             */
+            scope: "session" | "character" | "global";
+            /** Targets */
+            targets?: ("display" | "outgoing_prompt" | "user_input" | "assistant_output")[];
+            /**
+             * Mode
+             * @default replace
+             * @enum {string}
+             */
+            mode: "replace" | "veil";
+            /** Pattern */
+            pattern: string;
+            /**
+             * Flags
+             * @default
+             */
+            flags: string;
+            /**
+             * Replacement
+             * @default
+             */
+            replacement: string;
         };
         /** RemoteModelInfo */
         RemoteModelInfo: {
@@ -2913,6 +2997,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GlobalPromptConfigOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_global_worldbook_regex_config_api_settings_worldbooks_regex_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GlobalWorldbookRegexConfigOut"];
+                };
+            };
+        };
+    };
+    update_global_worldbook_regex_config_api_settings_worldbooks_regex_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GlobalWorldbookRegexConfigUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GlobalWorldbookRegexConfigOut"];
                 };
             };
             /** @description Validation Error */

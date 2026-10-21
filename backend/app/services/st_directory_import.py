@@ -572,11 +572,24 @@ def apply_plan(db: Session, plan: ImportPlan, *, activate: bool = False, expecte
                     ).values(prompt_slots=prompt.converted["prompt_slots"], revision=expected + 1, updated_at=models.utc_now()))
                     if result.rowcount != 1:
                         raise ValueError("全局提示词已被其他窗口修改，导入已回滚，请重新预览")
+            # SillyTavern's selected worldbooks and Regex scripts are global there and here.
+            session_defaults = dict(plan.defaults)
+            worldbook_ids = session_defaults.pop("worldbook_ids", [])
+            regex_rules = session_defaults.pop("regex_rules", [])
+            global_config = db.get(models.GlobalWorldbookRegexConfig, "default")
+            if global_config is None:
+                db.add(models.GlobalWorldbookRegexConfig(
+                    id="default", worldbook_ids=worldbook_ids, regex_rules=regex_rules, revision=1,
+                ))
+            elif global_config.worldbook_ids != worldbook_ids or global_config.regex_rules != regex_rules:
+                global_config.worldbook_ids = worldbook_ids
+                global_config.regex_rules = regex_rules
+                global_config.revision += 1
             defaults = db.get(models.DefaultSessionConfig, "default")
             if defaults is None:
                 defaults = models.DefaultSessionConfig(id="default")
                 db.add(defaults)
-            defaults.preset = plan.defaults
+            defaults.preset = session_defaults
             candidate_id = resource_id(plan.source, "profile", plan.active_profile_key) if plan.active_profile_key else None
             defaults.api_profile_id = candidate_id if candidate_id and db.get(models.APIProfile, candidate_id) else None
         db.commit()

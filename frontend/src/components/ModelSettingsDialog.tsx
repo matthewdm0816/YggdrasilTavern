@@ -87,6 +87,12 @@ function profileConnectionKey(profile: APIProfile): string {
   return JSON.stringify([profile.id, profile.provider_type, profile.base_url, profile.path_override]);
 }
 
+// Selecting a configuration never waits on the provider: a cached catalog is reused as-is and
+// only a configuration that has no catalog yet discovers its models automatically.
+export function needsModelDiscovery(profile: Pick<APIProfile, "model_catalog">): boolean {
+  return profile.model_catalog.length === 0;
+}
+
 type Props = {
   profiles: APIProfile[];
   activeProfileId: string;
@@ -140,7 +146,7 @@ export function ModelSettingsDialog({
     : null;
 
   useEffect(() => {
-    if (!activeProfile || attemptedProfiles.current.has(activeConnectionKey)) return;
+    if (!activeProfile || !needsModelDiscovery(activeProfile) || attemptedProfiles.current.has(activeConnectionKey)) return;
     attemptedProfiles.current.add(activeConnectionKey);
     void refreshProfileModels(activeProfile.id);
   }, [activeConnectionKey]);

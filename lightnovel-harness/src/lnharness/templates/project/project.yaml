@@ -1,0 +1,41 @@
+title: __TITLE__
+# Fixed per project; sent as the x-opencode-session header so OpenCode can route
+# repeated calls to the same cache.
+session_id: __SESSION_ID__
+
+providers:
+  opencode_go_openai:
+    protocol: openai_chat
+    base_url: https://opencode.ai/inference/go/openai/v1
+    api_key_env: OPENCODE_GO_API_KEY
+    session_header: x-opencode-session
+  opencode_go_google:
+    protocol: google_genai
+    base_url: https://opencode.ai/inference/go/google
+    api_key_env: OPENCODE_GO_API_KEY
+    session_header: x-opencode-session
+
+# params are passed straight to the API: openai_chat uses max_tokens / temperature,
+# google_genai uses max_output_tokens / temperature / thinking_config.
+roles:
+  planner:   # setting bible, volume outline, chapter beat sheets, outline review
+    provider: opencode_go_google
+    model: gemini-4-argon-contributor
+    params: {max_output_tokens: 32000}
+  writer:    # prose only; sees nothing but the writer packet
+    provider: opencode_go_google
+    model: gemini-4-argon-contributor
+    params: {max_output_tokens: 32000, temperature: 1.0}
+  analyst:   # post-draft continuity extraction, reader-prediction test
+    provider: opencode_go_openai
+    model: deepseek-v4.1-flash
+    params: {max_tokens: 16000}
+
+targets:
+  chapters_per_volume: 10
+  scene_chars: 3000
+  scene_separator: ◇
+
+lint:
+  banned: []   # extra phrases that must never appear
+  watch: []    # extra words to keep sparse

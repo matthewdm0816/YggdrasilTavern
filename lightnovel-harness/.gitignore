@@ -1,0 +1,4 @@
+# Novel projects hold your own manuscripts; keep them out of this repo by default.
+/novels/
+# pytest falls back to the working directory for tmp_path in some sandboxes
+/pytest-of-*/

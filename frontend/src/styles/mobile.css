@@ -1,4 +1,5 @@
-:root { font-size: var(--desktop-font-size, var(--font-size-ui, 16px)); }
+/* Desktop text never drops below 0.75rem; the phone layout keeps its own compact sizes. */
+:root { font-size: var(--desktop-font-size, var(--font-size-ui, 16px)); --small-text-floor: 0.75rem; }
 /* Preserve the desktop toolbar while keeping every mobile action in one row. */
 .message-stats, .message-tools { display: contents; }
 
@@ -84,7 +85,7 @@
 }
 
 @media (max-width: 920px) {
-  :root { font-size: var(--mobile-font-size, 10px); --mobile-control-size: 2rem; --mobile-icon-size: 1.2rem; }
+  :root { font-size: var(--mobile-font-size, 10px); --mobile-control-size: 2rem; --mobile-icon-size: 1.2rem; --small-text-floor: 0px; }
   .chat-pane .chat-header { grid-template-columns: 2rem minmax(0, 1fr) 4.4rem; min-height: calc(2.4rem + env(safe-area-inset-top)); padding: env(safe-area-inset-top) 5px 0; gap: 4px; }
   .chat-header .session-header-identity { justify-content: center; gap: 6px; }
   .chat-header .chat-header-avatar { width: 1.6rem; height: 1.6rem; }

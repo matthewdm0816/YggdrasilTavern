@@ -82,19 +82,19 @@
   line-height: var(--line-height-message, 1.65);
   overflow-wrap: anywhere;
 }
-.message-meta { gap: 8px; font-size: 0.6875rem; }
+.message-meta { gap: 8px; font-size: max(0.6875rem, var(--small-text-floor)); }
 .message-footer { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; margin-top: 8px; }
-.message-usage { display: flex; flex: 1 1 180px; flex-wrap: wrap; gap: 2px 9px; color: var(--muted); font-size: 0.625rem; line-height: 1.5; }
+.message-usage { display: flex; flex: 1 1 180px; flex-wrap: wrap; gap: 2px 9px; color: var(--muted); font-size: max(0.625rem, var(--small-text-floor)); line-height: 1.5; }
 .message-branch-actions { display: flex; align-items: center; gap: 2px; margin-left: auto; }
 .message-branch-actions .icon-button { width: 30px; min-width: 30px; min-height: 30px; height: 30px; }
-.message-branch-actions .swipe-counter { min-width: 30px; text-align: center; color: var(--muted); font-size: 0.6875rem; }
+.message-branch-actions .swipe-counter { min-width: 30px; text-align: center; color: var(--muted); font-size: max(0.6875rem, var(--small-text-floor)); }
 .message-row.user { border-color: color-mix(in srgb, var(--color-user-border) 35%, transparent); }
 .message-row.assistant { border-color: color-mix(in srgb, var(--color-assistant-border) 35%, transparent); }
 .markdown-body a { color: var(--color-link); }
 .composer-area { flex: 0 0 auto; min-width: 0; border-top: 1px solid var(--line); background: var(--pane); padding-bottom: env(safe-area-inset-bottom); }
 .composer-tools { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 20px 0; min-width: 0; }
 .composer-tools > :first-child { flex: 1 1 auto; min-width: 0; }
-.composer-tools .continue-generation { flex: 0 0 auto; min-height: 30px; padding: 5px 8px; font-size: 0.6875rem; }
+.composer-tools .continue-generation { flex: 0 0 auto; min-height: 30px; padding: 5px 8px; font-size: max(0.6875rem, var(--small-text-floor)); }
 .composer-area .composer { position: static; border: 0; grid-template-columns: minmax(0, 1fr) 44px; gap: 10px; padding: 8px 20px 14px; }
 .composer-area .composer textarea { min-height: 62px; max-height: 28dvh; resize: vertical; }
 .composer-area .send-button { width: 44px; height: 44px; }
@@ -132,7 +132,7 @@
   .message-scroll .message-line { max-width: 100%; }
   .message-scroll .message-row { padding: 12px 10px 8px; }
   .message-branch-actions .icon-button { width: 36px; height: 36px; min-width: 36px; min-height: 36px; }
-  .message-usage { font-size: 0.625rem; }
+  .message-usage { font-size: max(0.625rem, var(--small-text-floor)); }
   .composer-tools { padding: 8px 10px 0; gap: 5px; }
   .composer-area .composer { padding: 7px 10px 10px; gap: 7px; }
   .composer-area .composer textarea { min-height: 48px; }
@@ -168,9 +168,10 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 4px;
+  gap: 3px;
   min-height: 32px;
-  padding: 4px 5px;
+  /* Tight enough that icon, label and a two-digit badge fit the 260px sidebar. */
+  padding: 4px 3px;
   border: 0;
   border-radius: var(--radius-sm, 6px);
   background: transparent;
@@ -212,11 +213,11 @@
   justify-content: center;
   min-width: 16px;
   height: 16px;
-  padding: 0 4px;
+  padding: 0 3px;
   border-radius: 999px;
   background: color-mix(in srgb, var(--line) 65%, transparent);
   color: var(--text);
-  font-size: 0.65rem;
+  font-size: max(0.65rem, var(--small-text-floor));
   font-weight: 600;
 }
 
@@ -281,7 +282,8 @@
   justify-content: center;
   gap: 8px;
 }
-
+.account-subsection { display: grid; gap: 10px; min-width: 0; padding-top: 8px; border-top: 1px solid var(--line); }
+.account-subsection > summary { color: var(--muted); font-size: 0.8125rem; font-weight: 600; cursor: pointer; }
 .quick-character-btn {
   padding: 7px 12px;
   font-size: 0.8125rem;

@@ -126,7 +126,7 @@ export function AuthGate({ children }: Props) {
       broadcastChange();
     } catch (cause) {
       setPassword("");
-      setLoginError(readableAuthError(cause));
+      setLoginError("登录失败：" + readableAuthError(cause));
       console.error("登录失败", cause);
     } finally {
       setSubmitting(false);
@@ -206,7 +206,7 @@ export function AuthGate({ children }: Props) {
                   onChange={(event) => setPassword(event.target.value)}
                 />
               </label>
-              {loginError && <p className="auth-error" role="alert">登录失败：{loginError}</p>}
+              {loginError && <p className="auth-error" role="alert">{loginError}</p>}
               <button className="primary-button auth-submit" type="submit" disabled={submitting || !username.trim() || !password}>
                 <LogIn size={17} />{submitting ? "正在登录…" : "登录"}
               </button>

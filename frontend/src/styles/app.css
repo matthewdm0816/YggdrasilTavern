@@ -239,7 +239,7 @@ button:disabled {
 .eyebrow {
   margin: 0 0 4px;
   color: var(--muted);
-  font-size: 0.6875rem;
+  font-size: max(0.6875rem, var(--small-text-floor));
   letter-spacing: 0;
   text-transform: uppercase;
 }
@@ -345,7 +345,7 @@ button:disabled {
 .worldbook-entry-card label > small,
 .entry-options label > small {
   color: var(--muted);
-  font-size: 0.6875rem;
+  font-size: max(0.6875rem, var(--small-text-floor));
   font-weight: 400;
   line-height: 1.4;
 }
@@ -400,7 +400,7 @@ button:disabled {
   border-radius: 999px;
   background: var(--chip-bg);
   color: var(--muted);
-  font-size: 0.625rem;
+  font-size: max(0.625rem, var(--small-text-floor));
   font-weight: 650;
 }
 
@@ -644,7 +644,7 @@ textarea:focus {
   gap: 5px;
   padding: 4px 6px;
   color: var(--muted);
-  font-size: 0.6875rem;
+  font-size: max(0.6875rem, var(--small-text-floor));
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.3px;
@@ -683,7 +683,7 @@ textarea:focus {
 .folder-count {
   color: var(--muted);
   font-weight: 400;
-  font-size: 0.6875rem;
+  font-size: max(0.6875rem, var(--small-text-floor));
   margin-left: 2px;
 }
 
@@ -774,7 +774,7 @@ textarea:focus {
 
 .session-character-name {
   color: var(--muted);
-  font-size: 0.6875rem;
+  font-size: max(0.6875rem, var(--small-text-floor));
   line-height: 1.25;
 }
 
@@ -821,7 +821,7 @@ textarea:focus {
   min-width: 0;
   max-width: 80px;
   padding: 2px 4px;
-  font-size: 0.625rem;
+  font-size: max(0.625rem, var(--small-text-floor));
   border: 1px solid var(--line);
   border-radius: 4px;
   background: var(--surface);
@@ -1222,7 +1222,7 @@ textarea:focus {
   border-radius: 6px;
   background: var(--surface);
   border: 1px solid var(--line);
-  font-size: 0.6875rem;
+  font-size: max(0.6875rem, var(--small-text-floor));
   font-weight: 700;
 }
 
@@ -1252,7 +1252,7 @@ textarea:focus {
   border-radius: 999px;
   background: var(--chip-bg);
   color: var(--muted);
-  font-size: 0.625rem;
+  font-size: max(0.625rem, var(--small-text-floor));
 }
 
 .context-budget-summary strong {
@@ -1633,7 +1633,7 @@ textarea:focus {
 }
 
 .slot-name-field > span {
-  font-size: 0.6875rem;
+  font-size: max(0.6875rem, var(--small-text-floor));
 }
 
 .slot-name-field input,
@@ -1727,7 +1727,7 @@ textarea:focus {
   border-radius: 999px;
   background: var(--chip-bg);
   color: var(--muted);
-  font-size: 0.6875rem;
+  font-size: max(0.6875rem, var(--small-text-floor));
   font-weight: 700;
   line-height: 1.2;
   overflow-wrap: anywhere;
@@ -1893,7 +1893,7 @@ textarea:focus {
 .regex-flags small,
 .target-grid small {
   color: var(--muted);
-  font-size: 0.6875rem;
+  font-size: max(0.6875rem, var(--small-text-floor));
   line-height: 1.35;
 }
 
@@ -1904,7 +1904,7 @@ textarea:focus {
   border-radius: 999px;
   background: var(--chip-bg);
   color: var(--muted);
-  font-size: 0.625rem;
+  font-size: max(0.625rem, var(--small-text-floor));
   font-weight: 600;
   white-space: nowrap;
 }
@@ -1957,7 +1957,7 @@ textarea:focus {
 
 .profile-row > span small {
   color: var(--muted);
-  font-size: 0.6875rem;
+  font-size: max(0.6875rem, var(--small-text-floor));
 }
 
 .profile-row > select {
@@ -1995,7 +1995,7 @@ textarea:focus {
   background: var(--surface-selected);
   object-fit: cover;
   color: var(--accent-text);
-  font-size: 0.625rem;
+  font-size: max(0.625rem, var(--small-text-floor));
   font-weight: 700;
 }
 
@@ -2097,7 +2097,7 @@ textarea:focus {
   border-radius: 6px;
   background: transparent;
   color: var(--muted);
-  font-size: 0.6875rem;
+  font-size: max(0.6875rem, var(--small-text-floor));
   line-height: 1.5;
   white-space: nowrap;
 }
@@ -2282,7 +2282,7 @@ textarea:focus {
 .forest-tree-stats {
   margin: 4px 0 0;
   color: var(--accent-text);
-  font-size: 0.6875rem;
+  font-size: max(0.6875rem, var(--small-text-floor));
   font-weight: 650;
 }
 
@@ -2352,7 +2352,7 @@ textarea:focus {
   grid-column: 1 / -1;
   margin: 0;
   color: var(--muted);
-  font-size: 0.6875rem;
+  font-size: max(0.6875rem, var(--small-text-floor));
 }
 
 .forest-tree-warning,
@@ -2463,7 +2463,7 @@ textarea:focus {
 
 .forest-tree-branch-toggle span {
   color: var(--accent-text);
-  font-size: 0.5625rem;
+  font-size: max(0.5625rem, var(--small-text-floor));
   font-weight: 750;
 }
 
@@ -2530,7 +2530,7 @@ textarea:focus {
   border-radius: 999px;
   background: var(--chip-bg);
   color: var(--muted);
-  font-size: 0.625rem;
+  font-size: max(0.625rem, var(--small-text-floor));
   font-weight: 700;
   white-space: nowrap;
 }
@@ -2566,7 +2566,7 @@ textarea:focus {
 .forest-tree-node-summary {
   overflow: hidden;
   color: var(--muted);
-  font-size: 0.6875rem;
+  font-size: max(0.6875rem, var(--small-text-floor));
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -3074,7 +3074,8 @@ textarea:focus {
 .regex-rule-card > summary > small { margin-left: 8px; color: var(--muted); }
 .regex-rule-fields { display: grid; gap: 8px; padding: 0 9px 9px; }
 .profile-key-status, .model-discovery-row { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
-.profile-key-status { flex-wrap: wrap; font-size: .8125rem; }
+/* Keep the key button beside its status, away from the delete button above it. */
+.profile-key-status { flex-wrap: wrap; justify-content: flex-start; font-size: .8125rem; }
 .model-discovery-notice { min-width: 0; color: var(--muted); font-size: .75rem; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
 .model-discovery-row .icon-button { flex-shrink: 0; }
 .font-size-setting { margin-bottom: 10px; }

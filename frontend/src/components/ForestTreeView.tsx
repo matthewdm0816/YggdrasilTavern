@@ -16,6 +16,7 @@ import { Message, SessionTree } from "../lib/api";
 import { sortMessages } from "../lib/tree";
 import { markdownPreviewText } from "../lib/markdownPreview";
 import { messageErrorText, messageStatusLabel } from "../lib/messageStatus";
+import { useMediaQuery } from "../lib/useMediaQuery";
 
 type Props = {
   tree: SessionTree;
@@ -196,6 +197,7 @@ export function ForestTreeView({ tree, onClose, onSelectMessage }: Props) {
   const previewId = useId();
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const previewRef = useRef<HTMLElement>(null);
+  const canHover = useMediaQuery("(hover: hover) and (pointer: fine)");
   const nodeRefs = useRef(new Map<string, HTMLButtonElement>());
   const model = useMemo(() => buildForest(tree.messages), [tree.messages]);
   const activePathKey = tree.active_path_ids.join("\u0000");
@@ -394,7 +396,7 @@ export function ForestTreeView({ tree, onClose, onSelectMessage }: Props) {
         <header className="forest-tree-header">
           <div>
             <h2 id={titleId}>完整聊天树</h2>
-            <p className="forest-tree-instructions">悬停或聚焦可临时预览；点击一次固定预览，再点同一节点即可跳转。</p>
+            <p className="forest-tree-instructions">{canHover ? "悬停或聚焦可临时预览；点击一次固定预览，再点同一节点即可跳转。" : "点一次节点固定预览，再点同一节点或“跳转到此节点”即可跳转。"}</p>
             <p className="forest-tree-stats">{model.roots.length} 棵树 · {tree.messages.length} 个节点 · 当前路径 {tree.active_path_ids.length} 个节点</p>
           </div>
           <button ref={closeButtonRef} className="icon-button" type="button" title="关闭完整聊天树" aria-label="关闭完整聊天树" onClick={onClose}><X size={18} /></button>

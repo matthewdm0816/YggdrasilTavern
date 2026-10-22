@@ -7,8 +7,9 @@ import {
   Edit3,
   GitBranch,
   Menu,
-  GitFork,
   LoaderCircle,
+  Network,
+  PanelRight,
   Plus,
   RefreshCcw,
   Send,
@@ -132,6 +133,13 @@ export function messageEditDraft(message: Pick<Message, "id" | "content" | "thin
     value: message.content,
     thinkingValue: message.thinking_content
   };
+}
+
+export function messageEditHasChanges(
+  edit: ReturnType<typeof messageEditDraft>,
+  message: Pick<Message, "content" | "thinking_content"> | undefined
+) {
+  return !message || edit.value !== message.content || edit.thinkingValue !== message.thinking_content;
 }
 
 export function ChatWorkspace({
@@ -273,9 +281,20 @@ export function ChatWorkspace({
     }
   }
 
+  function confirmDiscardEdit() {
+    if (!edit) return true;
+    const original = tree?.messages.find((message) => message.id === edit.messageId);
+    return !messageEditHasChanges(edit, original) || window.confirm("放弃未保存的修改？");
+  }
+
   function startEdit(message: Message) {
-    if (!sessionId) return;
+    if (!sessionId || edit?.messageId === message.id) return;
+    if (!confirmDiscardEdit()) return;
     setEdit(sessionId, messageEditDraft(message));
+  }
+
+  function cancelEdit() {
+    if (confirmDiscardEdit()) setEdit(sessionId, undefined);
   }
 
   async function saveEdit(message: Message, asNewSwipe = false) {
@@ -414,8 +433,8 @@ export function ChatWorkspace({
           </div>
         </div>
         <div className="chat-actions">
-          <button className="icon-button" type="button" title="当前路径分支与会话设置" aria-label="当前路径分支与会话设置" aria-expanded={rightOpen} onClick={onToggleRight}><GitFork size={19} /></button>
-          <button className="icon-button" type="button" title="浏览完整聊天树" aria-label="浏览完整聊天树" disabled={!tree} onClick={onOpenTree}><GitBranch size={19} /></button>
+          <button className="icon-button" type="button" title="当前路径分支与会话设置" aria-label="当前路径分支与会话设置" aria-expanded={rightOpen} onClick={onToggleRight}><PanelRight size={19} /></button>
+          <button className="icon-button" type="button" title="浏览完整聊天树" aria-label="浏览完整聊天树" disabled={!tree} onClick={onOpenTree}><Network size={19} /></button>
           <ActionMenu label="会话操作">
             <button type="button" data-close-menu disabled={!tree?.messages.length || messageActionsBusy} onClick={pruneEmptyBranches}><Trash2 size={16} />一键清理空白分支</button>
           </ActionMenu>
@@ -503,7 +522,7 @@ export function ChatWorkspace({
                     <div className="inline-actions">
                       <button className="primary-button" type="button" disabled={messageActionsBusy || (edit.value === message.content && edit.thinkingValue === message.thinking_content)} onClick={() => void saveEdit(message)}>{savingEdit ? "保存中…" : "保存修改"}</button>
                       <button className="secondary-button" type="button" disabled={messageActionsBusy} onClick={() => void saveEdit(message, true)}>保存为新分支</button>
-                      <button className="icon-button" type="button" title="取消" disabled={savingEdit} onClick={() => setEdit(sessionId, undefined)}><X size={16} /></button>
+                      <button className="icon-button" type="button" title="取消" disabled={savingEdit} onClick={cancelEdit}><X size={16} /></button>
                     </div>
                   </div>
                 ) : message.content ? (
@@ -558,7 +577,7 @@ export function ChatWorkspace({
           <button className="secondary-button continue-generation" type="button" title="从当前路径继续生成回复" disabled={!tree || messageActionsBusy || !canGenerate} onClick={onGenerate}><Sparkles size={15} /><span>继续</span></button>
         </div>
         <form className="composer" onSubmit={(event) => void submit(event)}>
-          <label className="composer-field"><span className="sr-only">发送消息</span><textarea
+          <label className="composer-field"><span className="sr-only">发送消息</span><AutoSizeTextarea
               value={draft}
               onChange={(event) => sessionId && setDraft(sessionId, event.target.value)}
               onKeyDown={handleComposerKeyDown}
@@ -568,7 +587,7 @@ export function ChatWorkspace({
           {streaming ? (
             <button className="send-button composer-stop-button" type="button" title="停止生成" aria-label="停止生成" onClick={onStop}><Square size={17} /></button>
           ) : (
-            <button className="send-button" disabled={!tree || !canGenerate || messageActionsBusy} title={draft.trim() ? "发送 (Ctrl+Enter)" : "空白发送：继续生成"} aria-label={draft.trim() ? "发送" : "空白发送：继续生成"}><Send size={18} /></button>
+            <button className="send-button" disabled={!tree || !canGenerate || messageActionsBusy} title={draft.trim() ? "发送 (Ctrl+Enter)" : "空白发送：继续生成"} aria-label={draft.trim() ? "发送" : "空白发送：继续生成"}>{draft.trim() ? <Send size={18} /> : <Sparkles size={18} />}</button>
           )}
         </form>
       </div>

@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { GitFork, Globe2, RefreshCcw, X } from "lucide-react";
+import { GitFork, Globe2, Network, RefreshCcw, X } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { api, SessionTree, WorldBook } from "../lib/api";
 import { markdownPreviewText } from "../lib/markdownPreview";
@@ -162,7 +162,7 @@ export function WorkspaceInspector({
           {allNearbyGroups.length > nearbyGroups.length && <p className="section-help">已显示最近 {nearbyGroups.length} 处分支；更早的分支可在完整聊天树中查看。</p>}
           {branchFeedback?.selecting && <p className="save-feedback" role="status">正在切换分支…</p>}
           {branchFeedback?.error && <p className="field-error" role="alert">{branchFeedback.error}</p>}
-          {onOpenTree && <button type="button" className="secondary-button full-button" disabled={!currentTree} onClick={onOpenTree}><GitFork size={15} />打开完整聊天树</button>}
+          {onOpenTree && <button type="button" className="secondary-button full-button" disabled={!currentTree} onClick={onOpenTree}><Network size={15} />打开完整聊天树</button>}
         </CollapsibleSection>
       )}
 

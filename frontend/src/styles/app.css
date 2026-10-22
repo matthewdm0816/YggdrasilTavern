@@ -1175,6 +1175,12 @@ textarea:focus {
   max-height: 180px;
 }
 
+/* The composer grows with its draft and scrolls once it reaches max-height. */
+.composer-area .composer textarea.auto-size-textarea {
+  overflow-y: auto;
+  resize: none;
+}
+
 .send-button {
   width: 46px;
   height: 46px;
@@ -2723,7 +2729,7 @@ textarea:focus {
 
 @media (max-width: 920px) {
   :root {
-    font-size: var(--mobile-font-size, 10px);
+    font-size: var(--mobile-font-size, 14px);
     --mobile-control-size: 2rem;
     --mobile-icon-size: 1.2rem;
   }
@@ -2983,14 +2989,19 @@ textarea:focus {
     grid-column: 1;
   }
 
+  /* The list scrolls on its own and the preview stays put, so pinning a node never moves the list. */
   .forest-tree-body {
-    display: block;
-    overflow: auto;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
   }
 
   .forest-tree-canvas {
-    min-height: 62dvh;
+    flex: 1 1 auto;
+    min-height: 0;
     padding: 14px 12px;
+    overflow: auto;
+    overscroll-behavior: contain;
   }
 
   .forest-tree-roots {
@@ -3004,9 +3015,9 @@ textarea:focus {
 
   .forest-tree-preview {
     position: static;
+    flex: 0 0 auto;
     width: 100%;
-    height: auto;
-    max-height: min(56dvh, 520px);
+    height: min(40dvh, 360px);
     padding: 13px 13px calc(13px + env(safe-area-inset-bottom));
     border-top: 1px solid var(--line);
     border-left: 0;
@@ -3031,9 +3042,11 @@ textarea:focus {
     grid-template-columns: 1fr;
   }
 
+  /* Below the chat header so errors never cover the composer. */
   .toast {
+    top: calc(2.4rem + env(safe-area-inset-top) + 6px);
     right: 10px;
-    bottom: calc(10px + env(safe-area-inset-bottom));
+    bottom: auto;
     left: 10px;
   }
 }

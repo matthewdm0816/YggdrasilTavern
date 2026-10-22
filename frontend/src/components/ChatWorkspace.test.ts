@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { generationTokenDisplay, getMessagePresentation, messageEditDraft } from "./ChatWorkspace";
+import { generationTokenDisplay, getMessagePresentation, messageEditDraft, messageEditHasChanges } from "./ChatWorkspace";
 
 describe("messageEditDraft", () => {
   it("keeps both visible content and thinking content editable", () => {
@@ -8,6 +8,20 @@ describe("messageEditDraft", () => {
       value: "Visible reply",
       thinkingValue: "Reasoning trace"
     });
+  });
+});
+
+describe("messageEditHasChanges", () => {
+  const message = { id: "message-1", content: "Visible reply", thinking_content: "Reasoning trace" };
+
+  it("treats an untouched draft as unchanged", () => {
+    expect(messageEditHasChanges(messageEditDraft(message), message)).toBe(false);
+  });
+
+  it("detects edits to the visible content or the thinking content", () => {
+    const draft = messageEditDraft(message);
+    expect(messageEditHasChanges({ ...draft, value: "Edited reply" }, message)).toBe(true);
+    expect(messageEditHasChanges({ ...draft, thinkingValue: "Edited trace" }, message)).toBe(true);
   });
 });
 

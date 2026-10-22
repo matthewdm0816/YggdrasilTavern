@@ -39,7 +39,7 @@ def test_generation_integrity_migration_upgrades_fresh_database(tmp_path, monkey
     assert {"folder_id", "pinned", "archived", "last_activity_at"}.issubset(
         {column["name"] for column in inspector.get_columns("sessions")}
     )
-    assert {"avatar_original_data_url", "avatar_transform"}.issubset(
+    assert {"avatar_original_data_url", "avatar_transform", "avatar_thumbnail_data_url"}.issubset(
         {column["name"] for column in inspector.get_columns("characters")}
     )
     assert ("selected_child_id",) in {
@@ -163,24 +163,42 @@ def test_global_worldbook_regex_migration_takes_latest_session_values(tmp_path, 
         engine.dispose()
 
 
-def test_tts_migration_preserves_existing_chat_and_leaves_speech_disabled(tmp_path, monkeypatch):
+def test_tts_migration_preserves_existing_chat_and_avatars_and_leaves_speech_disabled(tmp_path, monkeypatch):
     database_url = f"sqlite:///{(tmp_path / 'tts-migration.db').as_posix()}"
     config = alembic_config(database_url, monkeypatch)
-    command.upgrade(config, "0008_global_worldbook_regex")
+    command.upgrade(config, "0009_character_avatar_thumbnails")
     engine = create_engine(database_url)
     try:
         with Session(engine, expire_on_commit=False) as db:
-            session = models.ChatSession(title="Preserved chat")
+            # These distinct values verify byte-for-byte preservation of every
+            # persisted avatar representation, rather than re-rendering them.
+            character = models.Character(
+                name="Preserved character",
+                avatar_data_url="data:image/png;base64,c3RvcmVkLWF2YXRhcg==",
+                avatar_original_data_url="data:image/png;base64,c3RvcmVkLW9yaWdpbmFs",
+                avatar_thumbnail_data_url="data:image/webp;base64,c3RvcmVkLXRodW1ibmFpbA==",
+                avatar_transform={"x": 0.25, "y": 0.75, "scale": 1.5},
+            )
+            db.add(character)
+            db.flush()
+            session = models.ChatSession(title="Preserved chat", character_id=character.id)
             db.add(session)
             db.flush()
             message = models.Message(session_id=session.id, role="assistant", content="Original content")
             db.add(message)
             db.commit()
-            session_id, message_id = session.id, message.id
-        command.upgrade(config, "head")
+            character_id, session_id, message_id = character.id, session.id, message.id
+            avatar_query = text(
+                "SELECT avatar_data_url, avatar_original_data_url, avatar_thumbnail_data_url, "
+                "avatar_transform, created_at, updated_at FROM characters WHERE id = :id"
+            )
+            original_avatar = db.execute(avatar_query, {"id": character_id}).one()
+        command.upgrade(config, "0010_tts_settings")
         with Session(engine) as db:
             assert db.get(models.ChatSession, session_id).title == "Preserved chat"
+            assert db.get(models.ChatSession, session_id).character_id == character_id
             assert db.get(models.Message, message_id).content == "Original content"
+            assert db.execute(avatar_query, {"id": character_id}).one() == original_avatar
             assert db.get(models.TtsSettings, "default") is None
             db.add(models.TtsSettings())
             db.commit()
@@ -189,10 +207,16 @@ def test_tts_migration_preserves_existing_chat_and_leaves_speech_disabled(tmp_pa
             assert settings.trigger_mode == "manual"
             assert settings.api_key is None
         with engine.connect() as connection:
+            assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "0010_tts_settings"
             assert connection.exec_driver_sql("PRAGMA foreign_key_check").fetchall() == []
-        command.downgrade(config, "0008_global_worldbook_regex")
+        command.downgrade(config, "0009_character_avatar_thumbnails")
         assert "tts_settings" not in inspect(engine).get_table_names()
         with Session(engine) as db:
             assert db.get(models.Message, message_id).content == "Original content"
+            assert db.get(models.ChatSession, session_id).character_id == character_id
+            assert db.execute(avatar_query, {"id": character_id}).one() == original_avatar
+        with engine.connect() as connection:
+            assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "0009_character_avatar_thumbnails"
+            assert connection.exec_driver_sql("PRAGMA foreign_key_check").fetchall() == []
     finally:
         engine.dispose()

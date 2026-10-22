@@ -21,3 +21,7 @@
   .tts-save-bar { top: 65px; padding: 8px 16px; }
   .tts-playback-bar { gap: 5px; }
 }
+
+.tts-settings-dialog[open] { display: flex; flex-direction: column; overflow: hidden; }
+.tts-settings-dialog > .model-settings-header, .tts-settings-dialog > .tts-save-bar { position: static; flex: 0 0 auto; }
+.tts-settings-dialog > .model-settings-content { overflow-y: auto; min-height: 0; }

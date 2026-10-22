@@ -159,6 +159,9 @@ export default function AppShell() {
   );
   const queryError = chat.treeQuery.error || sessionsQuery.error || profilesQuery.error || charactersQuery.error || worldbooksQuery.error || worldbookRegexQuery.error;
   const displayedError = error || chat.error || (queryError instanceof Error ? queryError.message : queryError ? String(queryError) : null);
+  // A failed query keeps its error until it refetches, so remember which message the user closed.
+  const [dismissedError, setDismissedError] = useState<string | null>(null);
+  useEffect(() => { if (!displayedError) setDismissedError(null); }, [displayedError]);
   const shellClass = [
     "app-shell",
     mobilePanel ? "mobile-panel-" + mobilePanel : "",
@@ -259,11 +262,11 @@ export default function AppShell() {
       <TtsSettingsDialog open={ttsSettingsOpen} onClose={() => setTtsSettingsOpen(false)} />
       {ttsPreviewMessage && <TtsMessageDialog message={ttsPreviewMessage} settings={tts.settingsQuery.data} playback={tts}
         onClose={() => setTtsPreviewId(null)} onSettings={openTtsSettings} />}
-      {displayedError && (
+      {displayedError && displayedError !== dismissedError && (
         <div className="toast" role="alert">
           <AlertCircle size={16} />
           <span>{displayedError}</span>
-          <button className="icon-button" aria-label="关闭错误" onClick={() => { setError(null); chat.clearError(); }}><X size={15} /></button>
+          <button className="icon-button" aria-label="关闭错误" onClick={() => { setDismissedError(displayedError); setError(null); chat.clearError(); }}><X size={15} /></button>
         </div>
       )}
     </main>

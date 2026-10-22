@@ -4,8 +4,8 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision = "0009_tts_settings"
-down_revision = "0008_global_worldbook_regex"
+revision = "0010_tts_settings"
+down_revision = "0009_character_avatar_thumbnails"
 branch_labels = None
 depends_on = None
 

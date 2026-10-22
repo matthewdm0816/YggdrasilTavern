@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, text
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, event, inspect, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
@@ -153,6 +153,7 @@ class Character(TimestampMixin, Base):
     creator: Mapped[str] = mapped_column(String(200), default="", nullable=False)
     character_version: Mapped[str] = mapped_column(String(80), default="", nullable=False)
     avatar_data_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    avatar_thumbnail_data_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     avatar_original_data_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     avatar_transform: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     raw_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
@@ -160,6 +161,16 @@ class Character(TimestampMixin, Base):
     character_book: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
 
     sessions: Mapped[list["ChatSession"]] = relationship(back_populates="character")
+
+
+@event.listens_for(Character, "before_insert")
+@event.listens_for(Character, "before_update")
+def _persist_character_thumbnail(_mapper, _connection, character: Character) -> None:
+    state = inspect(character)
+    if state.pending or state.attrs.avatar_data_url.history.has_changes():
+        from .services.avatar_thumbnail import thumbnail_data_url
+
+        character.avatar_thumbnail_data_url = thumbnail_data_url(character.avatar_data_url)
 
 
 class WorldBook(TimestampMixin, Base):

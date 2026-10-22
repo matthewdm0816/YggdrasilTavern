@@ -4,7 +4,8 @@ import { CollapsibleSection } from "./CollapsibleSection";
 import { userStorageKey } from "../lib/userStorage";
 
 const storageKey = "yggdrasil-tavern.font-sizes";
-const defaults = { desktop: 14, mobile: 10 };
+const defaults = { desktop: 14, mobile: 14 };
+const storageVersion = 4;
 
 export function loadSizes() {
   if (typeof window === "undefined") return defaults;
@@ -14,9 +15,11 @@ export function loadSizes() {
     const parsed = JSON.parse(stored);
     if (parsed && typeof parsed.desktop === "number" && parsed.desktop >= 12 && parsed.desktop <= 22
       && typeof parsed.mobile === "number" && parsed.mobile >= 10 && parsed.mobile <= 22) {
+      const version = typeof parsed.version === "number" ? parsed.version : 0;
+      // Older versions saved their own default on mount, so a stored old default is not a user choice.
       return {
-        desktop: parsed.version !== 3 && parsed.desktop === 16 ? defaults.desktop : parsed.desktop,
-        mobile: parsed.version !== 2 && parsed.version !== 3 && parsed.mobile === 14 ? defaults.mobile : parsed.mobile
+        desktop: version < 3 && parsed.desktop === 16 ? defaults.desktop : parsed.desktop,
+        mobile: version < storageVersion && parsed.mobile === 10 ? defaults.mobile : parsed.mobile
       };
     }
     console.error("保存的字号设置无效，使用默认字号。", parsed);
@@ -38,7 +41,7 @@ export function DisplaySettings({ children }: { children?: ReactNode }) {
   useEffect(() => {
     applyFontSizeSettings(sizes);
     try {
-      window.localStorage.setItem(userStorageKey(storageKey), JSON.stringify({ version: 3, ...sizes }));
+      window.localStorage.setItem(userStorageKey(storageKey), JSON.stringify({ version: storageVersion, ...sizes }));
       setError(null);
     } catch (cause) {
       console.error("字号已应用，但无法保存到浏览器。", cause);

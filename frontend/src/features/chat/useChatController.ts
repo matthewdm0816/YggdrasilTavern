@@ -9,14 +9,17 @@ import { SessionTreeEpoch } from "./SessionTreeEpoch";
 type ChatControllerOptions = {
   selectedSessionId: string | null;
   activeProfileId: string;
+  onMessageCompleted?: (message: Message) => void;
 };
 
 function errorDetail(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
 }
 
-export function useChatController({ selectedSessionId, activeProfileId }: ChatControllerOptions) {
+export function useChatController({ selectedSessionId, activeProfileId, onMessageCompleted }: ChatControllerOptions) {
   const queryClient = useQueryClient();
+  const completedCallback = useRef(onMessageCompleted);
+  completedCallback.current = onMessageCompleted;
   const [streamingBySession, setStreamingBySession] = useState<Record<string, boolean>>({});
   const [errorsBySession, setErrorsBySession] = useState<Record<string, string | null>>({});
   const [mutatingBySession, setMutatingBySession] = useState<Record<string, boolean>>({});
@@ -185,6 +188,7 @@ export function useChatController({ selectedSessionId, activeProfileId }: ChatCo
         onComplete: (message) => {
           epochs.current.advance(sessionId);
           updateTree(sessionId, (current) => upsertTreeMessage(current, message, false));
+          completedCallback.current?.(message);
         },
         onError: (_, detail) => setSessionError(sessionId, detail)
       }, controller.signal);

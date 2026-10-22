@@ -1,0 +1,23 @@
+.tts-settings-dialog h2 { display: flex; align-items: center; gap: 8px; }
+.tts-save-bar { position: sticky; top: 78px; z-index: 2; display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 10px 24px; background: var(--pane); border-bottom: 1px solid var(--line); }
+.tts-save-bar > span { color: var(--muted); font-size: .8rem; }
+.tts-fields { border: 0; padding: 0; margin: 0; display: grid; gap: 12px; min-width: 0; }
+.tts-fields hr { width: 100%; border: 0; border-top: 1px solid var(--line); }
+.tts-checkbox { display: flex; align-items: flex-start; gap: 8px; font-size: .85rem; line-height: 1.5; }
+.tts-checkbox input { flex: 0 0 auto; margin-top: 3px; }
+.tts-field-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.tts-field-pair input, .tts-field-pair select { width: 100%; min-width: 0; }
+.tts-voice-actions { display: grid; gap: 6px; }
+.tts-voice-actions small { color: var(--muted); }
+.tts-playback-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 6px 2px; font-size: .85rem; }
+.tts-playback-bar > span { flex: 1; min-width: 100px; }
+.tts-playback-bar .field-error { flex-basis: 100%; margin: 0; white-space: pre-wrap; }
+.tts-preview-dialog .model-settings-content { display: grid; gap: 12px; }
+.tts-preview-dialog textarea { width: 100%; min-height: min(40dvh, 300px); resize: vertical; }
+.tts-preview-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.tts-preview-note { color: var(--muted); font-size: .8rem; }
+@media (max-width: 640px) {
+  .tts-field-pair { grid-template-columns: minmax(0, 1fr); }
+  .tts-save-bar { top: 65px; padding: 8px 16px; }
+  .tts-playback-bar { gap: 5px; }
+}

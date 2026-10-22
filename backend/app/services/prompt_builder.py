@@ -23,6 +23,13 @@ DEFAULT_SYSTEM = (
     "Stay in character, respect the established scene, and continue naturally from the conversation history."
 )
 
+TTS_TAG_INSTRUCTION = (
+    "For text-to-speech, wrap only the character's actually spoken dialogue in complete "
+    "<tts>...</tts> tags. Keep narration, actions, descriptions, and thoughts outside these tags. "
+    "Use a separate complete <tts>...</tts> block for each spoken passage, with no tag attributes. "
+    "The tags are formatting instructions and must not be spoken aloud."
+)
+
 
 @dataclass
 class LoreCandidate:
@@ -258,6 +265,7 @@ class PromptInputs:
     slots: tuple[schemas.PromptSlot, ...]
     prompt_config_revision: int
     prompt_config_error: Optional[str]
+    tts_tag_instruction: bool = False
 
 
 def load_context_inputs(
@@ -307,6 +315,7 @@ def load_context_inputs(
             )
         )
     slots, prompt_config_revision, _, prompt_config_error = global_prompt_state(db)
+    tts_settings = db.get(models.TtsSettings, "default")
     return PromptInputs(
         character=character,
         preset=preset,
@@ -318,6 +327,12 @@ def load_context_inputs(
         slots=tuple(slot.model_copy(deep=True) for slot in slots),
         prompt_config_revision=prompt_config_revision,
         prompt_config_error=prompt_config_error,
+        tts_tag_instruction=bool(
+            tts_settings
+            and tts_settings.enabled
+            and tts_settings.text_mode == "tags"
+            and tts_settings.instruct_model
+        ),
     )
 
 
@@ -462,6 +477,18 @@ def compile_context(inputs: PromptInputs) -> schemas.ContextPreviewOut:
                 role=slot.role,
                 content=transformed,
                 token_count=count_text_tokens(transformed),
+            )
+        )
+    if inputs.tts_tag_instruction:
+        compiled_blocks.append(
+            schemas.CompiledPromptBlock(
+                slot_id="tts.tag_instruction",
+                slot_kind="custom",
+                slot_name="TTS 朗读标签说明",
+                source="tts.settings",
+                role="system",
+                content=TTS_TAG_INSTRUCTION,
+                token_count=count_text_tokens(TTS_TAG_INSTRUCTION),
             )
         )
     compat_system, compat_messages = _compat_context(compiled_blocks)

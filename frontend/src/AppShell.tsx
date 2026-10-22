@@ -1,13 +1,18 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, X } from "lucide-react";
-import { api, APIProfile, ChatSession, RegexRule } from "./lib/api";
+import { api, APIProfile, ChatSession, RegexRule, SessionTree } from "./lib/api";
 import { useAppStore } from "./state/useAppStore";
 import { useChatController } from "./features/chat/useChatController";
 import { Sidebar } from "./components/Sidebar";
 import { ChatWorkspace } from "./components/ChatWorkspace";
 import { WorkspaceInspector } from "./components/WorkspaceInspector";
 import { ModelPicker } from "./components/ModelPicker";
+import { Volume2 } from "lucide-react";
+import { useTtsPlayback } from "./features/tts/useTtsPlayback";
+import { TtsSettingsDialog } from "./features/tts/TtsSettingsDialog";
+import { TtsMessageDialog } from "./features/tts/TtsMessageDialog";
+import { TtsPlaybackBar } from "./features/tts/TtsPlaybackBar";
 import { globalWorldbookRegexQuery } from "./components/GlobalWorldbookRegexPanel";
 import { useMediaQuery } from "./lib/useMediaQuery";
 import { useTheme } from "./features/theme";
@@ -38,6 +43,8 @@ export default function AppShell() {
   const [rightPreference, setRightPreference] = useState<boolean | null>(null);
   const rightOpen = rightPreference ?? isWide;
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [ttsSettingsOpen, setTtsSettingsOpen] = useState(false);
+  const [ttsPreviewId, setTtsPreviewId] = useState<string | null>(null);
   const [pickerBusy, setPickerBusy] = useState(false);
   const [settingsBusy, setSettingsBusy] = useState(false);
   const [modelSettingsProgress, setModelSettingsProgress] = useState<string | null>(null);
@@ -54,8 +61,27 @@ export default function AppShell() {
     queryKey: ["sessions", showArchived],
     queryFn: () => api.sessions(showArchived ? { archived: true } : undefined)
   });
-  const chat = useChatController({ selectedSessionId, activeProfileId });
+  const tts = useTtsPlayback(selectedSessionId);
+  const chat = useChatController({ selectedSessionId, activeProfileId, onMessageCompleted: (message) => {
+    const latest = queryClient.getQueryData<SessionTree>(["tree", message.session_id]);
+    if (latest?.active_path_ids.includes(message.id)) tts.onGenerated(message);
+  } });
   const tree = chat.tree;
+  const ttsPreviewMessage = tree?.messages.find(message => message.id === ttsPreviewId && message.role === "assistant" && message.status === "complete");
+  const spokenVersion = useRef<{ id: string; content: string } | null>(null);
+  useEffect(() => { setTtsPreviewId(null); }, [selectedSessionId]);
+  useEffect(() => {
+    const message = tree?.messages.find(item => item.id === tts.state.messageId);
+    if (!tts.state.messageId) { spokenVersion.current = null; return; }
+    if (!message || message.role !== "assistant" || message.status !== "complete" || !tree?.active_path_ids.includes(message.id)) {
+      tts.stop(); return;
+    }
+    if (spokenVersion.current?.id === message.id && spokenVersion.current.content !== message.content) {
+      tts.stop(); return;
+    }
+    spokenVersion.current = { id: message.id, content: message.content };
+  }, [tree, tts.state.messageId, tts.stop]);
+  const openTtsSettings = () => { setTtsPreviewId(null); setMobilePanel(null); setTtsSettingsOpen(true); };
 
   useEffect(() => {
     if (!selectedSessionId && sessionsQuery.data?.length) setSelectedSessionId(sessionsQuery.data[0].id);
@@ -145,6 +171,7 @@ export default function AppShell() {
     <main className={shellClass}>
       {drawer && <button className="workspace-scrim" aria-label="关闭面板" onClick={() => { setMobilePanel(null); if (!isMobile) setRightPreference(false); }} />}
       <Sidebar
+        onOpenTtsSettings={openTtsSettings}
         onBusyChange={setSettingsBusy}
         onModelProgressChange={setModelSettingsProgress}
         onProfileUpdated={profileUpdated}
@@ -191,6 +218,8 @@ export default function AppShell() {
         loadError={chat.treeQuery.error instanceof Error ? chat.treeQuery.error.message : null}
         streaming={chat.streaming}
         mutating={chat.mutating}
+        onReadMessage={(message) => setTtsPreviewId(message.id)}
+        ttsControls={<><button className="secondary-button" type="button" onClick={openTtsSettings}><Volume2 size={15} />语音朗读设置</button><TtsPlaybackBar playback={tts} />{tts.settingsQuery.error && <p className="field-error" role="alert">语音设置读取失败：{tts.settingsQuery.error instanceof Error ? tts.settingsQuery.error.message : String(tts.settingsQuery.error)}</p>}</>}
         onSend={chat.handleSend}
         onGenerate={() => chat.handleGenerate()}
         onStop={chat.stopGeneration}
@@ -227,6 +256,9 @@ export default function AppShell() {
         onCloseMobile={closeInspector}
         onError={setError}
       />
+      <TtsSettingsDialog open={ttsSettingsOpen} onClose={() => setTtsSettingsOpen(false)} />
+      {ttsPreviewMessage && <TtsMessageDialog message={ttsPreviewMessage} settings={tts.settingsQuery.data} playback={tts}
+        onClose={() => setTtsPreviewId(null)} onSettings={openTtsSettings} />}
       {displayedError && (
         <div className="toast" role="alert">
           <AlertCircle size={16} />

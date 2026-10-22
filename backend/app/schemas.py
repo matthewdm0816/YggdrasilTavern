@@ -253,6 +253,65 @@ class GlobalPromptConfigUpdate(BaseModel):
     expected_revision: int = Field(ge=0)
 
 
+class TtsSettingsBase(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    enabled: bool = False
+    provider: Literal["minimax", "openai_compatible"] = "minimax"
+    endpoint: str = Field(default="https://api.minimax.cn/v1/t2a_v2", max_length=1000)
+    model: str = Field(default="speech-2.8-hd", max_length=200)
+    voice: str = Field(default="", max_length=200)
+    speed: float = Field(default=1.0, ge=0.25, le=4.0, allow_inf_nan=False)
+    volume: float = Field(default=1.0, gt=0, le=10, allow_inf_nan=False)
+    pitch: int = Field(default=0, ge=-12, le=12)
+    emotion: str = Field(default="", max_length=80)
+    language_boost: str = Field(default="auto", max_length=80)
+    text_mode: Literal["dialogue", "tags"] = "dialogue"
+    trigger_mode: Literal["manual", "auto"] = "manual"
+    instruct_model: bool = True
+
+
+class TtsSettingsUpdate(TtsSettingsBase):
+    expected_revision: int = Field(ge=0)
+    # Empty/omitted values preserve the credential. Removal is always explicit.
+    api_key: Optional[str] = Field(default=None, max_length=8192, pattern=r"^[^\r\n]*$")
+    clear_api_key: bool = False
+
+
+class TtsSettingsOut(TtsSettingsBase, ORMModel):
+    revision: int = 0
+    has_api_key: bool = False
+
+
+class TtsPreviewRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+    mode: Optional[Literal["dialogue", "tags"]] = None
+
+
+class TtsPreviewOut(BaseModel):
+    message_id: str
+    text: str
+    segments: List[str]
+    warnings: List[str]
+    max_characters: int
+
+
+class TtsGenerateRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+    text: Optional[str] = Field(default=None, max_length=9999)
+
+
+class TtsVoiceOut(BaseModel):
+    id: str
+    name: str
+    description: str = ""
+    kind: str
+
+
+class TtsVoicesOut(BaseModel):
+    voices: List[TtsVoiceOut]
+
+
 class SillyTavernPreviewRequest(BaseModel):
     ssh_host: str = Field(min_length=1, max_length=200)
     directory: str = Field(default="~/SillyTavern", min_length=1, max_length=2048)

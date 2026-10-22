@@ -17,6 +17,7 @@ import {
   Square,
   Trash2,
   UserRound,
+  Volume2,
   X
 } from "lucide-react";
 import { api, CharacterSummary, ChatSession, Message, MessageDeleteScope, RegexRule, SessionTree } from "../lib/api";
@@ -56,6 +57,8 @@ type Props = {
   onOpenTree: () => void;
   onCloseTree: () => void;
   modelPicker: ReactNode;
+  ttsControls?: ReactNode;
+  onReadMessage?: (message: Message) => void;
   regexRules: RegexRule[];
   canGenerate: boolean;
   onQuickCreateSession?: (payload: Parameters<typeof api.createSession>[0]) => Promise<ChatSession>;
@@ -160,6 +163,8 @@ export function ChatWorkspace({
   onOpenTree,
   onCloseTree,
   modelPicker,
+  ttsControls,
+  onReadMessage,
   regexRules,
   canGenerate,
   onQuickCreateSession,
@@ -528,6 +533,7 @@ export function ChatWorkspace({
                     )}
                     <ActionMenu label="消息操作">
                       <button type="button" data-close-menu disabled={!message.content} onClick={() => void copyMessage(message)}><Copy size={16} />复制正文</button>
+                      {message.role === "assistant" && onReadMessage && <button type="button" data-close-menu disabled={messageActionsBusy || message.status !== "complete"} onClick={() => onReadMessage(message)}><Volume2 size={16} />朗读消息…</button>}
                       <button type="button" data-close-menu disabled={messageActionsBusy} onClick={() => void duplicateMessage(message)}><CopyPlus size={16} />复制为新分支</button>
                       <button type="button" data-close-menu disabled={messageActionsBusy} onClick={() => startEdit(message)}><Edit3 size={16} />编辑消息</button>
                       {message.role === "assistant" && <button type="button" data-close-menu disabled={messageActionsBusy || !canGenerate} onClick={() => onRegenerate(message.id)}><RefreshCcw size={16} />重新生成此回复</button>}
@@ -548,6 +554,7 @@ export function ChatWorkspace({
       </div>
 
       <div className="composer-area">
+        {ttsControls && <div className="tts-composer-controls">{ttsControls}</div>}
         {(treeActionLabel || mutating || treeActionResult) && <div className="chat-operation-status" role="status" aria-live="polite">
           {treeActionLabel || mutating ? <><LoaderCircle size={16} className="chat-operation-spinner" /><span>{treeActionLabel ? `${treeActionLabel}中…` : "正在更新会话…"}</span></> : <span>{treeActionResult}</span>}
           {!treeActionLabel && !mutating && <button className="icon-button" type="button" aria-label="关闭操作结果" onClick={() => setTreeActionResults((current) => ({ ...current, [sessionId]: null }))}><X size={14} /></button>}

@@ -9,6 +9,7 @@ from .imports import router as imports_router
 from .profiles import router as profiles_router
 from .prompts import router as prompts_router
 from .sessions import router as sessions_router
+from .tts import router as tts_router
 from .worldbooks import router as worldbooks_router
 
 router = APIRouter(prefix="/api")
@@ -27,3 +28,4 @@ router.include_router(worldbooks_router)
 router.include_router(folders_router)
 router.include_router(sessions_router)
 router.include_router(generation_router)
+router.include_router(tts_router)

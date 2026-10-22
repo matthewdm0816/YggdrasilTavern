@@ -161,3 +161,38 @@ def test_global_worldbook_regex_migration_takes_latest_session_values(tmp_path, 
             assert db.get(models.ChatSession, newer_id).preset["worldbook_ids"] == ["deleted-book"]
     finally:
         engine.dispose()
+
+
+def test_tts_migration_preserves_existing_chat_and_leaves_speech_disabled(tmp_path, monkeypatch):
+    database_url = f"sqlite:///{(tmp_path / 'tts-migration.db').as_posix()}"
+    config = alembic_config(database_url, monkeypatch)
+    command.upgrade(config, "0008_global_worldbook_regex")
+    engine = create_engine(database_url)
+    try:
+        with Session(engine, expire_on_commit=False) as db:
+            session = models.ChatSession(title="Preserved chat")
+            db.add(session)
+            db.flush()
+            message = models.Message(session_id=session.id, role="assistant", content="Original content")
+            db.add(message)
+            db.commit()
+            session_id, message_id = session.id, message.id
+        command.upgrade(config, "head")
+        with Session(engine) as db:
+            assert db.get(models.ChatSession, session_id).title == "Preserved chat"
+            assert db.get(models.Message, message_id).content == "Original content"
+            assert db.get(models.TtsSettings, "default") is None
+            db.add(models.TtsSettings())
+            db.commit()
+            settings = db.get(models.TtsSettings, "default")
+            assert settings.enabled is False
+            assert settings.trigger_mode == "manual"
+            assert settings.api_key is None
+        with engine.connect() as connection:
+            assert connection.exec_driver_sql("PRAGMA foreign_key_check").fetchall() == []
+        command.downgrade(config, "0008_global_worldbook_regex")
+        assert "tts_settings" not in inspect(engine).get_table_names()
+        with Session(engine) as db:
+            assert db.get(models.Message, message_id).content == "Original content"
+    finally:
+        engine.dispose()

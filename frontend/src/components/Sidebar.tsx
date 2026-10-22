@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { BookOpen, MessageSquarePlus, RefreshCcw, Settings, SlidersHorizontal, X } from "lucide-react";
+import { BookOpen, MessageSquarePlus, RefreshCcw, Settings, SlidersHorizontal, Volume2, X } from "lucide-react";
 import { api, APIProfile, CharacterSummary, ChatSession, WorldBook } from "../lib/api";
 import { DisplaySettings } from "./DisplaySettings";
 import { AccountPanel } from "./AccountPanel";
@@ -44,6 +44,7 @@ type Props = {
   settingsOpen: boolean;
   onCloseSettings: () => void;
   onOpenSettings?: () => void;
+  onOpenTtsSettings?: () => void;
   onBusyChange?: (busy: boolean) => void;
   onModelProgressChange?: (message: string | null) => void;
   onProfileUpdated?: (profile: APIProfile) => void;
@@ -71,6 +72,7 @@ export function Sidebar({
   settingsOpen,
   onCloseSettings,
   onOpenSettings,
+  onOpenTtsSettings,
   onBusyChange,
   onModelProgressChange,
   onProfileUpdated,
@@ -185,6 +187,7 @@ export function Sidebar({
                 <Settings size={16} />
                 模型与连接设置
               </button>
+              {onOpenTtsSettings && <button className="secondary-button sidebar-settings-button" type="button" onClick={onOpenTtsSettings}><Volume2 size={16} />语音朗读（试验）</button>}
               <DisplaySettings>{appearanceControls}</DisplaySettings>
               <AccountPanel />
             </div>

@@ -1,6 +1,7 @@
 import ReactMarkdown from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
+import { ttsDisplayText } from "../features/tts/displayText";
 
 type Props = {
   content: string;
@@ -28,7 +29,7 @@ export function MarkdownMessage({ content }: Props) {
           },
         }}
       >
-        {content}
+        {ttsDisplayText(content)}
       </ReactMarkdown>
     </div>
   );

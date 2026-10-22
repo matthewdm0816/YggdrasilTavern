@@ -62,6 +62,33 @@ class GlobalPromptConfig(TimestampMixin, Base):
     revision: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
 
 
+class TtsSettings(TimestampMixin, Base):
+    """One speech configuration in each user's isolated workspace database."""
+
+    __tablename__ = "tts_settings"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default="default")
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    provider: Mapped[str] = mapped_column(String(40), default="minimax", nullable=False)
+    endpoint: Mapped[str] = mapped_column(String(1000), default="https://api.minimax.cn/v1/t2a_v2", nullable=False)
+    model: Mapped[str] = mapped_column(String(200), default="speech-2.8-hd", nullable=False)
+    voice: Mapped[str] = mapped_column(String(200), default="", nullable=False)
+    api_key: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    speed: Mapped[float] = mapped_column(Float, default=1.0, nullable=False)
+    volume: Mapped[float] = mapped_column(Float, default=1.0, nullable=False)
+    pitch: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    emotion: Mapped[str] = mapped_column(String(80), default="", nullable=False)
+    language_boost: Mapped[str] = mapped_column(String(80), default="auto", nullable=False)
+    text_mode: Mapped[str] = mapped_column(String(20), default="dialogue", nullable=False)
+    trigger_mode: Mapped[str] = mapped_column(String(20), default="manual", nullable=False)
+    instruct_model: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    revision: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+
+    @property
+    def has_api_key(self) -> bool:
+        return bool(self.api_key)
+
+
 class GlobalWorldbookRegexConfig(TimestampMixin, Base):
     """Worldbooks and Regex rules shared by every session of this profile."""
 

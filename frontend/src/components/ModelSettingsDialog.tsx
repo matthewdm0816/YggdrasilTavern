@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { AlertCircle, CloudDownload, Eye, EyeOff, Pencil, Plus, Trash2, X } from "lucide-react";
+import { AlertCircle, CloudDownload, Eye, EyeOff, LoaderCircle, Pencil, Plus, Trash2, X } from "lucide-react";
 import { api, APIProfile, ProviderType, RemoteModelInfo } from "../lib/api";
 import { sortByName } from "../lib/order";
 
@@ -102,6 +102,7 @@ type Props = {
   onRefresh: () => Promise<void>;
   onError?: (message: string) => void;
   onBusyChange?: (busy: boolean) => void;
+  onProgressChange?: (message: string | null) => void;
   onProfileUpdated?: (profile: APIProfile) => void;
 };
 
@@ -114,11 +115,13 @@ export function ModelSettingsDialog({
   onRefresh,
   onError,
   onBusyChange,
+  onProgressChange,
   onProfileUpdated
 }: Props) {
   const [profile, setProfile] = useState(defaultProfile);
   const [busy, setBusy] = useState(false);
   const [refreshingProfileId, setRefreshingProfileId] = useState<string | null>(null);
+  const [switchingModel, setSwitchingModel] = useState(false);
   const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
   const [profileEditorOpen, setProfileEditorOpen] = useState(false);
   const [showApiKey, setShowApiKey] = useState(false);
@@ -134,6 +137,9 @@ export function ModelSettingsDialog({
   const returnFocusRef = useRef<HTMLElement | null>(null);
 
   const activeProfile = profiles.find((item) => item.id === activeProfileId);
+  const progressMessage = refreshingProfileId !== null
+    ? (switchingModel ? "正在切换模型…" : "正在加载模型列表…")
+    : busy ? "正在更新连接配置…" : null;
   const editedProfile = profiles.find((item) => item.id === editingProfileId);
   const profileDirty = profileDraftHasChanges(profile, editedProfile);
   const activeConnectionKey = activeProfile ? profileConnectionKey(activeProfile) : "";
@@ -206,6 +212,10 @@ export function ModelSettingsDialog({
   useEffect(() => {
     onBusyChange?.(busy || refreshingProfileId !== null);
   }, [busy, refreshingProfileId, onBusyChange]);
+
+  useEffect(() => {
+    onProgressChange?.(progressMessage);
+  }, [progressMessage, onProgressChange]);
 
   function reportProfileError(message: string) {
     setProfileError(message);
@@ -351,6 +361,7 @@ export function ModelSettingsDialog({
     if (!model) return;
     setProfileError(null);
     setProfileNotice(null);
+    setSwitchingModel(true);
     setRefreshingProfileId(profileId);
     try {
       const saved = await api.updateProfile(profileId, { model });
@@ -360,6 +371,7 @@ export function ModelSettingsDialog({
     } catch (exc) {
       reportProfileError(exc instanceof Error ? exc.message : String(exc));
     } finally {
+      setSwitchingModel(false);
       setRefreshingProfileId(null);
     }
   }
@@ -382,10 +394,12 @@ export function ModelSettingsDialog({
       }}
     >
       <header className="model-settings-header">
-        <div><h2 id="model-settings-title">模型与连接设置</h2></div>
+        <div><h2 id="model-settings-title">模型与连接设置</h2>
+          {progressMessage && <p className="model-progress" role="status" aria-live="polite"><LoaderCircle size={14} className="model-loading-spinner" aria-hidden="true" />{progressMessage}</p>}
+        </div>
         <button className="icon-button" type="button" aria-label="关闭模型与连接设置" disabled={busy || refreshingProfileId !== null} onClick={onCloseSettings}><X size={18} /></button>
       </header>
-      <div className="model-settings-content">
+      <div className="model-settings-content" aria-busy={busy || refreshingProfileId !== null}>
         {profileError && <p className="field-error" role="alert">{profileError}</p>}
         {profileNotice && <p className="model-settings-notice" role="status">{profileNotice}</p>}
         <div className="profile-selector-row">
@@ -401,7 +415,7 @@ export function ModelSettingsDialog({
             {activeProfile && (
               <>
                 <button className="icon-button" type="button" disabled={busy || refreshingProfileId !== null} title={`编辑 ${activeProfile.name}`} aria-label={`编辑 ${activeProfile.name}`} onClick={() => editProfile(activeProfile)}><Pencil size={15} /></button>
-                <button className="icon-button" type="button" disabled={busy || refreshingProfileId !== null} title="从远端刷新模型列表" aria-label={`刷新 ${activeProfile.name} 的模型列表`} onClick={() => refreshProfileModels(activeProfile.id)}><CloudDownload size={15} /></button>
+                <button className="icon-button" type="button" disabled={busy || refreshingProfileId !== null} title="从远端刷新模型列表" aria-label={`刷新 ${activeProfile.name} 的模型列表`} onClick={() => refreshProfileModels(activeProfile.id)}>{refreshingProfileId === activeProfile.id && !switchingModel ? <LoaderCircle size={15} className="model-loading-spinner" aria-hidden="true" /> : <CloudDownload size={15} />}</button>
                 <button className="icon-button danger-button" type="button" disabled={busy || refreshingProfileId !== null} title={`删除 ${activeProfile.name}`} aria-label={`删除 ${activeProfile.name}`} onClick={() => deleteProfile(activeProfile)}><Trash2 size={15} /></button>
               </>
             )}
@@ -444,7 +458,7 @@ export function ModelSettingsDialog({
             <label className="form-field"><span>自定义请求路径（可选）</span><input placeholder="默认路径" value={profile.path_override} onChange={(event) => setProfile({ ...profile, path_override: event.target.value })} /></label>
             <label className="form-field"><span>模型名称</span><input list="profile-draft-models" value={profile.model} onChange={(event) => setProfile({ ...profile, model: event.target.value })} /><datalist id="profile-draft-models">{orderedDraftModels.map((item) => <option key={item.id} value={item.id}>{remoteModelLabel(item)}</option>)}</datalist></label>
             {draftModels.length > 0 && <label className="form-field"><span>模型列表</span><select value={orderedDraftModels.some((item) => item.id === profile.model) ? profile.model : ""} onChange={(event) => event.target.value && setProfile({ ...profile, model: event.target.value })}><option value="">选择模型</option>{orderedDraftModels.map((item) => <option key={item.id} value={item.id}>{remoteModelLabel(item)}</option>)}</select></label>}
-            <div className="model-discovery-row"><p className="model-discovery-notice" role="status">{discoveringDraftModels ? "正在获取模型列表…" : draftModelsNotice}</p><button className="icon-button" type="button" title="重新获取模型列表" aria-label="重新获取模型列表" disabled={discoveringDraftModels} onClick={() => setDiscoveryAttempt((value) => value + 1)}><CloudDownload size={15} /></button></div>
+            <div className="model-discovery-row" aria-busy={discoveringDraftModels}><p className="model-discovery-notice model-progress" role="status" aria-live="polite">{discoveringDraftModels && <LoaderCircle size={14} className="model-loading-spinner" aria-hidden="true" />}{discoveringDraftModels ? "正在获取模型列表…" : draftModelsNotice}</p><button className="icon-button" type="button" title="重新获取模型列表" aria-label="重新获取模型列表" disabled={discoveringDraftModels} onClick={() => setDiscoveryAttempt((value) => value + 1)}>{discoveringDraftModels ? <LoaderCircle size={15} className="model-loading-spinner" aria-hidden="true" /> : <CloudDownload size={15} />}</button></div>
             <label className="form-field">
               <span>API Key</span>
               <div className="secret-input">

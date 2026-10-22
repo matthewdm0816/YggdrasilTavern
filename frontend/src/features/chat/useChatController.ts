@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, Message, SessionTree, streamGenerate } from "../../lib/api";
+import { api, Message, MessageDeleteScope, SessionTree, streamGenerate } from "../../lib/api";
 import { loadTreeSnapshot, reconcileTreeSnapshot, treeQueryKey, upsertTreeMessage } from "./treeCache";
 import { SessionGenerationRegistry } from "./SessionGenerationRegistry";
 import { SessionSelectionQueue } from "./SessionSelectionQueue";
@@ -19,10 +19,12 @@ export function useChatController({ selectedSessionId, activeProfileId }: ChatCo
   const queryClient = useQueryClient();
   const [streamingBySession, setStreamingBySession] = useState<Record<string, boolean>>({});
   const [errorsBySession, setErrorsBySession] = useState<Record<string, string | null>>({});
+  const [mutatingBySession, setMutatingBySession] = useState<Record<string, boolean>>({});
   const generations = useRef(new SessionGenerationRegistry());
   const selections = useRef(new SessionSelectionQueue());
   const epochs = useRef(new SessionTreeEpoch());
   const pendingSends = useRef(new Set<string>());
+  const pendingMutations = useRef(new Map<string, number>());
 
   const treeQuery = useQuery({
     queryKey: ["tree", selectedSessionId],
@@ -51,6 +53,36 @@ export function useChatController({ selectedSessionId, activeProfileId }: ChatCo
 
   function updateTree(sessionId: string, updater: (tree: SessionTree | undefined) => SessionTree | undefined) {
     queryClient.setQueryData<SessionTree | undefined>(treeQueryKey(sessionId), updater);
+  }
+
+  async function mutateTree(sessionId: string, request: () => Promise<SessionTree>, allowStreaming = false) {
+    const assertIdle = () => {
+      const cached = queryClient.getQueryData<SessionTree>(treeQueryKey(sessionId));
+      if (!allowStreaming && (pendingSends.current.has(sessionId) || generations.current.isActive(sessionId)
+        || cached?.messages.some((message) => message.status === "streaming"))) {
+        throw new Error("请先停止当前会话的生成，再修改消息或删除分支。");
+      }
+    };
+    assertIdle();
+    pendingMutations.current.set(sessionId, (pendingMutations.current.get(sessionId) || 0) + 1);
+    setMutatingBySession((current) => ({ ...current, [sessionId]: true }));
+    epochs.current.advance(sessionId);
+    try {
+      await selections.current.run(sessionId, async () => {
+        assertIdle();
+        await queryClient.cancelQueries({ queryKey: treeQueryKey(sessionId), exact: true });
+        return request();
+      }, (next) => {
+        epochs.current.advance(sessionId);
+        reconcileTreeSnapshot(queryClient, next, { authoritative: !allowStreaming });
+      }, !allowStreaming);
+      await queryClient.invalidateQueries({ queryKey: ["context-preview", sessionId] });
+    } finally {
+      const count = (pendingMutations.current.get(sessionId) || 1) - 1;
+      if (count) pendingMutations.current.set(sessionId, count);
+      else pendingMutations.current.delete(sessionId);
+      setMutatingBySession((current) => ({ ...current, [sessionId]: count > 0 }));
+    }
   }
 
   async function reloadTree(sessionIdOverride?: string) {
@@ -90,6 +122,7 @@ export function useChatController({ selectedSessionId, activeProfileId }: ChatCo
       throw new Error("请先在左侧 API 设置中选择或新建一组 API 配置");
     }
     if (pendingSends.current.has(sessionId) || generations.current.isActive(sessionId)) return;
+    if (pendingMutations.current.has(sessionId)) throw new Error("正在更新会话，请稍后发送。");
     if (!content.trim()) {
       void handleGenerate(undefined, sessionId);
       return;
@@ -110,6 +143,10 @@ export function useChatController({ selectedSessionId, activeProfileId }: ChatCo
   async function handleGenerate(regenerateMessageId?: string, sessionIdOverride?: string) {
     const sessionId = sessionIdOverride || selectedSessionId;
     if (!sessionId) return;
+    if (pendingMutations.current.has(sessionId)) {
+      setSessionError(sessionId, "正在更新会话，请稍后生成。");
+      return;
+    }
     if (!activeProfileId) {
       setSessionError(sessionId, "请先在 API Profiles 中选择或新建一个当前 Profile");
       return;
@@ -177,60 +214,62 @@ export function useChatController({ selectedSessionId, activeProfileId }: ChatCo
   async function handleSelectMessage(messageId: string) {
     const sessionId = selectedSessionId;
     if (!sessionId) return;
-    epochs.current.advance(sessionId);
-    await selections.current.run(
-      sessionId,
-      async () => {
-        await queryClient.cancelQueries({ queryKey: treeQueryKey(sessionId), exact: true });
-        return api.selectMessage(messageId);
-      },
-      (next) => {
-        epochs.current.advance(sessionId);
-        reconcileTreeSnapshot(queryClient, next);
-      }
-    );
+    await mutateTree(sessionId, () => api.selectMessage(messageId), true);
   }
 
   async function handleCreateSwipe(message: Message, content = message.content, thinkingContent = message.thinking_content) {
     const sessionId = message.session_id;
-    epochs.current.advance(sessionId);
-    await selections.current.run(
-      sessionId,
-      async () => {
-        await queryClient.cancelQueries({ queryKey: treeQueryKey(sessionId), exact: true });
-        return api.createSwipe(message.id, {
-          role: message.role,
-          speaker: message.speaker,
-          content,
-          thinking_content: thinkingContent,
-          status: "complete"
-        });
-      },
-      (next) => {
-        epochs.current.advance(sessionId);
-        reconcileTreeSnapshot(queryClient, next);
-      }
-    );
+    await mutateTree(sessionId, () => api.createSwipe(message.id, {
+      role: message.role,
+      speaker: message.speaker,
+      content,
+      thinking_content: thinkingContent,
+      status: "complete"
+    }));
   }
 
   async function handleUpdateMessage(message: Message, content: string, thinkingContent: string) {
     const sessionId = message.session_id;
-    epochs.current.advance(sessionId);
-    await selections.current.run(sessionId, async () => {
-      await queryClient.cancelQueries({ queryKey: treeQueryKey(sessionId), exact: true });
+    await mutateTree(sessionId, async () => {
       await api.updateMessage(message.id, { content, thinking_content: thinkingContent });
       return api.tree(sessionId);
-    }, (next) => {
-      epochs.current.advance(sessionId);
-      reconcileTreeSnapshot(queryClient, next);
     });
-    await queryClient.invalidateQueries({ queryKey: ["context-preview", sessionId] });
+  }
+
+  async function handleChangeMessageRole(message: Message, role: Message["role"]) {
+    await mutateTree(message.session_id, async () => {
+      await api.updateMessage(message.id, { role });
+      return api.tree(message.session_id);
+    });
+  }
+
+  async function handleDeleteMessage(message: Message, scope: MessageDeleteScope) {
+    let deletedCount = 0;
+    await mutateTree(message.session_id, async () => {
+      const next = await api.deleteMessage(message.id, scope);
+      deletedCount = next.deleted_count;
+      return next;
+    });
+    return deletedCount;
+  }
+
+  async function handlePruneEmptyBranches() {
+    if (!selectedSessionId) return 0;
+    const sessionId = selectedSessionId;
+    let deletedCount = 0;
+    await mutateTree(sessionId, async () => {
+      const next = await api.pruneEmptyBranches(sessionId);
+      deletedCount = next.deleted_count;
+      return next;
+    });
+    return deletedCount;
   }
 
   return {
     treeQuery,
     tree: treeQuery.data,
     streaming: Boolean(selectedSessionId && streamingBySession[selectedSessionId]),
+    mutating: Boolean(selectedSessionId && mutatingBySession[selectedSessionId]),
     error: selectedSessionId ? errorsBySession[selectedSessionId] : null,
     clearError: () => selectedSessionId && setSessionError(selectedSessionId, null),
     reloadTree,
@@ -239,6 +278,9 @@ export function useChatController({ selectedSessionId, activeProfileId }: ChatCo
     stopGeneration,
     handleSelectMessage,
     handleCreateSwipe,
-    handleUpdateMessage
+    handleUpdateMessage,
+    handleChangeMessageRole,
+    handleDeleteMessage,
+    handlePruneEmptyBranches
   };
 }

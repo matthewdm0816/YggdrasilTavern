@@ -70,6 +70,25 @@
   font-size: 0.8125rem;
 }
 
+.model-progress {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.model-loading-spinner {
+  flex: 0 0 auto;
+  animation: model-loading-rotation 0.9s linear infinite;
+}
+
+@keyframes model-loading-rotation {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .model-loading-spinner { animation: none; }
+}
+
 .composer-model-picker {
   min-width: 0;
 }

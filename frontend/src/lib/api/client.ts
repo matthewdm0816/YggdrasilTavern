@@ -9,7 +9,7 @@ import type { components } from "./generated";
 import type {
   APIProfile, AuthLogin, AuthStatus, UserProfile, Character, CharacterSummary,
   ChatSession, ContextPreview, GlobalPromptConfig, GlobalWorldbookRegexConfig, Message,
-  SessionFolder, SessionTree, WorldBook,
+  SessionFolder, SessionTree, MessageDeleteScope, MessageTreeMutation, WorldBook,
   SillyTavernImportReport, ImportedResource, SavedCredential
 } from "./types";
 export const api = {
@@ -98,6 +98,10 @@ export const api = {
     request<Message>(`/api/sessions/${sessionId}/messages`, { method: "POST", body: JSON.stringify(payload) }),
   updateMessage: (messageId: string, payload: MessageUpdateInput) =>
     request<Message>(`/api/messages/${messageId}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  deleteMessage: (messageId: string, scope: MessageDeleteScope) =>
+    request<MessageTreeMutation>(`/api/messages/${encodeURIComponent(messageId)}?scope=${scope}`, { method: "DELETE" }),
+  pruneEmptyBranches: (sessionId: string) =>
+    request<MessageTreeMutation>(`/api/sessions/${encodeURIComponent(sessionId)}/prune-empty-branches`, { method: "POST", body: "{}" }),
   selectMessage: (messageId: string) =>
     request<SessionTree>(`/api/messages/${messageId}/select`, { method: "POST", body: "{}" }),
   createSwipe: (messageId: string, payload: SwipeCreateInput) =>

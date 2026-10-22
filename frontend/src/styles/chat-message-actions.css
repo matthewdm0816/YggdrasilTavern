@@ -1,0 +1,34 @@
+.message-menu-divider {
+  margin: 4px 2px;
+  border-top: 1px solid var(--line);
+}
+
+.action-menu .message-menu-delete {
+  color: var(--red);
+}
+
+.chat-operation-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  padding: 3px 2px 6px;
+}
+
+.chat-operation-status > span {
+  flex: 1;
+}
+
+.chat-operation-spinner {
+  flex: 0 0 auto;
+  animation: chat-operation-spin 0.9s linear infinite;
+}
+
+@keyframes chat-operation-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-operation-spinner { animation: none; }
+}

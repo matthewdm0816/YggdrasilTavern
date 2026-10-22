@@ -520,13 +520,13 @@ def test_simultaneous_starts_roll_back_losing_message(tmp_path, monkeypatch):
 
     barrier = Barrier(2)
     release_started_run = Event()
-    original_active_path = generation_service.active_path
+    original_prepare_tree_mutation = generation_service.prepare_tree_mutation
 
-    def synchronized_path(db, session):
+    def synchronized_start(db, session, **kwargs):
         barrier.wait(timeout=10)
-        return original_active_path(db, session)
+        return original_prepare_tree_mutation(db, session, **kwargs)
 
-    monkeypatch.setattr(generation_service, "active_path", synchronized_path)
+    monkeypatch.setattr(generation_service, "prepare_tree_mutation", synchronized_start)
 
     def start_one():
         with database.open_session() as db:

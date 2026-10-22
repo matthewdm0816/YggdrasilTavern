@@ -1,0 +1,149 @@
+.global-prompt-save-bar {
+  /* The inspector itself scrolls. Keeping this inside the collapsible content
+     also hides it when that section or the Prompt tab is closed. */
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  display: grid;
+  gap: 4px;
+  margin-bottom: 10px;
+  padding: 8px 0 10px;
+  border-bottom: 1px solid var(--line);
+  background: var(--pane);
+}
+
+.global-prompt-save-bar .prompt-save-button {
+  width: 100%;
+  justify-content: center;
+}
+
+.global-prompt-save-bar .save-feedback,
+.global-prompt-save-bar .field-error {
+  margin: 0;
+}
+
+.prompt-slot-card > .slot-card-header {
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  gap: 4px;
+}
+
+.prompt-slot-card .slot-drag-handle {
+  width: 24px;
+}
+
+.prompt-slot-summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 3px 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+
+.prompt-slot-summary:hover {
+  background: var(--surface-hover);
+}
+
+.prompt-slot-summary > svg {
+  flex-shrink: 0;
+  color: var(--muted);
+}
+
+.prompt-slot-summary-text {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.prompt-slot-summary-text strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.prompt-slot-summary-text small {
+  color: var(--muted);
+  font-size: max(0.6875rem, var(--small-text-floor));
+  line-height: 1.4;
+}
+
+.prompt-slot-fields {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  border-top: 1px solid var(--line);
+  padding-top: 9px;
+}
+
+.prompt-slot-fields[hidden] {
+  display: none;
+}
+
+.prompt-slot-fields > footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.prompt-slot-fields > footer .danger-button {
+  margin-left: auto;
+}
+
+.prompt-slot-fields .expandable-field-header {
+  flex-wrap: wrap;
+}
+
+.prompt-slot-fields .expandable-field-label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.textarea-overlay-footer-with-actions {
+  flex-wrap: wrap;
+}
+
+.textarea-overlay-footer-with-actions .textarea-overlay-footer-details {
+  flex: 1 1 230px;
+  min-width: 0;
+}
+
+.textarea-overlay-footer-with-actions .textarea-overlay-footer-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.textarea-overlay-footer-with-actions .field-error {
+  margin-bottom: 0;
+  overflow-wrap: anywhere;
+}
+
+.prompt-save-spinner {
+  animation: prompt-save-spin 900ms linear infinite;
+}
+
+@keyframes prompt-save-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .prompt-save-spinner { animation: none; }
+}
+
+@media (max-width: 600px) {
+  .textarea-overlay-footer-with-actions .textarea-overlay-footer-actions {
+    width: 100%;
+  }
+
+  .textarea-overlay-footer-with-actions .prompt-save-button {
+    flex: 1;
+    justify-content: center;
+  }
+}

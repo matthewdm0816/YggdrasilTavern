@@ -26,7 +26,7 @@ from .token_counter import (
     output_tokens_from_usage,
     reasoning_tokens_from_usage,
 )
-from .tree import active_path, ancestor_path, create_message, get_message_or_404, get_session_or_404
+from .tree import active_path, ancestor_path, create_message, get_message_or_404, get_session_or_404, prepare_tree_mutation
 
 
 @dataclass(frozen=True)
@@ -91,14 +91,10 @@ async def start_generation(
     profile = db.get(models.APIProfile, payload.api_profile_id) if payload.api_profile_id else session.api_profile
     if not profile:
         raise ApplicationError(status_code=400, detail="请先在本地应用中选择一个 API Profile")
-    active_run_id = db.scalar(
-        select(models.GenerationRun.id).where(
-            models.GenerationRun.session_id == session.id,
-            models.GenerationRun.status == "streaming",
-        ).limit(1)
+    prepare_tree_mutation(
+        db, session,
+        busy_detail="此 Chat session 已有进行中的生成，请等待或取消后重试",
     )
-    if active_run_id is not None:
-        raise ApplicationError(status_code=409, detail="此 Chat session 已有进行中的生成，请等待或取消后重试")
     path = active_path(db, session)
     parent_id = path[-1].id if path else None
     context_path = path

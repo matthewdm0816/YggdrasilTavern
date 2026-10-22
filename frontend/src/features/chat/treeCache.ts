@@ -7,10 +7,12 @@ export function treeQueryKey(sessionId: string) {
   return ["tree", sessionId] as const;
 }
 
-export function reconcileTreeSnapshot(queryClient: QueryClient, incoming: SessionTree): SessionTree {
+export function reconcileTreeSnapshot(queryClient: QueryClient, incoming: SessionTree, options: { authoritative?: boolean } = {}): SessionTree {
   const key = treeQueryKey(incoming.session.id);
   const current = queryClient.getQueryData<SessionTree>(key);
-  const reconciled = mergeStreamingMessages(current, incoming);
+  // Mutation responses obtained while generation is idle include deletions and
+  // must replace the cache. Read/selection responses still merge local streams.
+  const reconciled = options.authoritative ? incoming : mergeStreamingMessages(current, incoming);
   queryClient.setQueryData(key, reconciled);
   return reconciled;
 }

@@ -84,6 +84,36 @@ describe("session concurrency", () => {
     await Promise.all([a, b]);
   });
 
+  it("keeps a successful deletion applied when the next queued selection fails", async () => {
+    const queue = new SessionSelectionQueue();
+    const client = new QueryClient();
+    const deletion = deferred<SessionTree>();
+    const original = tree("one", [message("one", "remove me", "complete")]);
+    client.setQueryData(treeQueryKey("one"), original);
+    const apply = (value: SessionTree) => { reconcileTreeSnapshot(client, value, { authoritative: true }); };
+    const first = queue.run("one", () => deletion.promise, apply, true);
+    const failedChoice = queue.run("one", async () => { throw new Error("Message not found"); }, apply);
+    const rejected = expect(failedChoice).rejects.toThrow("Message not found");
+    deletion.resolve(tree("one"));
+    await first;
+    await rejected;
+    expect(client.getQueryData<SessionTree>(treeQueryKey("one"))?.messages).toEqual([]);
+  });
+
+  it("does not resurrect deleted messages from a GET that was already in flight", async () => {
+    const client = new QueryClient();
+    const epoch = new SessionTreeEpoch();
+    const oldGet = deferred<SessionTree>();
+    const original = tree("one", [message("one", "removed", "complete")]);
+    client.setQueryData(treeQueryKey("one"), original);
+    const pending = loadTreeSnapshot(client, "one", () => oldGet.promise, epoch);
+    epoch.advance("one");
+    reconcileTreeSnapshot(client, tree("one"), { authoritative: true });
+    epoch.advance("one");
+    oldGet.resolve(original);
+    expect((await pending).messages).toEqual([]);
+  });
+
   it("reconciles an older server snapshot without changing another session", () => {
     const client = new QueryClient();
     const localOne = tree("one", [message("one", "long partial")]);

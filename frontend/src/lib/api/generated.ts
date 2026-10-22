@@ -669,11 +669,29 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        delete?: never;
+        /** Delete Message Endpoint */
+        delete: operations["delete_message_endpoint_api_messages__message_id__delete"];
         options?: never;
         head?: never;
         /** Update Message */
         patch: operations["update_message_api_messages__message_id__patch"];
+        trace?: never;
+    };
+    "/api/sessions/{session_id}/prune-empty-branches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Prune Empty Branches Endpoint */
+        post: operations["prune_empty_branches_endpoint_api_sessions__session_id__prune_empty_branches_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/messages/{message_id}/select": {
@@ -1618,8 +1636,20 @@ export interface components {
              */
             updated_at: string;
         };
+        /** MessageTreeMutationOut */
+        MessageTreeMutationOut: {
+            session: components["schemas"]["SessionOut"];
+            /** Messages */
+            messages: components["schemas"]["MessageOut"][];
+            /** Active Path Ids */
+            active_path_ids: string[];
+            /** Deleted Count */
+            deleted_count: number;
+        };
         /** MessageUpdate */
         MessageUpdate: {
+            /** Role */
+            role?: ("system" | "user" | "assistant") | null;
             /** Content */
             content?: string | null;
             /** Thinking Content */
@@ -3883,6 +3913,39 @@ export interface operations {
             };
         };
     };
+    delete_message_endpoint_api_messages__message_id__delete: {
+        parameters: {
+            query?: {
+                scope?: "swipe" | "layer";
+            };
+            header?: never;
+            path: {
+                message_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessageTreeMutationOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     update_message_api_messages__message_id__patch: {
         parameters: {
             query?: never;
@@ -3905,6 +3968,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MessageOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    prune_empty_branches_endpoint_api_sessions__session_id__prune_empty_branches_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessageTreeMutationOut"];
                 };
             };
             /** @description Validation Error */

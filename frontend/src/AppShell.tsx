@@ -40,6 +40,7 @@ export default function AppShell() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [pickerBusy, setPickerBusy] = useState(false);
   const [settingsBusy, setSettingsBusy] = useState(false);
+  const [modelSettingsProgress, setModelSettingsProgress] = useState<string | null>(null);
   const modelChanging = pickerBusy || settingsBusy;
   const [treeViewOpen, setTreeViewOpen] = useState(false);
   const theme = useTheme();
@@ -145,6 +146,7 @@ export default function AppShell() {
       {drawer && <button className="workspace-scrim" aria-label="关闭面板" onClick={() => { setMobilePanel(null); if (!isMobile) setRightPreference(false); }} />}
       <Sidebar
         onBusyChange={setSettingsBusy}
+        onModelProgressChange={setModelSettingsProgress}
         onProfileUpdated={profileUpdated}
         settingsOpen={settingsOpen}
         onCloseSettings={() => setSettingsOpen(false)}
@@ -188,6 +190,7 @@ export default function AppShell() {
         loading={chat.treeQuery.isPending && Boolean(selectedSessionId)}
         loadError={chat.treeQuery.error instanceof Error ? chat.treeQuery.error.message : null}
         streaming={chat.streaming}
+        mutating={chat.mutating}
         onSend={chat.handleSend}
         onGenerate={() => chat.handleGenerate()}
         onStop={chat.stopGeneration}
@@ -195,6 +198,9 @@ export default function AppShell() {
         onSelectMessage={chat.handleSelectMessage}
         onCreateSwipe={chat.handleCreateSwipe}
         onUpdateMessage={chat.handleUpdateMessage}
+        onChangeMessageRole={chat.handleChangeMessageRole}
+        onDeleteMessage={chat.handleDeleteMessage}
+        onPruneEmptyBranches={chat.handlePruneEmptyBranches}
         onToggleLeft={() => isMobile ? setMobilePanel((value) => value === "left" ? null : "left") : setLeftCollapsed((value) => !value)}
         onToggleRight={() => isMobile ? setMobilePanel((value) => value === "right" ? null : "right") : setRightPreference(!rightOpen)}
         leftOpen={isMobile ? mobilePanel === "left" : !leftCollapsed}
@@ -207,6 +213,7 @@ export default function AppShell() {
         onOpenSettings={openSettings}
         regexRules={worldbookRegexQuery.data?.regex_rules ?? NO_REGEX_RULES}
         modelPicker={<ModelPicker profiles={profilesQuery.data || []} activeProfileId={activeProfileId} onActiveProfileChange={setActiveProfileId}
+          loadingMessage={modelSettingsProgress || (profilesQuery.isFetching ? "正在读取连接配置…" : null)}
           onOpenSettings={openSettings} disabled={chat.streaming || profilesQuery.isFetching} onError={setError} onBusyChange={setPickerBusy} onProfileUpdated={profileUpdated}
           onChanged={async () => { await queryClient.invalidateQueries({ queryKey: ["profiles"] }, { throwOnError: true }); }} />}
       />

@@ -8,15 +8,18 @@ import {
   GitBranch,
   Menu,
   GitFork,
+  LoaderCircle,
   Plus,
   RefreshCcw,
   Send,
   Settings,
   Sparkles,
   Square,
+  Trash2,
+  UserRound,
   X
 } from "lucide-react";
-import { api, CharacterSummary, ChatSession, Message, RegexRule, SessionTree } from "../lib/api";
+import { api, CharacterSummary, ChatSession, Message, MessageDeleteScope, RegexRule, SessionTree } from "../lib/api";
 import { activeMessages as getActiveMessages, siblingsFor } from "../lib/tree";
 import { useAppStore } from "../state/useAppStore";
 import { messageErrorText, messageStatusLabel } from "../lib/messageStatus";
@@ -25,6 +28,7 @@ import { AutoSizeTextarea } from "./AutoSizeTextarea";
 import { ForestTreeView } from "./ForestTreeView";
 import { RegexMessage } from "./RegexMessage";
 import { ActionMenu } from "./ActionMenu";
+import "../styles/chat-message-actions.css";
 
 type Props = {
   tree?: SessionTree;
@@ -33,6 +37,7 @@ type Props = {
   loading: boolean;
   loadError: string | null;
   streaming: boolean;
+  mutating: boolean;
   onSend: (content: string) => Promise<void>;
   onGenerate: () => void;
   onStop: () => void;
@@ -40,6 +45,9 @@ type Props = {
   onSelectMessage: (messageId: string) => Promise<void>;
   onCreateSwipe: (message: Message, content?: string, thinkingContent?: string) => Promise<void>;
   onUpdateMessage: (message: Message, content: string, thinkingContent: string) => Promise<void>;
+  onChangeMessageRole: (message: Message, role: Message["role"]) => Promise<void>;
+  onDeleteMessage: (message: Message, scope: MessageDeleteScope) => Promise<number>;
+  onPruneEmptyBranches: () => Promise<number>;
   onToggleLeft: () => void;
   onToggleRight: () => void;
   leftOpen: boolean;
@@ -133,6 +141,7 @@ export function ChatWorkspace({
   loading,
   loadError,
   streaming,
+  mutating,
   onSend,
   onGenerate,
   onStop,
@@ -140,6 +149,9 @@ export function ChatWorkspace({
   onSelectMessage,
   onCreateSwipe,
   onUpdateMessage,
+  onChangeMessageRole,
+  onDeleteMessage,
+  onPruneEmptyBranches,
   onToggleLeft,
   onToggleRight,
   leftOpen,
@@ -168,8 +180,14 @@ export function ChatWorkspace({
   const [submittingSessions, setSubmittingSessions] = useState<Record<string, boolean>>({});
   const [savingEditSessions, setSavingEditSessions] = useState<Record<string, boolean>>({});
   const [quickCreatingId, setQuickCreatingId] = useState<string | null>(null);
+  const pendingTreeActions = useRef(new Set<string>());
+  const [treeActionLabels, setTreeActionLabels] = useState<Record<string, string | null>>({});
+  const [treeActionResults, setTreeActionResults] = useState<Record<string, string | null>>({});
+  const treeActionLabel = treeActionLabels[sessionId];
+  const treeActionResult = treeActionResults[sessionId];
   const submitting = Boolean(submittingSessions[sessionId]);
   const savingEdit = Boolean(savingEditSessions[sessionId]);
+  const messageActionsBusy = streaming || submitting || savingEdit || mutating || Boolean(treeActionLabel);
   const scrollRef = useRef<HTMLDivElement>(null);
   const shouldFollowRef = useRef(true);
   const pendingRevealRef = useRef<string | null>(null);
@@ -178,6 +196,10 @@ export function ChatWorkspace({
   const character = characters.find((item) => item.id === activeSession?.character_id);
   const hasKeyboardShortcut = useMediaQuery("(hover: hover) and (pointer: fine)");
   const contentRevision = activeMessages.map((message) => `${message.id}:${message.content.length}:${message.thinking_content.length}:${message.status}`).join("|");
+
+  useEffect(() => {
+    if (tree && edit && !tree.messages.some((message) => message.id === edit.messageId)) setEdit(sessionId, undefined);
+  }, [tree, edit, sessionId, setEdit]);
 
   useLayoutEffect(() => {
     shouldFollowRef.current = true;
@@ -203,7 +225,7 @@ export function ChatWorkspace({
 
   async function submitContent() {
     const content = draft.trim();
-    if (!sessionId || !tree || streaming || !canGenerate || pendingSubmissions.current.has(sessionId)) return;
+    if (!sessionId || !tree || messageActionsBusy || !canGenerate || pendingSubmissions.current.has(sessionId)) return;
     pendingSubmissions.current.add(sessionId);
     setSubmittingSessions((current) => ({ ...current, [sessionId]: true }));
     setInteractionError(null);
@@ -329,6 +351,51 @@ export function ChatWorkspace({
     }
   }
 
+  async function performTreeAction(label: string, action: () => Promise<string>) {
+    if (!sessionId || messageActionsBusy || pendingTreeActions.current.has(sessionId)) return;
+    pendingTreeActions.current.add(sessionId);
+    setTreeActionLabels((current) => ({ ...current, [sessionId]: label }));
+    setTreeActionResults((current) => ({ ...current, [sessionId]: null }));
+    setInteractionError(null);
+    try {
+      const result = await action();
+      setTreeActionResults((current) => ({ ...current, [sessionId]: result }));
+    } catch (cause) {
+      setInteractionError(`${label}失败：${cause instanceof Error ? cause.message : String(cause)}`);
+    } finally {
+      pendingTreeActions.current.delete(sessionId);
+      setTreeActionLabels((current) => ({ ...current, [sessionId]: null }));
+    }
+  }
+
+  function deleteMessage(message: Message, scope: MessageDeleteScope) {
+    if (messageActionsBusy) return;
+    const description = scope === "swipe"
+      ? "删除当前 swipe？\n\n将删除当前这条消息，以及从这条消息延伸的所有后续消息和分支。其他 swipe 会保留。\n\n此操作无法撤销。"
+      : "删除一整层？\n\n将删除与当前消息共享同一条父消息的全部 swipe，以及这些 swipe 的所有后续消息和分支。若当前消息没有父消息，将删除会话内所有消息。\n\n此操作无法撤销。";
+    if (!window.confirm(description)) return;
+    void performTreeAction(scope === "swipe" ? "删除 swipe" : "删除一整层", async () => {
+      const count = await onDeleteMessage(message, scope);
+      return `已删除 ${count} 条消息。`;
+    });
+  }
+
+  function pruneEmptyBranches() {
+    if (messageActionsBusy || !tree?.messages.length) return;
+    if (!window.confirm("清理当前会话的全部空白分支？\n\n只删除整棵子树中每条消息的正文和 Thinking 都为空或只有空白字符的分支。有正文或 Thinking 的消息及其上方路径会保留。\n\n此操作无法撤销。")) return;
+    void performTreeAction("清理空白分支", async () => {
+      const count = await onPruneEmptyBranches();
+      return count ? `已清理空白分支，共删除 ${count} 条消息。` : "没有需要清理的空白分支。";
+    });
+  }
+
+  function changeMessageRole(message: Message, role: Message["role"]) {
+    void performTreeAction("切换消息角色", async () => {
+      await onChangeMessageRole(message, role);
+      return `消息已改为${role === "assistant" ? "角色" : role === "user" ? "用户" : "系统"}消息。`;
+    });
+  }
+
   return (
     <section className="chat-pane">
       <header className="chat-header">
@@ -349,6 +416,9 @@ export function ChatWorkspace({
         <div className="chat-actions">
           <button className="icon-button" type="button" title="当前路径分支与会话设置" aria-label="当前路径分支与会话设置" aria-expanded={rightOpen} onClick={onToggleRight}><GitFork size={19} /></button>
           <button className="icon-button" type="button" title="浏览完整聊天树" aria-label="浏览完整聊天树" disabled={!tree} onClick={onOpenTree}><GitBranch size={19} /></button>
+          <ActionMenu label="会话操作">
+            <button type="button" data-close-menu disabled={!tree?.messages.length || messageActionsBusy} onClick={pruneEmptyBranches}><Trash2 size={16} />一键清理空白分支</button>
+          </ActionMenu>
         </div>
       </header>
 
@@ -426,13 +496,13 @@ export function ChatWorkspace({
                 )}
                 {isEditing ? (
                   <div className="editor-box">
-                    <label className="form-field"><span>正文</span><AutoSizeTextarea disabled={savingEdit} value={edit.value} onChange={(event) => setEdit(sessionId, { ...edit, value: event.target.value })} /></label>
+                    <label className="form-field"><span>正文</span><AutoSizeTextarea disabled={messageActionsBusy} value={edit.value} onChange={(event) => setEdit(sessionId, { ...edit, value: event.target.value })} /></label>
                     {(message.role === "assistant" || message.thinking_content) && (
-                      <label className="form-field"><span>Thinking</span><AutoSizeTextarea disabled={savingEdit} value={edit.thinkingValue} onChange={(event) => setEdit(sessionId, { ...edit, thinkingValue: event.target.value })} /></label>
+                      <label className="form-field"><span>Thinking</span><AutoSizeTextarea disabled={messageActionsBusy} value={edit.thinkingValue} onChange={(event) => setEdit(sessionId, { ...edit, thinkingValue: event.target.value })} /></label>
                     )}
                     <div className="inline-actions">
-                      <button className="primary-button" type="button" disabled={savingEdit || streaming || (edit.value === message.content && edit.thinkingValue === message.thinking_content)} onClick={() => void saveEdit(message)}>{savingEdit ? "保存中…" : "保存修改"}</button>
-                      <button className="secondary-button" type="button" disabled={savingEdit || streaming} onClick={() => void saveEdit(message, true)}>保存为新分支</button>
+                      <button className="primary-button" type="button" disabled={messageActionsBusy || (edit.value === message.content && edit.thinkingValue === message.thinking_content)} onClick={() => void saveEdit(message)}>{savingEdit ? "保存中…" : "保存修改"}</button>
+                      <button className="secondary-button" type="button" disabled={messageActionsBusy} onClick={() => void saveEdit(message, true)}>保存为新分支</button>
                       <button className="icon-button" type="button" title="取消" disabled={savingEdit} onClick={() => setEdit(sessionId, undefined)}><X size={16} /></button>
                     </div>
                   </div>
@@ -449,18 +519,25 @@ export function ChatWorkspace({
                     {speed > 0 && <span>{speed.toFixed(1)} tokens/s</span>}
                   </small>}
                   <div className="message-branch-actions" aria-label="分支切换">
-                    <button className="icon-button" type="button" title="上一个分支" aria-label="上一个分支" disabled={!previous} onClick={() => previous && selectSwipeFromToolbar(previous.id)}><ChevronLeft size={16} /></button>
+                    <button className="icon-button" type="button" title="上一个分支" aria-label="上一个分支" disabled={!previous || mutating || Boolean(treeActionLabel)} onClick={() => previous && selectSwipeFromToolbar(previous.id)}><ChevronLeft size={16} /></button>
                     <span className="swipe-counter" aria-label={"第 " + (index + 1) + " 个，共 " + siblings.length + " 个分支"}>{index + 1}/{siblings.length}</span>
-                    <button className="icon-button" type="button" title="下一个分支" aria-label="下一个分支" disabled={!next} onClick={() => next && selectSwipeFromToolbar(next.id)}><ChevronRight size={16} /></button>
-                    <button className="icon-button message-quick-action" type="button" title="编辑消息" aria-label="编辑消息" disabled={streaming} onClick={() => startEdit(message)}><Edit3 size={15} /></button>
+                    <button className="icon-button" type="button" title="下一个分支" aria-label="下一个分支" disabled={!next || mutating || Boolean(treeActionLabel)} onClick={() => next && selectSwipeFromToolbar(next.id)}><ChevronRight size={16} /></button>
+                    <button className="icon-button message-quick-action" type="button" title="编辑消息" aria-label="编辑消息" disabled={messageActionsBusy} onClick={() => startEdit(message)}><Edit3 size={15} /></button>
                     {message.role === "assistant" && (
-                      <button className="icon-button message-quick-action" type="button" title="重新生成此回复" aria-label="重新生成此回复" disabled={streaming || submitting || !canGenerate} onClick={() => onRegenerate(message.id)}><RefreshCcw size={15} /></button>
+                      <button className="icon-button message-quick-action" type="button" title="重新生成此回复" aria-label="重新生成此回复" disabled={messageActionsBusy || !canGenerate} onClick={() => onRegenerate(message.id)}><RefreshCcw size={15} /></button>
                     )}
                     <ActionMenu label="消息操作">
                       <button type="button" data-close-menu disabled={!message.content} onClick={() => void copyMessage(message)}><Copy size={16} />复制正文</button>
-                      <button type="button" data-close-menu disabled={streaming} onClick={() => void duplicateMessage(message)}><CopyPlus size={16} />复制为新分支</button>
-                      <button type="button" data-close-menu disabled={streaming} onClick={() => startEdit(message)}><Edit3 size={16} />编辑消息</button>
-                      {message.role === "assistant" && <button type="button" data-close-menu disabled={streaming || submitting || !canGenerate} onClick={() => onRegenerate(message.id)}><RefreshCcw size={16} />重新生成此回复</button>}
+                      <button type="button" data-close-menu disabled={messageActionsBusy} onClick={() => void duplicateMessage(message)}><CopyPlus size={16} />复制为新分支</button>
+                      <button type="button" data-close-menu disabled={messageActionsBusy} onClick={() => startEdit(message)}><Edit3 size={16} />编辑消息</button>
+                      {message.role === "assistant" && <button type="button" data-close-menu disabled={messageActionsBusy || !canGenerate} onClick={() => onRegenerate(message.id)}><RefreshCcw size={16} />重新生成此回复</button>}
+                      <div className="message-menu-divider" role="separator" />
+                      {(["assistant", "user", "system"] as const).filter((role) => role !== message.role).map((role) => (
+                        <button key={role} type="button" data-close-menu disabled={messageActionsBusy} onClick={() => changeMessageRole(message, role)}><UserRound size={16} />改为{role === "assistant" ? "角色" : role === "user" ? "用户" : "系统"}消息</button>
+                      ))}
+                      <div className="message-menu-divider" role="separator" />
+                      <button className="message-menu-delete" type="button" data-close-menu disabled={messageActionsBusy} onClick={() => deleteMessage(message, "swipe")}><Trash2 size={16} />删除当前 swipe…</button>
+                      <button className="message-menu-delete" type="button" data-close-menu disabled={messageActionsBusy} onClick={() => deleteMessage(message, "layer")}><Trash2 size={16} />删除一整层…</button>
                     </ActionMenu>
                   </div>
                 </footer>
@@ -471,10 +548,14 @@ export function ChatWorkspace({
       </div>
 
       <div className="composer-area">
+        {(treeActionLabel || mutating || treeActionResult) && <div className="chat-operation-status" role="status" aria-live="polite">
+          {treeActionLabel || mutating ? <><LoaderCircle size={16} className="chat-operation-spinner" /><span>{treeActionLabel ? `${treeActionLabel}中…` : "正在更新会话…"}</span></> : <span>{treeActionResult}</span>}
+          {!treeActionLabel && !mutating && <button className="icon-button" type="button" aria-label="关闭操作结果" onClick={() => setTreeActionResults((current) => ({ ...current, [sessionId]: null }))}><X size={14} /></button>}
+        </div>}
         {(interactionError || loadError) && <div className="composer-error" role="alert">{interactionError || loadError}</div>}
         <div className="composer-tools">
           {modelPicker}
-          <button className="secondary-button continue-generation" type="button" title="从当前路径继续生成回复" disabled={!tree || streaming || submitting || !canGenerate} onClick={onGenerate}><Sparkles size={15} /><span>继续</span></button>
+          <button className="secondary-button continue-generation" type="button" title="从当前路径继续生成回复" disabled={!tree || messageActionsBusy || !canGenerate} onClick={onGenerate}><Sparkles size={15} /><span>继续</span></button>
         </div>
         <form className="composer" onSubmit={(event) => void submit(event)}>
           <label className="composer-field"><span className="sr-only">发送消息</span><textarea
@@ -487,7 +568,7 @@ export function ChatWorkspace({
           {streaming ? (
             <button className="send-button composer-stop-button" type="button" title="停止生成" aria-label="停止生成" onClick={onStop}><Square size={17} /></button>
           ) : (
-            <button className="send-button" disabled={!tree || !canGenerate || submitting} title={draft.trim() ? "发送 (Ctrl+Enter)" : "空白发送：继续生成"} aria-label={draft.trim() ? "发送" : "空白发送：继续生成"}><Send size={18} /></button>
+            <button className="send-button" disabled={!tree || !canGenerate || messageActionsBusy} title={draft.trim() ? "发送 (Ctrl+Enter)" : "空白发送：继续生成"} aria-label={draft.trim() ? "发送" : "空白发送：继续生成"}><Send size={18} /></button>
           )}
         </form>
       </div>

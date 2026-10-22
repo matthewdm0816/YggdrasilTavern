@@ -242,6 +242,9 @@ export type SessionTree = Omit<WireSessionTree, "session" | "messages"> & {
   messages: Message[];
 };
 
+export type MessageDeleteScope = "swipe" | "layer";
+export type MessageTreeMutation = SessionTree & Pick<components["schemas"]["MessageTreeMutationOut"], "deleted_count">;
+
 export type ContextPreview = {
   system: string;
   messages: Array<{ role: string; speaker: string; content: string }>;

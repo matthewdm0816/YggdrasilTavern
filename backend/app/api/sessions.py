@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Dict, List, Optional
+from typing import Dict, List, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
@@ -16,10 +16,13 @@ from ..services.tree import (
     active_path_ids,
     create_message,
     create_swipe,
+    delete_message_branch,
     get_message_or_404,
     get_session_or_404,
     last_active_message,
     list_messages,
+    prepare_tree_mutation,
+    prune_empty_branches,
     select_message,
 )
 from ._shared import (
@@ -175,10 +178,24 @@ def append_message(session_id: str, payload: schemas.MessageCreate, db: Session 
 @router.patch("/messages/{message_id}", response_model=schemas.MessageOut)
 def update_message(message_id: str, payload: schemas.MessageUpdate, db: Session = Depends(get_db)) -> models.Message:
     message = get_message_or_404(db, message_id)
+    session = get_session_or_404(db, message.session_id)
+    if "role" in payload.model_fields_set:
+        if payload.role is None:
+            raise HTTPException(status_code=422, detail="消息角色不能为空")
+        prepare_tree_mutation(db, session)
+        message = db.get(models.Message, message_id, populate_existing=True)
+        if message is None:
+            raise HTTPException(status_code=404, detail="Message not found")
     if message.status == "streaming":
         raise HTTPException(status_code=409, detail="这条消息正在生成，请停止生成后再修改，以免新内容覆盖编辑结果")
     _update_model(message, payload)
-    session = get_session_or_404(db, message.session_id)
+    if payload.role is not None and "speaker" not in payload.model_fields_set:
+        if payload.role == "assistant":
+            message.speaker = session.character.name if session.character else "Assistant"
+        elif payload.role == "user":
+            message.speaker = str((session.preset or {}).get("user_name") or "User")
+        else:
+            message.speaker = "System"
     model_name = session.api_profile.model if session.api_profile else None
     message.token_count = count_text_tokens(message.content, model_name)
     message.thinking_token_count = count_text_tokens(message.thinking_content, model_name)
@@ -186,6 +203,28 @@ def update_message(message_id: str, payload: schemas.MessageUpdate, db: Session 
     db.commit()
     db.refresh(message)
     return message
+
+
+@router.delete("/messages/{message_id}", response_model=schemas.MessageTreeMutationOut)
+def delete_message_endpoint(
+    message_id: str,
+    scope: Literal["swipe", "layer"] = "swipe",
+    db: Session = Depends(get_db),
+) -> schemas.MessageTreeMutationOut:
+    session, deleted_count = delete_message_branch(db, message_id, scope=scope)
+    return schemas.MessageTreeMutationOut(
+        session=session, messages=list_messages(db, session.id),
+        active_path_ids=active_path_ids(db, session), deleted_count=deleted_count,
+    )
+
+
+@router.post("/sessions/{session_id}/prune-empty-branches", response_model=schemas.MessageTreeMutationOut)
+def prune_empty_branches_endpoint(session_id: str, db: Session = Depends(get_db)) -> schemas.MessageTreeMutationOut:
+    session, deleted_count = prune_empty_branches(db, session_id)
+    return schemas.MessageTreeMutationOut(
+        session=session, messages=list_messages(db, session.id),
+        active_path_ids=active_path_ids(db, session), deleted_count=deleted_count,
+    )
 
 
 @router.post("/messages/{message_id}/select", response_model=schemas.SessionTreeOut)

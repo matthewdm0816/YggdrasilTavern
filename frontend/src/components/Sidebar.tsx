@@ -45,6 +45,7 @@ type Props = {
   onCloseSettings: () => void;
   onOpenSettings?: () => void;
   onBusyChange?: (busy: boolean) => void;
+  onModelProgressChange?: (message: string | null) => void;
   onProfileUpdated?: (profile: APIProfile) => void;
   appearanceControls?: ReactNode;
   initialTab?: SidebarTab;
@@ -71,6 +72,7 @@ export function Sidebar({
   onCloseSettings,
   onOpenSettings,
   onBusyChange,
+  onModelProgressChange,
   onProfileUpdated,
   appearanceControls,
   initialTab = "sessions"
@@ -198,6 +200,7 @@ export function Sidebar({
         onRefresh={onRefresh}
         onError={onError}
         onBusyChange={onBusyChange}
+        onProgressChange={onModelProgressChange}
         onProfileUpdated={onProfileUpdated}
       />
     </>

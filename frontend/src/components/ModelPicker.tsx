@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Settings } from "lucide-react";
+import { LoaderCircle, Settings } from "lucide-react";
 import { api, APIProfile } from "../lib/api";
 import { sortByName } from "../lib/order";
 import "../styles/model-settings.css";
@@ -10,6 +10,7 @@ type Props = {
   onActiveProfileChange: (id: string) => void;
   onOpenSettings: () => void;
   disabled?: boolean;
+  loadingMessage?: string | null;
   onError?: (message: string) => void;
   onChanged?: () => Promise<void>;
   onBusyChange?: (busy: boolean) => void;
@@ -43,7 +44,7 @@ function choiceValue(profileId: string, model: string) {
   return JSON.stringify([profileId, model]);
 }
 
-export function ModelPicker({ profiles, activeProfileId, onActiveProfileChange, onOpenSettings, disabled, onError, onChanged, onBusyChange, onProfileUpdated }: Props) {
+export function ModelPicker({ profiles, activeProfileId, onActiveProfileChange, onOpenSettings, disabled, loadingMessage, onError, onChanged, onBusyChange, onProfileUpdated }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedModels, setSavedModels] = useState<Record<string, string>>({});
@@ -57,7 +58,7 @@ export function ModelPicker({ profiles, activeProfileId, onActiveProfileChange, 
   useEffect(() => { setSavedModels({}); }, [profiles]);
 
   async function selectModel(value: string) {
-    if (!value || disabled || changingRef.current) return;
+    if (!value || disabled || loadingMessage || changingRef.current) return;
     changingRef.current = true;
     setBusy(true);
     setError(null);
@@ -88,15 +89,15 @@ export function ModelPicker({ profiles, activeProfileId, onActiveProfileChange, 
   }
 
   return (
-    <div className="composer-model-picker">
+    <div className="composer-model-picker" aria-busy={busy || Boolean(loadingMessage)}>
       <div className="composer-model-controls">
         <label className="composer-model-choice">
-          <span>{busy ? "正在切换模型…" : "当前模型"}</span>
+          <span className="model-progress" role="status" aria-live="polite">{(busy || loadingMessage) && <LoaderCircle size={14} className="model-loading-spinner" aria-hidden="true" />}{busy ? "正在切换模型…" : loadingMessage || "当前模型"}</span>
           <select
             aria-label="当前模型"
             title={activeProfile ? `${activeProfile.name} · ${activeModel}` : "请选择模型"}
             value={activeProfile ? choiceValue(activeProfile.id, activeModel) : ""}
-            disabled={disabled || busy || !profiles.length}
+            disabled={disabled || busy || Boolean(loadingMessage) || !profiles.length}
             onChange={(event) => void selectModel(event.target.value)}
           >
             {!activeProfile && <option value="">{profiles.length ? "请选择模型" : "尚未配置模型"}</option>}

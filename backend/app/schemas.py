@@ -397,6 +397,7 @@ class MessageCreate(MessageBase):
 
 
 class MessageUpdate(BaseModel):
+    role: Optional[Literal["system", "user", "assistant"]] = None
     content: Optional[str] = None
     thinking_content: Optional[str] = None
     speaker: Optional[str] = None
@@ -475,6 +476,10 @@ class SessionTreeOut(BaseModel):
     session: SessionOut
     messages: List[MessageOut]
     active_path_ids: List[str]
+
+
+class MessageTreeMutationOut(SessionTreeOut):
+    deleted_count: int
 
 
 class PromptMessage(BaseModel):

@@ -52,8 +52,8 @@ export function mergeStreamingMessages(current: SessionTree | undefined, incomin
   const incomingIds = new Set(incoming.messages.map((message) => message.id));
   return {
     ...incoming,
-    // There is no message deletion API. An absent local message means this
-    // server snapshot started before the local message was created.
+    // Read/selection snapshots can predate a locally created message.
+    // Successful idle mutations replace the tree cache instead of using this merge.
     messages: [
       ...incoming.messages.map((remote) => reconcileMessage(currentById.get(remote.id), remote)),
       ...current.messages.filter((local) => !incomingIds.has(local.id))

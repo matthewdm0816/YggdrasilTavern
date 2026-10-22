@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowDown, ArrowUp, GitFork, Globe2, GripVertical, Plus, Save, ToggleLeft, ToggleRight, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, GitFork, Globe2, GripVertical, LoaderCircle, Plus, Save, ToggleLeft, ToggleRight, Trash2 } from "lucide-react";
 import { api, PromptSlot } from "../lib/api";
 import { defaultPromptSlots, promptSlotsFromPreset } from "../lib/prompt";
 import { reconcileSavedPromptSlots, samePromptSlots } from "../features/chat/globalPromptDraft";
 import { CollapsibleSection } from "./CollapsibleSection";
+import { ExpandableTextarea } from "./ExpandableTextarea";
+import "../styles/global-prompt.css";
 
 type Props = { onError?: (message: string) => void };
 
@@ -30,6 +32,7 @@ export function GlobalPromptPanel({ onError }: Props) {
   const [saveFeedback, setSaveFeedback] = useState<{ saved: boolean; error?: string } | null>(null);
   const hasPromptChanges = !samePromptSlots(slots, savedSlots);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [expandedSlotIds, setExpandedSlotIds] = useState<Set<string>>(() => new Set());
   const globalPromptQuery = useQuery({
     queryKey: ["global-prompt-config"],
     queryFn: api.globalPromptConfig,
@@ -63,6 +66,21 @@ export function GlobalPromptPanel({ onError }: Props) {
 
   function patchSlot(index: number, patch: Partial<PromptSlot>) {
     setSlots((current) => current.map((slot, slotIndex) => slotIndex === index ? { ...slot, ...patch } : slot));
+  }
+
+  function toggleSlot(slotId: string) {
+    setExpandedSlotIds((current) => {
+      const next = new Set(current);
+      if (next.has(slotId)) next.delete(slotId);
+      else next.add(slotId);
+      return next;
+    });
+  }
+
+  function addSlot() {
+    const slotId = id("slot");
+    setSlots((current) => [...current, { id: slotId, kind: "custom", name: "自定义 Prompt", enabled: true, role: "system", content: "" }]);
+    setExpandedSlotIds((current) => new Set(current).add(slotId));
   }
 
   async function saveGlobalPrompt() {
@@ -100,6 +118,28 @@ export function GlobalPromptPanel({ onError }: Props) {
     }
   }
 
+  const saveStatus = savingPrompt
+    ? "正在保存全局 Prompt…"
+    : hasPromptChanges
+      ? saveFeedback?.saved ? "上次修改已保存，当前还有未保存修改。" : "有未保存修改。"
+      : saveFeedback?.saved ? "全局 Prompt 已保存。" : "全局 Prompt 未修改。";
+
+  function saveButton() {
+    return <button
+      type="button"
+      className={`${hasPromptChanges ? "primary-button" : "secondary-button"} prompt-save-button`}
+      disabled={!hasPromptChanges || savingPrompt || globalPromptQuery.isPending || Boolean(globalPromptQuery.error)}
+      onClick={() => void saveGlobalPrompt()}
+    >{savingPrompt ? <LoaderCircle size={16} className="prompt-save-spinner" aria-hidden="true" /> : <Save size={16} aria-hidden="true" />}{savingPrompt ? "保存中…" : "保存全局 Prompt"}</button>;
+  }
+
+  function saveFeedbackContent() {
+    return <>
+      <p className="save-feedback" role="status" aria-live="polite">{saveStatus}</p>
+      {saveFeedback?.error && <p className="field-error" role="alert">{saveFeedback.error}</p>}
+    </>;
+  }
+
   return (
       <CollapsibleSection
         contentId="inspector-global-prompt-content"
@@ -109,12 +149,18 @@ export function GlobalPromptPanel({ onError }: Props) {
         className="inspector-section prompt-profile-section"
         headerMeta={<span className="quiet-badge">全部会话</span>}
       >
-
+        <div className="global-prompt-save-bar" aria-label="全局 Prompt 保存工具栏">
+          {saveButton()}
+          {saveFeedbackContent()}
+        </div>
         {!!importedPrompts.data?.length && <label className="form-field"><span>导入的 SillyTavern 提示词预设</span><select value={importedPromptId} onChange={(event) => {
           const value = event.target.value;
           setImportedPromptId(value);
           const preset = importedPrompts.data?.find((item) => item.id === value);
-          if (preset) setSlots(normalizeSlots(preset.converted.prompt_slots));
+          if (preset) {
+            setSlots(normalizeSlots(preset.converted.prompt_slots));
+            setExpandedSlotIds(new Set());
+          }
         }}><option value="">选择预设</option>{importedPrompts.data.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}
         {importedPrompts.error && <p className="field-error">导入的提示词预设读取失败：{importedPrompts.error instanceof Error ? importedPrompts.error.message : String(importedPrompts.error)}</p>}
         {importedPrompts.data?.find((item) => item.id === importedPromptId)?.warnings.map((warning, index) => <p className="section-help" key={index}>{warning}</p>)}
@@ -124,7 +170,7 @@ export function GlobalPromptPanel({ onError }: Props) {
           {slots.map((slot, index) => (
             <article
               key={slot.id}
-              className={`slot-card slot-${slot.kind} ${slot.enabled ? "enabled" : "disabled"}`}
+              className={`slot-card prompt-slot-card slot-${slot.kind} ${slot.enabled ? "enabled" : "disabled"}`}
               onDragOver={(event) => {
                 if (event.dataTransfer.types.includes(promptSlotDragType)) event.preventDefault();
               }}
@@ -155,8 +201,24 @@ export function GlobalPromptPanel({ onError }: Props) {
                   }}
                   onDragEnd={() => setDraggedIndex(null)}
                 ><GripVertical size={17} aria-hidden="true" /></button>
-                <label className="form-field slot-name-field"><span>Prompt 名称</span><input value={slot.name} onChange={(event) => patchSlot(index, { name: event.target.value })} /></label>
                 <button
+                  type="button"
+                  className="prompt-slot-summary"
+                  aria-expanded={expandedSlotIds.has(slot.id)}
+                  aria-controls={`global-prompt-slot-${slot.id}`}
+                  aria-label={`${expandedSlotIds.has(slot.id) ? "收起" : "展开"} ${slot.name || "未命名 Prompt"}`}
+                  onClick={() => toggleSlot(slot.id)}
+                >
+                  {expandedSlotIds.has(slot.id) ? <ChevronDown size={16} aria-hidden="true" /> : <ChevronRight size={16} aria-hidden="true" />}
+                  <span className="prompt-slot-summary-text">
+                    <strong title={slot.name}>{slot.name || "未命名 Prompt"}</strong>
+                    <small>
+                      {slot.enabled ? "已启用" : "已停用"} · {slot.kind === "history" ? "会话历史" : `${slot.role === "user" ? "用户消息" : slot.role === "assistant" ? "角色消息" : "系统消息"} · ${slot.content === null ? "动态内容" : `${slot.content.length.toLocaleString("zh-CN")} 字符`}`}
+                    </small>
+                  </span>
+                </button>
+                <button
+                  type="button"
                   className={`icon-button config-toggle ${slot.enabled ? "active" : ""}`}
                   aria-pressed={slot.enabled}
                   aria-label={slot.enabled ? `停用 ${slot.name}` : `启用 ${slot.name}`}
@@ -164,33 +226,43 @@ export function GlobalPromptPanel({ onError }: Props) {
                   onClick={() => patchSlot(index, { enabled: !slot.enabled })}
                 >{slot.enabled ? <ToggleRight size={22} /> : <ToggleLeft size={22} />}</button>
               </header>
-              <div className="slot-toolbar">
-                <label className="form-field compact-field"><span>消息角色</span><select value={slot.role || "system"} onChange={(event) => patchSlot(index, { role: event.target.value as PromptSlot["role"] })} disabled={slot.kind === "history"}>
-                  <option value="system">System</option><option value="user">User</option><option value="assistant">Assistant</option>
-                </select></label>
-                <div className="slot-move-actions">
-                  <button className="icon-button" aria-label={`上移 ${slot.name}`} title="上移" disabled={index === 0} onClick={() => moveSlot(index, -1)}><ArrowUp size={15} /></button>
-                  <button className="icon-button" aria-label={`下移 ${slot.name}`} title="下移" disabled={index === slots.length - 1} onClick={() => moveSlot(index, 1)}><ArrowDown size={15} /></button>
-                </div>
+              <div id={`global-prompt-slot-${slot.id}`} className="prompt-slot-fields" hidden={!expandedSlotIds.has(slot.id)}>
+                {expandedSlotIds.has(slot.id) && <>
+                  <label className="form-field slot-name-field"><span>Prompt 名称</span><input value={slot.name} onChange={(event) => patchSlot(index, { name: event.target.value })} /></label>
+                  <div className="slot-toolbar">
+                    <label className="form-field compact-field"><span>消息角色</span><select value={slot.role || "system"} onChange={(event) => patchSlot(index, { role: event.target.value as PromptSlot["role"] })} disabled={slot.kind === "history"}>
+                      <option value="system">System</option><option value="user">User</option><option value="assistant">Assistant</option>
+                    </select></label>
+                    <div className="slot-move-actions">
+                      <button type="button" className="icon-button" aria-label={`上移 ${slot.name}`} title="上移" disabled={index === 0} onClick={() => moveSlot(index, -1)}><ArrowUp size={15} /></button>
+                      <button type="button" className="icon-button" aria-label={`下移 ${slot.name}`} title="下移" disabled={index === slots.length - 1} onClick={() => moveSlot(index, 1)}><ArrowDown size={15} /></button>
+                    </div>
+                  </div>
+                  {slot.kind === "history" ? (
+                    <div className="history-slot"><GitFork size={16} />当前会话历史</div>
+                  ) : slot.content === null ? (
+                    <button type="button" className="dynamic-slot" onClick={() => patchSlot(index, { content: "" })}>设置全局覆盖</button>
+                  ) : (
+                    <ExpandableTextarea
+                      label={`${slot.name || "未命名 Prompt"} · 全局覆盖内容`}
+                      value={slot.content}
+                      minHeight={160}
+                      onChange={(content) => patchSlot(index, { content })}
+                      expandedActions={saveButton()}
+                      expandedFeedback={saveFeedbackContent()}
+                      closeLabel="返回列表"
+                    />
+                  )}
+                  <footer>
+                    {slot.content !== null && slot.kind !== "custom" && <button type="button" className="secondary-button" onClick={() => patchSlot(index, { content: null })}>恢复动态内容</button>}
+                    {slot.kind === "custom" && <button type="button" className="icon-button danger-button" title="删除自定义 Prompt" aria-label={`删除 ${slot.name}`} onClick={() => setSlots((current) => current.filter((_, itemIndex) => itemIndex !== index))}><Trash2 size={15} /></button>}
+                  </footer>
+                </>}
               </div>
-              {slot.kind === "history" ? (
-                <div className="history-slot"><GitFork size={16} />当前会话历史</div>
-              ) : slot.content === null ? (
-                <button className="dynamic-slot" onClick={() => patchSlot(index, { content: "" })}>设置全局覆盖</button>
-              ) : (
-                <label className="form-field"><span>全局覆盖内容</span><textarea value={slot.content} onChange={(event) => patchSlot(index, { content: event.target.value })} /></label>
-              )}
-              <footer>
-                {slot.content !== null && slot.kind !== "custom" && <button className="secondary-button" onClick={() => patchSlot(index, { content: null })}>恢复动态内容</button>}
-                {slot.kind === "custom" && <button className="icon-button danger-button" title="删除自定义 Prompt" aria-label={`删除 ${slot.name}`} onClick={() => setSlots((current) => current.filter((_, itemIndex) => itemIndex !== index))}><Trash2 size={15} /></button>}
-              </footer>
             </article>
           ))}
         </div>
-        <button className="secondary-button full-button" onClick={() => setSlots((current) => [...current, { id: id("slot"), kind: "custom", name: "自定义 Prompt", enabled: true, role: "system", content: "" }])}><Plus size={15} />添加自定义 Prompt</button>
-        <button type="button" className={`${hasPromptChanges ? "primary-button" : "secondary-button"} full-button`} disabled={!hasPromptChanges || savingPrompt || globalPromptQuery.isPending || Boolean(globalPromptQuery.error)} onClick={() => void saveGlobalPrompt()}><Save size={16} />{savingPrompt ? "保存中…" : "保存全局 Prompt"}</button>
-        <p className="save-feedback" role="status" aria-live="polite">{savingPrompt ? "正在保存提交的全局 Prompt…" : hasPromptChanges ? (saveFeedback?.saved ? "上次修改已保存，当前还有未保存修改。" : "有未保存修改。") : saveFeedback?.saved ? "全局 Prompt 已保存。" : "全局 Prompt 未修改。"}</p>
-        {saveFeedback?.error && <p className="field-error" role="alert">{saveFeedback.error}</p>}
+        <button type="button" className="secondary-button full-button" onClick={addSlot}><Plus size={15} />添加自定义 Prompt</button>
 
       </CollapsibleSection>
 

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from typing import List, Optional
+from collections import defaultdict, deque
+from typing import List, Literal, Optional
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session, selectinload
 
 from .. import models
@@ -219,3 +220,137 @@ def create_swipe(
 def last_active_message(db: Session, session: models.ChatSession) -> Optional[models.Message]:
     path = active_path(db, session)
     return path[-1] if path else None
+
+
+def prepare_tree_mutation(
+    db: Session,
+    session: models.ChatSession,
+    *,
+    busy_detail: str = "此会话正在生成消息，请先停止生成，再删除分支或切换消息角色",
+) -> None:
+    """Serialize SQLite writes before inspecting the tree and generation state."""
+    db.execute(
+        update(models.ChatSession)
+        .where(models.ChatSession.id == session.id)
+        .values(updated_at=models.ChatSession.updated_at)
+    )
+    db.refresh(session)
+    running_message = db.scalar(
+        select(models.Message.id).where(
+            models.Message.session_id == session.id, models.Message.status == "streaming",
+        ).limit(1)
+    )
+    running_generation = db.scalar(
+        select(models.GenerationRun.id).where(
+            models.GenerationRun.session_id == session.id, models.GenerationRun.status == "streaming",
+        ).limit(1)
+    )
+    if running_message is not None or running_generation is not None:
+        raise ApplicationError(status_code=409, detail=busy_detail)
+
+
+def _tree_postorder(messages: List[models.Message]) -> tuple[list[models.Message], dict[Optional[str], list[models.Message]]]:
+    """Order children before parents without recursion, including inactive roots."""
+    by_id = {message.id: message for message in messages}
+    children: dict[Optional[str], list[models.Message]] = defaultdict(list)
+    for message in messages:
+        if message.parent_id is not None and message.parent_id not in by_id:
+            raise ApplicationError(status_code=409, detail="消息树包含缺失的父消息或跨会话连接，请先修复消息树")
+        children[message.parent_id].append(message)
+    remaining_children = {message.id: len(children[message.id]) for message in messages}
+    pending = deque(message for message in messages if remaining_children[message.id] == 0)
+    postorder: list[models.Message] = []
+    while pending:
+        message = pending.popleft()
+        postorder.append(message)
+        if message.parent_id is not None:
+            remaining_children[message.parent_id] -= 1
+            if remaining_children[message.parent_id] == 0:
+                pending.append(by_id[message.parent_id])
+    if len(postorder) != len(messages):
+        raise ApplicationError(status_code=409, detail="消息树包含循环连接，请先修复消息树")
+    return postorder, children
+
+
+def _replacement_selection(
+    selected_id: Optional[str], siblings: list[models.Message], deleted_ids: set[str],
+) -> Optional[str]:
+    if selected_id not in deleted_ids:
+        return selected_id
+    selected_index = next((index for index, message in enumerate(siblings) if message.id == selected_id), None)
+    if selected_index is None:
+        return next((message.id for message in siblings if message.id not in deleted_ids), None)
+    # Prefer the previous swipe; when deleting the first swipe, select the next.
+    candidates = [*reversed(siblings[:selected_index]), *siblings[selected_index + 1:]]
+    return next((message.id for message in candidates if message.id not in deleted_ids), None)
+
+
+def _delete_tree_messages(
+    db: Session,
+    session: models.ChatSession,
+    postorder: list[models.Message],
+    children: dict[Optional[str], list[models.Message]],
+    deleted_ids: set[str],
+) -> int:
+    if not deleted_ids:
+        return 0
+    session.active_root_child_id = _replacement_selection(session.active_root_child_id, children[None], deleted_ids)
+    for message in postorder:
+        if message.id not in deleted_ids:
+            message.selected_child_id = _replacement_selection(message.selected_child_id, children[message.id], deleted_ids)
+    session.last_activity_at = models.utc_now()
+    db.flush()
+    ordered_ids = [message.id for message in postorder if message.id in deleted_ids]
+    # Batches stay below SQLite's legacy parameter limit and retain child-first
+    # order so Message.parent_id foreign keys remain valid after every batch.
+    for offset in range(0, len(ordered_ids), 500):
+        db.execute(delete(models.Message).where(models.Message.id.in_(ordered_ids[offset:offset + 500])))
+    return len(deleted_ids)
+
+
+def delete_message_branch(
+    db: Session, message_id: str, *, scope: Literal["swipe", "layer"] = "swipe",
+) -> tuple[models.ChatSession, int]:
+    try:
+        message = get_message_or_404(db, message_id)
+        session = get_session_or_404(db, message.session_id)
+        prepare_tree_mutation(db, session)
+        message = db.get(models.Message, message_id, populate_existing=True)
+        if message is None:
+            raise ApplicationError(status_code=404, detail="Message not found")
+        postorder, children = _tree_postorder(list_messages(db, session.id))
+        roots = children[message.parent_id] if scope == "layer" else [message]
+        deleted_ids: set[str] = set()
+        pending = list(roots)
+        while pending:
+            current = pending.pop()
+            if current.id in deleted_ids:
+                continue
+            deleted_ids.add(current.id)
+            pending.extend(children[current.id])
+        count = _delete_tree_messages(db, session, postorder, children, deleted_ids)
+        db.commit()
+        db.refresh(session)
+        return session, count
+    except Exception:
+        db.rollback()
+        raise
+
+
+def prune_empty_branches(db: Session, session_id: str) -> tuple[models.ChatSession, int]:
+    try:
+        session = get_session_or_404(db, session_id)
+        prepare_tree_mutation(db, session)
+        postorder, children = _tree_postorder(list_messages(db, session.id))
+        deleted_ids: set[str] = set()
+        for message in postorder:
+            if (not message.content.strip() and not message.thinking_content.strip()
+                    and all(child.id in deleted_ids for child in children[message.id])):
+                deleted_ids.add(message.id)
+        count = _delete_tree_messages(db, session, postorder, children, deleted_ids)
+        db.commit()
+        db.refresh(session)
+        return session, count
+    except Exception:
+        db.rollback()
+        raise

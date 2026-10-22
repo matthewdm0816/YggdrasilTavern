@@ -39,7 +39,7 @@ def test_generation_integrity_migration_upgrades_fresh_database(tmp_path, monkey
     assert {"folder_id", "pinned", "archived", "last_activity_at"}.issubset(
         {column["name"] for column in inspector.get_columns("sessions")}
     )
-    assert {"avatar_original_data_url", "avatar_transform"}.issubset(
+    assert {"avatar_original_data_url", "avatar_transform", "avatar_thumbnail_data_url"}.issubset(
         {column["name"] for column in inspector.get_columns("characters")}
     )
     assert ("selected_child_id",) in {

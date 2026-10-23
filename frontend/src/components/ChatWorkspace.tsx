@@ -22,7 +22,7 @@ import {
   X
 } from "lucide-react";
 import { api, CharacterSummary, ChatSession, Message, MessageDeleteScope, RegexRule, SessionTree } from "../lib/api";
-import { activeMessages as getActiveMessages, siblingsFor } from "../lib/tree";
+import { activeMessages as getActiveMessages, buildMessageIndex, siblingsFor } from "../lib/tree";
 import { useAppStore } from "../state/useAppStore";
 import { messageErrorText, messageStatusLabel } from "../lib/messageStatus";
 import { useMediaQuery } from "../lib/useMediaQuery";
@@ -205,7 +205,8 @@ export function ChatWorkspace({
   const shouldFollowRef = useRef(true);
   const pendingRevealRef = useRef<string | null>(null);
 
-  const activeMessages = useMemo(() => getActiveMessages(tree), [tree]);
+  const messageIndex = useMemo(() => buildMessageIndex(tree?.messages || []), [tree?.messages]);
+  const activeMessages = useMemo(() => getActiveMessages(tree, messageIndex), [tree, messageIndex]);
   const character = characters.find((item) => item.id === activeSession?.character_id);
   const hasKeyboardShortcut = useMediaQuery("(hover: hover) and (pointer: fine)");
   const contentRevision = activeMessages.map((message) => `${message.id}:${message.content.length}:${message.thinking_content.length}:${message.status}`).join("|");
@@ -494,7 +495,7 @@ export function ChatWorkspace({
           </div>
         )}
         {activeMessages.map((message) => {
-          const siblings = siblingsFor(tree, message);
+          const siblings = siblingsFor(tree, message, messageIndex);
           const index = siblings.findIndex((item) => item.id === message.id);
           const previous = siblings[index - 1];
           const next = siblings[index + 1];

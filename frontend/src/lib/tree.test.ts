@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { activeMessages, mergeStreamingMessages, siblingsFor } from "./tree";
+import { activeMessages, buildMessageIndex, mergeStreamingMessages, siblingsFor } from "./tree";
 import { Message, SessionTree } from "./api";
 
 function message(id: string, parent_id: string | null, sort_order: number, content: string): Message {
@@ -25,6 +25,69 @@ function message(id: string, parent_id: string | null, sort_order: number, conte
 }
 
 describe("tree helpers", () => {
+  it.each([false, true])("keeps path order, repeated IDs, first matches and missing-ID filtering (indexed: %s)", (indexed) => {
+    const first = message("root", null, 1, "first duplicate");
+    const duplicate = message("root", null, 2, "later duplicate");
+    const child = message("child", "root", 1, "child");
+    const tree: SessionTree = {
+      session: { id: "s1", title: "t", preset: {} },
+      messages: [child, first, duplicate],
+      active_path_ids: ["child", "missing", "root", "child"]
+    };
+    const index = indexed ? buildMessageIndex(tree.messages) : undefined;
+    const result = activeMessages(tree, index);
+    expect(result).toEqual([child, first, child]);
+    expect(result[1]).toBe(first);
+    expect(tree.messages).toEqual([child, first, duplicate]);
+  });
+
+  it.each([false, true])("keeps root siblings ordered by order, creation time and stable ties (indexed: %s)", (indexed) => {
+    const earliest = message("earliest", null, 0, "earliest");
+    const firstTie = message("first-tie", null, 1, "first tie");
+    const secondTie = message("second-tie", null, 1, "second tie");
+    const later = { ...message("later", null, 1, "later"), created_at: "2026-01-02T00:00:00" };
+    const child = message("child", "earliest", 0, "child");
+    const messages = [later, secondTie, child, earliest, firstTie];
+    const tree: SessionTree = { session: { id: "s1", title: "t", preset: {} }, messages, active_path_ids: [] };
+    const index = indexed ? buildMessageIndex(messages) : undefined;
+    expect(siblingsFor(tree, later, index)).toEqual([earliest, secondTie, firstTie, later]);
+    expect(siblingsFor(tree, child, index)).toEqual([child]);
+    expect(messages).toEqual([later, secondTie, child, earliest, firstTie]);
+  });
+
+  it.each([false, true])("keeps null and missing parent IDs in separate sibling groups (indexed: %s)", (indexed) => {
+    const root = message("root", null, 0, "root");
+    const missingParent = { ...message("legacy", null, 0, "legacy"), parent_id: undefined };
+    const messages = [root, missingParent];
+    const tree: SessionTree = { session: { id: "s1", title: "t", preset: {} }, messages, active_path_ids: [] };
+    const index = indexed ? buildMessageIndex(messages) : undefined;
+    expect(siblingsFor(tree, root, index)).toEqual([root]);
+    expect(siblingsFor(tree, missingParent, index)).toEqual([missingParent]);
+    expect(siblingsFor(tree, message("absent", "missing", 0, "absent"), index)).toEqual([]);
+  });
+
+  it("preserves empty-tree and missing-tree behavior with an index", () => {
+    const current = message("current", null, 0, "current");
+    const index = buildMessageIndex([]);
+    const empty: SessionTree = { session: { id: "s1", title: "t", preset: {} }, messages: [], active_path_ids: ["missing"] };
+    expect(activeMessages(undefined, index)).toEqual([]);
+    expect(activeMessages(empty, index)).toEqual([]);
+    expect(siblingsFor(undefined, current, index)).toEqual([current]);
+    expect(siblingsFor(empty, current, index)).toEqual([]);
+  });
+
+  it("uses the new streamed message after the message array changes", () => {
+    const original = message("reply", null, 0, "partial");
+    const before: SessionTree = { session: { id: "s1", title: "t", preset: {} }, messages: [original], active_path_ids: ["reply"] };
+    const beforeIndex = buildMessageIndex(before.messages);
+    const updated = { ...original, content: "partial plus token" };
+    const after = { ...before, messages: [updated] };
+    const afterIndex = buildMessageIndex(after.messages);
+    expect(activeMessages(after, afterIndex)).toEqual([updated]);
+    expect(siblingsFor(after, updated, afterIndex)[0]).toBe(updated);
+    expect(activeMessages(before, beforeIndex)[0]).toBe(original);
+  });
+
   it("returns the active path in selected order", () => {
     const tree: SessionTree = {
       session: { id: "s1", title: "t", preset: {} },

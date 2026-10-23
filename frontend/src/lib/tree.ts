@@ -4,13 +4,37 @@ export function sortMessages(messages: Message[]): Message[] {
   return [...messages].sort((a, b) => a.sort_order - b.sort_order || a.created_at.localeCompare(b.created_at));
 }
 
-export function activeMessages(tree?: SessionTree): Message[] {
-  if (!tree) return [];
-  return tree.active_path_ids.map((id) => tree.messages.find((message) => message.id === id)).filter(Boolean) as Message[];
+export type MessageIndex = {
+  messagesById: ReadonlyMap<string, Message>;
+  siblingsByParent: ReadonlyMap<Message["parent_id"], Message[]>;
+};
+
+export function buildMessageIndex(messages: readonly Message[]): MessageIndex {
+  const messagesById = new Map<string, Message>();
+  const siblingsByParent = new Map<Message["parent_id"], Message[]>();
+  for (const message of messages) {
+    // Match Array.find: the first occurrence wins if a snapshot contains duplicate IDs.
+    if (!messagesById.has(message.id)) messagesById.set(message.id, message);
+    const siblings = siblingsByParent.get(message.parent_id) || [];
+    siblings.push(message);
+    siblingsByParent.set(message.parent_id, siblings);
+  }
+  for (const [parentId, siblings] of siblingsByParent) {
+    siblingsByParent.set(parentId, sortMessages(siblings));
+  }
+  return { messagesById, siblingsByParent };
 }
 
-export function siblingsFor(tree: SessionTree | undefined, message: Message): Message[] {
+export function activeMessages(tree?: SessionTree, index?: MessageIndex): Message[] {
+  if (!tree) return [];
+  return tree.active_path_ids.map((id) => index
+    ? index.messagesById.get(id)
+    : tree.messages.find((message) => message.id === id)).filter(Boolean) as Message[];
+}
+
+export function siblingsFor(tree: SessionTree | undefined, message: Message, index?: MessageIndex): Message[] {
   if (!tree) return [message];
+  if (index) return index.siblingsByParent.get(message.parent_id) || [];
   return sortMessages(tree.messages.filter((item) => item.parent_id === message.parent_id));
 }
 

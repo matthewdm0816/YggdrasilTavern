@@ -93,7 +93,7 @@ export const api = {
     request<ChatSession>("/api/sessions", { method: "POST", body: JSON.stringify(payload) }),
   updateSession: (sessionId: string, payload: SessionUpdateInput) =>
     request<ChatSession>(`/api/sessions/${sessionId}`, { method: "PATCH", body: JSON.stringify(payload) }),
-  tree: (sessionId: string) => request<SessionTree>(`/api/sessions/${sessionId}/tree`),
+  tree: (sessionId: string, signal?: AbortSignal) => request<SessionTree>(`/api/sessions/${sessionId}/tree`, { signal }),
   appendMessage: (sessionId: string, payload: MessageCreateInput) =>
     request<Message>(`/api/sessions/${sessionId}/messages`, { method: "POST", body: JSON.stringify(payload) }),
   updateMessage: (messageId: string, payload: MessageUpdateInput) =>

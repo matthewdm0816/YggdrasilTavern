@@ -34,7 +34,7 @@ export function useChatController({ selectedSessionId, activeProfileId, onMessag
     queryFn: ({ signal }) => loadTreeSnapshot(
       queryClient,
       selectedSessionId!,
-      () => api.tree(selectedSessionId!),
+      () => api.tree(selectedSessionId!, signal),
       epochs.current,
       signal
     ),

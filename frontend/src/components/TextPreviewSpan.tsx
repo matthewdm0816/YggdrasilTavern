@@ -1,7 +1,8 @@
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { useMediaQuery } from "../lib/useMediaQuery";
 import "../styles/text-preview.css";
+
+export const TextPreviewCompactContext = createContext(false);
 
 type Props = {
   children: ReactNode; original: string; replacement: string; first: boolean;
@@ -9,7 +10,7 @@ type Props = {
 };
 
 export function TextPreviewSpan({ children, original, replacement, first, replaced, onToggle }: Props) {
-  const compact = useMediaQuery("(max-width: 920px), (pointer: coarse), (hover: none)");
+  const compact = useContext(TextPreviewCompactContext);
   const anchor = useRef<HTMLSpanElement>(null);
   const tooltipId = useId();
   const tooltip = useRef<HTMLSpanElement>(null);
@@ -24,12 +25,15 @@ export function TextPreviewSpan({ children, original, replacement, first, replac
     setPosition({ left: Math.max(8, Math.min(rect.left, window.innerWidth - Math.min(360, window.innerWidth - 16) - 8)),
       top: Math.min(rect.bottom + 6, Math.max(8, window.innerHeight - 170)) });
   }
+  const isOpen = position !== null;
   useEffect(() => {
+    if (!isOpen) return;
     const close = (event: Event) => { if (!(event.target instanceof Node) || !tooltip.current?.contains(event.target)) setPosition(null); };
     window.addEventListener("scroll", close, true);
     window.addEventListener("resize", close);
-    return () => { clearTimeout(closeTimer.current); window.removeEventListener("scroll", close, true); window.removeEventListener("resize", close); };
-  }, []);
+    return () => { window.removeEventListener("scroll", close, true); window.removeEventListener("resize", close); };
+  }, [isOpen]);
+  useEffect(() => () => clearTimeout(closeTimer.current), []);
   useEffect(() => setPosition(null), [compact, original, replacement]);
   return <>
     <span ref={anchor} className={replaced ? "text-preview replaced" : "text-preview"}

@@ -1,3 +1,4 @@
+import { validateRegex } from "../lib/regex";
 import { MacroText } from "./MacroText";
 import { displayMessageText, containsMacros } from "../lib/macros";
 import { useMacroDisplayMode } from "../features/chat/macroDisplay";
@@ -214,7 +215,8 @@ export function ChatWorkspace({
   const macroContext = useMessageMacroContext();
   const macroDisplay = useMacroDisplayMode();
   const [previewReplacements, setPreviewReplacements] = useState<Record<string, boolean>>({});
-  const hasHoverRules = regexRules.some((rule) => rule.enabled && rule.mode === "hover" && rule.targets.includes("display"));
+  const invalidRegexRules = useMemo(() => regexRules.filter((rule) => rule.enabled && validateRegex(rule)), [regexRules]);
+  const hasHoverRules = regexRules.some((rule) => rule.enabled && rule.mode === "hover" && rule.targets.includes("display") && !validateRegex(rule));
   const character = characters.find((item) => item.id === activeSession?.character_id);
   const hasKeyboardShortcut = useMediaQuery("(hover: hover) and (pointer: fine)");
   const contentRevision = activeMessages.map((message) => `${message.id}:${message.content.length}:${message.thinking_content.length}:${message.status}`).join("|");
@@ -588,6 +590,7 @@ export function ChatWorkspace({
           {treeActionLabel || mutating ? <><LoaderCircle size={16} className="chat-operation-spinner" /><span>{treeActionLabel ? `${treeActionLabel}中…` : "正在更新会话…"}</span></> : <span>{treeActionResult}</span>}
           {!treeActionLabel && !mutating && <button className="icon-button" type="button" aria-label="关闭操作结果" onClick={() => setTreeActionResults((current) => ({ ...current, [sessionId]: null }))}><X size={14} /></button>}
         </div>}
+        {!!invalidRegexRules.length && <div className="composer-error regex-errors" role="alert"><strong>Regex 规则有误，相关规则已跳过：</strong>{invalidRegexRules.map((rule) => <div key={rule.id}>{rule.name || rule.id}：{validateRegex(rule)}</div>)}</div>}
         {(interactionError || loadError) && <div className="composer-error" role="alert">{interactionError || loadError}</div>}
         <div className="composer-tools">
           {modelPicker}

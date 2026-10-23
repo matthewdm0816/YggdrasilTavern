@@ -45,7 +45,6 @@ export const RegexMessage = memo(function RegexMessage({ content, role, rules, s
     const regex = regexPreviews(text, hoverRules).filter((item) => !macros.some((macro) => macro.start < item.end && macro.end > item.start));
     return [...macros, ...regex].sort((a, b) => a.start - b.start);
   }, [hoverRules, macroDisplay.mode, macroContext]);
-  const errors = rules.filter((rule) => rule.enabled && validateRegex(rule));
   const blocks = useMemo(() => transformMessageContent(displayContent, role, rules), [displayContent, role, rules]);
   const groups = useMemo(() => groupBlocks(blocks), [blocks]);
   const [revealed, setRevealed] = useState<Set<string>>(new Set());
@@ -63,7 +62,6 @@ export const RegexMessage = memo(function RegexMessage({ content, role, rules, s
 
   return (
     <div className="regex-message">
-      {errors.map((rule) => <p key={rule.id} role="alert" className="field-error">Regex {rule.name || rule.id}：{validateRegex(rule)}</p>)}
       {groups.map((group) => {
         if (group.kind === "markdown") {
           return group.text.trim()

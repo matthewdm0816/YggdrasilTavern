@@ -2,7 +2,7 @@
 
 **English** · [简体中文](README.zh-CN.md)
 
-YggdrasilTavern is a local-first role-play chat workbench built around a real conversation tree. Branches are not visual copies of a linear transcript: every swipe, edit, regeneration, and alternate greeting is a persistent sibling node, and only the currently selected path is compiled into the next model request.
+YggdrasilTavern is a local-first role-play chat workbench built around a real conversation tree. Branches are not visual copies of a linear transcript: every swipe, edit saved as a new branch, regeneration, and alternate greeting is a persistent sibling node, and only the currently selected path is compiled into the next model request.
 
 The application supports multi-user login with independent profiles. It combines a FastAPI/SQLite backend with a responsive React interface and supports common SillyTavern character and worldbook formats without attempting to clone SillyTavern wholesale.
 
@@ -23,7 +23,8 @@ Session root
 - A session stores its selected root, and every message can point to one selected child.
 - The active context follows those selections from the root to the current leaf.
 - Switching a swipe or selecting a node in the branch map changes the downstream prompt path.
-- Editing, copying, or regenerating creates a new sibling; it does not overwrite the original message or its descendants.
+- **Save changes** updates the original message in place and does not create a branch.
+- **Save as new branch**, copy-as-swipe, and regeneration create siblings and preserve the original message and its descendants.
 - Interrupted and cancelled generations keep their partial assistant message instead of silently deleting it.
 
 This tree model is the core invariant of the project.
@@ -37,7 +38,7 @@ This tree model is the core invariant of the project.
 - Session title search, folders, pinning, archiving, and archived-session view.
 - Markdown and GitHub-Flavored Markdown rendering.
 - Streaming answer text, streaming thinking, stop, continue, and regenerate controls.
-- Swipe navigation, branch map navigation, copy-as-swipe, and edit-as-swipe.
+- Swipe navigation, branch map navigation, and copy-as-swipe. Editing offers both **Save changes** in place and **Save as new branch**.
 - A pop-up Tree View renders the complete conversation forest: hover or focus previews a swipe, the first click pins it, and the second click jumps to that node and branch.
 - `first_mes` and `alternate_greetings` become root-level swipes; the first valid greeting is selected by default.
 - Message telemetry for input, output, cached-input, and thinking tokens when available, plus generation speed.
@@ -118,21 +119,39 @@ Lore activation scans the currently selected tree path. Full SillyTavern recursi
 
 ### Regex display and Prompt transformations
 
-Regex rules are a global configuration that applies to every session, edited under “全局 Regex” in the Inspector, and support four targets:
+Regex rules are global across sessions. Open **right sidebar → Prompt → 全局 Regex (Global Regex) → expand a rule → 处理方式 (Mode)**. A collapsed rule also shows its mode in the summary. Four targets are available:
 
 - Chat display
 - User messages
 - Assistant messages
 - Outgoing Prompt text
 
-Two modes are available:
+Three modes are available:
 
 - **Explicit replacement** displays or sends the replaced text.
-- **Veil** visually covers the affected paragraph until hover, click, Enter, or Space reveals it.
+- **Veil** covers the replacement at paragraph level; click, Enter, or Space reveals it.
+- **Hover preview** keeps the original text with a dashed underline on each match. Hover or keyboard focus opens the replacement on a fine-pointer desktop. On touch/coarse-pointer devices or viewports at most 920px wide, tapping switches the match in place. Enter and Space also toggle it; Escape closes the tooltip. The message menu offers **Show all replacements / Restore originals**. Empty replacements show an explicit empty-text marker so they can be toggled back.
 
-The original `Message.content` is never rewritten. Outgoing Prompt rules only support explicit replacement. The UI exposes `g`, `i`, `m`, and `s` as readable matching options rather than raw flag letters.
+Regex and macro display operate on copies of stored `Message.content`. Hover preview only supports the Chat display target; outgoing Prompt rules only support explicit replacement, with server-side validation. The UI exposes `g`, `i`, `m`, and `s` as readable matching options rather than raw flag letters.
 
 Browser-side display rules use JavaScript `RegExp`; server-side outgoing rules use a portable subset implemented by Python `re`. Prefer syntax supported by both engines when one rule must behave consistently in both places.
+
+Display order is explicit replacements in rule order, then the existing paragraph veil pass, then hover matches on rendered Markdown text. A preview can span bold text, link labels, and other Markdown structures without changing formatting, link destinations, or code structure. Paragraphs and line breaks contribute newlines to matching. Earlier rules win overlapping preview matches. Zero-width matches create no preview marker. Veiled content only enables its previews after reveal, and matches do not cross independent veil regions.
+
+### Macro source and display
+
+New sessions store the original macro text in first messages and alternate greetings. Existing stored messages are retained. Prompt compilation, worldbook scanning, TTS, message token estimates, clipboard text, and branch/tree previews consume expanded text. Editors, copy-as-swipe, and raw tree responses retain the authored source. Character card exports preserve templates in character definitions.
+
+Open **left sidebar → 设置 (Settings) → 外观与字号 (Appearance and font sizes) → 宏显示方式 (Macro display)**. The preference is stored per account in the current browser:
+
+- **Show replacements directly** (default) displays expanded body and Thinking text.
+- **Show originals; hover or tap for replacements** underlines the macro and uses the same desktop, touch, and keyboard interaction as Regex previews. The whole-message toggle includes macros.
+
+Supported macros are `{{char}}`, `{{user}}`, `{{description}}`, `{{personality}}`, `{{scenario}}`, `{{charFirstMessage}}`, `{{charFirstMessage::N}}`, `{{original}}`, `<BOT>`, and `<USER>`. Index 0 selects the first greeting; later indices select alternate greetings. Frontend and backend use the same ordered replacement passes, checked against a shared fixture. Unknown macros remain unchanged. In chat messages, `{{original}}` expands to an empty string, matching existing history compilation.
+
+Character details are cached by character ID and fetched when message macros need them; saving the character invalidates the cache. Loading displays the original source, and failures show an error with Retry. The user name comes from the session's `preset.user_name`, defaulting to User. Changing the character definition or session user name changes subsequent expansion of messages containing macros; their stored source and existing generation snapshots are retained.
+
+The macro preference first selects the display source for Regex: expanded text in the default mode, authored text in original-preview mode. Macro previews take priority over overlapping Regex previews in original mode. Model input always expands macros before outgoing Regex, independently of the browser display setting.
 
 ### Responsive interface
 

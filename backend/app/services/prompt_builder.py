@@ -217,6 +217,9 @@ def activate_lore_books(worldbooks: Sequence[LoadedWorldBook], messages: List[mo
     while True:
         donors: List[LoreCandidate] = []
         eligible = False
+        # The pool only grows between passes, so join it once per pass and depth.
+        pool_text = "".join("\n" + source.content for source in pool)
+        scan_cache: dict[int, str] = {}
         for book, candidate in records:
             identity = (candidate.worldbook_id, candidate.id)
             if identity in accepted:
@@ -233,8 +236,9 @@ def activate_lore_books(worldbooks: Sequence[LoadedWorldBook], messages: List[mo
                 selected = messages[-depth:] if depth > 0 else []
                 chat_cache[depth] = "\n".join(f"{message.speaker or message.role}: {message.content}" for message in selected)
             chat_text = chat_cache[depth]
-            scan_text = chat_text + "".join("\n" + source.content for source in pool)
-            if not _lore_matches(candidate, scan_text):
+            if depth not in scan_cache:
+                scan_cache[depth] = chat_text + pool_text
+            if not _lore_matches(candidate, scan_cache[depth]):
                 continue
             size = count_text_tokens(candidate.content)
             if book.token_budget > 0 and used[book.id] + size > book.token_budget:

@@ -85,6 +85,10 @@ Supported provider protocols:
 
 An API Profile contains a name, protocol, Base URL, optional path override, model ID, API Key, and default parameters such as temperature. The selected Profile is a browser-local global choice and is applied when generation starts; it is not persisted as a fixed chat-session setting. Each generation still records the model and request parameters actually used in its run metadata.
 
+The collapsible **Advanced request settings** section adds fixed custom header values, additional JSON body parameters, and top-level body fields to exclude. Additional parameters reuse the existing default-parameters object; temperature and thinking controls edit that same object. The provider-generated model, conversation, streaming mode, and resolved output limit keep their existing precedence; exclusions run last. Custom headers override built-in headers case-insensitively and also apply to model discovery. Header values are write-only: saved rows show names, leaving their values blank keeps them, and deleting a row removes the stored header. Generation records contain header names only. For example, configure a fixed `x-opencode-session` value for a proxy that requires it. Changing the service address requires replacing or removing saved credentials and headers.
+
+Anthropic Profiles offer an optional prompt-cache switch, off by default. It places ephemeral breakpoints at the system-prefix end and last history block, preserving subsequent instruction order and the four-breakpoint limit. The standard cache lifetime is five minutes; writes usually cost 1.25 times ordinary input and cache reads usually 0.1 times, with model-specific exceptions and minimum prefix lengths. Short prefixes may not be cached. See [Anthropic's caching documentation](https://platform.claude.com/docs/en/build-with-claude/prompt-caching). Messages show cache reads and cache writes separately.
+
 Profiles default to a 256K-token input limit and a 32K-token output limit. Both are editable. When the selected model reports a smaller capability, YggdrasilTavern uses the smaller effective value. If the compiled Prompt exceeds the effective input limit, only the oldest complete messages from the currently selected tree path are removed; fixed Prompt blocks and the newest two history messages are preserved, and an impossible fit is reported as an error rather than silently cutting a message.
 
 Remote model discovery is available when the provider implements a compatible `/v1/models` endpoint. Manual model IDs remain supported when it does not.
@@ -114,7 +118,9 @@ PNG card export is not currently provided.
 - Configure recent-message scan depth and an activated-lore token budget per book.
 - Preserve unknown imported fields where possible when exporting.
 
-Lore activation scans the currently selected tree path. Full SillyTavern recursive World Info behavior and every insertion-depth semantic are not implemented yet.
+Lore activation scans only the currently selected tree path. Books with recursive scanning enabled share accepted entry content, including enabled embedded character books, so one book can trigger another. Each book retains its own scan depth, token budget, and maximum scan passes. The maximum includes the initial pass: 0 adds no pass limit, 1 disables recursive passes. Entries activate once; cycles terminate. Books with recursion disabled neither contribute to nor consume the recursive pool. Existing entry ordering and per-book budget selection remain unchanged.
+
+Entry controls support Non-recursable, Prevent further recursion, and Delay until recursion, including ordered delay levels. Lower delay levels finish before higher levels are released. The Inspector shows the activation pass and matching source entries. Imports use SillyTavern `scanDepth` (or character-card `extensions.scan_depth`) for keyword scanning. SillyTavern `depth` is an insertion depth; unsupported @D positions are disabled with an import warning. The migration repairs recognizable old ST entries only when their stored depth still equals the original insertion depth, preserving edits and source JSON. This targets the recursive controls in [SillyTavern's World Info documentation](https://docs.sillytavern.app/usage/core-concepts/worldinfo/); timed effects and unsupported insertion positions are separate features.
 
 ### Regex display and Prompt transformations
 
@@ -346,7 +352,7 @@ treechat.db                        Runtime database; ignored by Git
 - No tool calling.
 - No STscript.
 - No group chat.
-- No complete SillyTavern recursive World Info implementation.
+- World Info timed effects and unsupported insertion positions are not implemented.
 - Character/worldbook import targets common real-world formats, not every edge of every specification revision.
 - Token counts are estimated when a provider does not report complete usage.
 - SQLite multi-user profiles with administrator-managed accounts; use HTTPS when exposing the service beyond localhost.

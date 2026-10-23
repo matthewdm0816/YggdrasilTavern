@@ -1,3 +1,4 @@
+import { memo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
@@ -7,7 +8,7 @@ type Props = {
   content: string;
 };
 
-export function MarkdownMessage({ content }: Props) {
+export const MarkdownMessage = memo(function MarkdownMessage({ content }: Props) {
   return (
     <div className="message-content markdown-body">
       <ReactMarkdown
@@ -33,4 +34,4 @@ export function MarkdownMessage({ content }: Props) {
       </ReactMarkdown>
     </div>
   );
-}
+});

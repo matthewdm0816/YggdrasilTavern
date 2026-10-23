@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
 import { Message, RegexRule } from "../lib/api";
 import { DisplayBlock, transformMessageContent } from "../lib/regex";
@@ -30,7 +30,7 @@ function groupBlocks(blocks: DisplayBlock[]): RenderGroup[] {
   return groups;
 }
 
-export function RegexMessage({ content, role, rules }: Props) {
+export const RegexMessage = memo(function RegexMessage({ content, role, rules }: Props) {
   const blocks = useMemo(() => transformMessageContent(content, role, rules), [content, role, rules]);
   const groups = useMemo(() => groupBlocks(blocks), [blocks]);
   const [revealed, setRevealed] = useState<Set<string>>(new Set());
@@ -81,4 +81,4 @@ export function RegexMessage({ content, role, rules }: Props) {
       })}
     </div>
   );
-}
+});

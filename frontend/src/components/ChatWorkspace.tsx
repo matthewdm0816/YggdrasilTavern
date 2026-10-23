@@ -82,6 +82,21 @@ function tokenSpeed(message: Pick<Message, "usage">): number {
   return output && durationMs ? output / (durationMs / 1000) : 0;
 }
 
+type CacheUsageMessage = Pick<Message, "usage" | "cached_tokens"> & {
+  generation_run?: Pick<NonNullable<Message["generation_run"]>, "cached_input_tokens"> | null;
+};
+
+export function MessageCacheUsage({ message }: { message: CacheUsageMessage }) {
+  const readTokens = message.generation_run?.cached_input_tokens
+    || usageNumber(message.usage, "cache_read_input_tokens", "cached_input_tokens", "cached_tokens")
+    || message.cached_tokens;
+  const writeTokens = usageNumber(message.usage, "cache_creation_input_tokens");
+  return <>
+    {readTokens > 0 && <span>缓存读取 {readTokens}</span>}
+    {writeTokens > 0 && <span>缓存写入 {writeTokens}</span>}
+  </>;
+}
+
 type TokenDisplayMessage = Pick<
   Message,
   "status" | "token_count" | "thinking_token_count" | "provider_metadata" | "usage"
@@ -503,7 +518,6 @@ export function ChatWorkspace({
           const inputTokens = message.generation_run?.input_tokens || usageNumber(message.usage, "input_tokens", "prompt_tokens");
           const tokenDisplay = generationTokenDisplay(message);
           const outputTokens = tokenDisplay.outputTokens;
-          const cachedTokens = message.generation_run?.cached_input_tokens || usageNumber(message.usage, "cached_input_tokens", "cached_tokens") || message.cached_tokens;
           const speed = tokenDisplay.tokensPerSecond;
           const presentation = getMessagePresentation(message);
           return (
@@ -540,7 +554,7 @@ export function ChatWorkspace({
                     title={tokenDisplay.outputEstimated ? "根据已保存的正文和思考内容估算用量" : "模型服务返回的用量"}>
                     {inputTokens > 0 && <span>输入 {inputTokens}</span>}
                     <span>输出{tokenDisplay.outputEstimated ? "约 " : " "}{outputTokens || 0} tokens</span>
-                    {cachedTokens > 0 && <span>缓存 {cachedTokens}</span>}
+                    <MessageCacheUsage message={message} />
                     {speed > 0 && <span>{speed.toFixed(1)} tokens/s</span>}
                   </small>}
                   <div className="message-branch-actions" aria-label="分支切换">

@@ -5,7 +5,8 @@ from copy import deepcopy
 from dataclasses import dataclass
 from typing import Iterable, List, Optional, Sequence
 
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.orm import Session, selectinload
 
 from .. import models, schemas
 from .prompt_config import (
@@ -301,9 +302,17 @@ def load_context_inputs(
     )
     # Worldbooks and Regex rules are global; legacy session values are no longer read.
     worldbook_ids, regex_rules, _, _, worldbook_regex_config_error = global_worldbook_regex_state(db)
+    worldbooks_by_id = {
+        worldbook.id: worldbook
+        for worldbook in db.scalars(
+            select(models.WorldBook)
+            .options(selectinload(models.WorldBook.entries))
+            .where(models.WorldBook.id.in_(worldbook_ids))
+        )
+    } if worldbook_ids else {}
     worldbooks: list[LoadedWorldBook] = []
     for worldbook_id in worldbook_ids:
-        worldbook = db.get(models.WorldBook, worldbook_id)
+        worldbook = worldbooks_by_id.get(worldbook_id)
         if worldbook is None:
             continue
         worldbooks.append(

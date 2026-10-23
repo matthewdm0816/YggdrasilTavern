@@ -27,7 +27,10 @@ from sqlalchemy.orm import Session
 
 from .. import models, schemas
 from .prompt_config import default_prompt_slots, normalize_prompt_slots, normalize_regex_rules
+from .provider_protocols.request_settings import has_custom_auth
 from .st_import import load_character_upload, normalize_worldbook
+from .st_custom_params import convert_custom_request_settings
+from .worldbook_import import worldbook_import_warnings
 
 NAMESPACE = uuid.UUID("ff576c5c-cb14-451b-a36d-23eac5818d67")
 MARKERS = {
@@ -118,7 +121,7 @@ def _redactor(secret_values: list[str]):
         if isinstance(value, dict):
             return {
                 key: "[REDACTED]" if re.search(
-                    r"api[_-]?key|password|authorization|access[_-]?token|^secret$|^key$", key, re.I
+                    r"api[_-]?key|password|authorization|access[_-]?token|^secret$|^key$|^custom_include_headers$|^custom_headers$", key, re.I
                 ) else redact(item)
                 for key, item in value.items()
             }
@@ -330,40 +333,23 @@ def build_plan(files: dict[str, bytes], manifest: dict, source: str) -> ImportPl
                 payload["raw_json"] = redact(payload["raw_json"])
                 payload["extensions"] = redact(payload["extensions"])
                 payload["avatar_original_data_url"] = payload["avatar_data_url"]
-                add("character", key, character.name, character.raw_json, payload, digest=content_hash(content))
+                add("character", key, character.name, character.raw_json, payload,
+                    worldbook_import_warnings(character.character_book), digest=content_hash(content))
             elif directory == "worlds" and path.suffix.lower() == ".json":
                 raw = _json_object(content, key)
-                merged = dict(raw)
-                merged.setdefault("scan_depth", world_settings.get("world_info_depth", 8))
-                if not merged.get("token_budget"):
-                    cap = world_settings.get("world_info_budget_cap", 0)
-                    percentage = world_settings.get("world_info_budget", 25)
-                    merged["token_budget"] = int(cap or int(oai.get("openai_max_context", 16384)) * percentage / 100)
-                payload = normalize_worldbook(merged, fallback_name=path.stem).model_dump()
+                cap = world_settings.get("world_info_budget_cap", 0)
+                percentage = world_settings.get("world_info_budget", 25)
+                defaults = {
+                    "scan_depth": world_settings.get("world_info_depth", 8),
+                    "token_budget": int(cap or int(oai.get("openai_max_context", 16384)) * percentage / 100),
+                    "recursive_scanning": world_settings.get("world_info_recursive", False),
+                    "max_recursion_steps": world_settings.get("world_info_max_recursion_steps", 0),
+                    "case_sensitive": world_settings.get("world_info_case_sensitive", False),
+                    "match_whole_words": world_settings.get("world_info_match_whole_words", False),
+                }
+                payload = normalize_worldbook(raw, fallback_name=path.stem, defaults=defaults).model_dump()
                 payload["raw_json"] = raw
-                warnings = []
-                if world_settings.get("world_info_recursive"):
-                    warnings.append("递归世界书扫描尚未支持；当前使用关键词扫描")
-                for entry in payload["entries"]:
-                    source_entry = entry["raw_json"]
-                    # ST depth is an injection position; scanDepth controls
-                    # keyword matching. Do not treat injection depth as scan depth.
-                    entry["depth"] = source_entry.get("scanDepth")
-                    for normalized, original, global_key in (
-                        ("case_sensitive", "caseSensitive", "world_info_case_sensitive"),
-                        ("match_whole_words", "matchWholeWords", "world_info_match_whole_words"),
-                    ):
-                        value = source_entry.get(original, source_entry.get(normalized))
-                        entry[normalized] = bool(value if value is not None else world_settings.get(global_key, False))
-                    if entry["position"] not in {"0", "1", "before_char", "after_char", "before_char_defs"}:
-                        entry["enabled"] = False
-                        warnings.append("存在消息深度等不支持的世界书插入位置，对应条目已禁用并保留原文")
-                    if entry["raw_json"].get("useProbability") and entry["raw_json"].get("probability", 100) != 100:
-                        entry["enabled"] = False
-                        warnings.append("存在按概率触发的条目，对应条目已禁用并保留原文")
-                    if entry["selective"] and entry["raw_json"].get("selectiveLogic", 0) != 0:
-                        entry["enabled"] = False
-                        warnings.append("存在不支持的次要关键词逻辑，对应条目已禁用并保留原文")
+                warnings = worldbook_import_warnings(raw)
                 add("worldbook", key, payload["name"], raw, payload, sorted(set(warnings)), content_hash(content))
                 if path.stem in selected_worlds:
                     plan.defaults["worldbook_ids"].append(resource_id(source, "worldbook", key))
@@ -432,9 +418,15 @@ def build_plan(files: dict[str, bytes], manifest: dict, source: str) -> ImportPl
         if reverse_proxy and api not in {"custom", "openrouter"}:
             base_url = reverse_proxy
             api_key = (proxy or {}).get("password") or preset.get("proxy_password") or None
-        if not base_url or not model or not api_key:
+        custom_body, custom_headers, excluded_body_params, custom_warnings = convert_custom_request_settings(preset)
+        if api != "custom" and any(preset.get(option) for option in ("custom_include_body", "custom_include_headers", "custom_exclude_body")):
+            custom_body, custom_headers, excluded_body_params = {}, {}, []
+            custom_warnings = ["自定义请求字段仅作用于 SillyTavern 自定义接口，本连接未应用这些字段"]
+        warnings.extend(custom_warnings)
+        if not base_url or not model or (not api_key and not has_custom_auth(custom_headers)):
             add("connection", key, name, raw, warnings=[
                 "未创建可用 API 配置：没有完整的地址、模型或对应密钥；原始配置已保存",
+                *warnings,
             ])
             return
         parsed_url = urlsplit(base_url)
@@ -451,15 +443,13 @@ def build_plan(files: dict[str, bytes], manifest: dict, source: str) -> ImportPl
         input_limit = max(1024, input_limit - output_limit)
         payload = schemas.APIProfileCreate(
             name=name, provider_type=provider, base_url=base_url.rstrip("/"), path_override=path_override,
-            model=str(model), api_key=api_key, default_params=_sampling(preset, provider),
+            model=str(model), api_key=api_key, default_params={**_sampling(preset, provider), **custom_body},
+            custom_headers=custom_headers, excluded_body_params=excluded_body_params,
             input_token_limit=min(input_limit, 8 * 1024 * 1024),
             output_token_limit=min(max(1, output_limit), 1024 * 1024),
         ).model_dump()
         if not active and raw.get("preset") not in presets:
             warnings.append("关联的采样预设未找到，使用 Yggdrasil 默认采样参数")
-        for option in ("custom_include_body", "custom_include_headers", "custom_exclude_body"):
-            if preset.get(option):
-                warnings.append(f"{option} 尚未转换，仅保留原始配置")
         if raw.get("prompt-post-processing") not in {None, "", "none"}:
             warnings.append("SillyTavern 的提示词后处理尚未转换")
         add("profile", key, name, raw, payload, warnings, content_hash({"raw": raw, "payload": payload}))

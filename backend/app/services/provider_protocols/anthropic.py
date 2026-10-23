@@ -59,35 +59,13 @@ def extract_anthropic_usage(payload: Dict[str, Any]) -> Dict[str, Any]:
     return normalized
 
 def _anthropic_messages(context: schemas.ContextPreviewOut) -> List[Dict[str, str]]:
-    _, ordered = _split_leading_system(context)
-    messages: List[Dict[str, str]] = []
-    seen_user = False
-    for raw in ordered:
-        role = raw["role"]
-        content = raw["content"]
-        if role == "system":
-            # Anthropic only permits top-level system content. Preserve a post-history
-            # system slot's order by representing it as a user instruction.
-            role = "user"
-            content = f"[System instruction]\n{content}"
-        if role not in {"user", "assistant"}:
-            continue
-        if role == "user":
-            seen_user = True
-        if role == "assistant" and not seen_user:
-            messages.append({"role": "user", "content": "The scene begins. Continue naturally."})
-            seen_user = True
-        if messages and messages[-1]["role"] == role:
-            messages[-1]["content"] += "\n\n" + content
-        else:
-            messages.append({"role": role, "content": content})
-    if not messages:
-        messages.append({"role": "user", "content": "Begin the roleplay."})
-    return messages
+    messages, _ = _message_blocks(context)
+    # Joining a turn's blocks reproduces the plain "\n\n"-joined content.
+    return [{"role": message["role"], "content": "".join(block["text"] for block in message["content"])} for message in messages]
 
 
-def _cached_message_blocks(context: schemas.ContextPreviewOut) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
-    """Preserve message text while retaining the last history block boundary."""
+def _message_blocks(context: schemas.ContextPreviewOut) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
+    """Build Anthropic turns as text blocks and return the last history block for cache breakpoints."""
     _, ordered = _split_leading_system(context)
     if context.compiled_blocks:
         history = [block.is_history for block in context.compiled_blocks if block.content.strip()]
@@ -100,6 +78,8 @@ def _cached_message_blocks(context: schemas.ContextPreviewOut) -> tuple[list[dic
     for raw, is_history in zip(ordered, history, strict=True):
         role, content = raw["role"], raw["content"]
         if role == "system":
+            # Anthropic only permits top-level system content. Preserve a post-history
+            # system slot's order by representing it as a user instruction.
             role, content = "user", f"[System instruction]\n{content}"
         if role not in {"user", "assistant"}:
             continue
@@ -122,7 +102,7 @@ def _cached_message_blocks(context: schemas.ContextPreviewOut) -> tuple[list[dic
 
 
 def _apply_prompt_cache(payload: Dict[str, Any], context: schemas.ContextPreviewOut) -> None:
-    messages, last_history = _cached_message_blocks(context)
+    messages, last_history = _message_blocks(context)
     payload["messages"] = messages
     system = payload["system"]
     payload["system"] = [{"type": "text", "text": system}] if system.strip() else []

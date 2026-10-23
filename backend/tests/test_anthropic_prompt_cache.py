@@ -50,6 +50,30 @@ def test_cache_mode_preserves_message_text_when_same_role_blocks_are_joined():
     assert "cache_control" not in enabled["messages"][0]["content"][-1]
 
 
+def blocks_context(*items):
+    blocks = [schemas.CompiledPromptBlock(slot_id=f"b{index}", slot_kind="history" if history else "custom", slot_name="Block",
+                                          source="test", role=role, content=content, token_count=1, is_history=history)
+              for index, (role, content, history) in enumerate(items)]
+    return schemas.ContextPreviewOut(system="", messages=[], activated_lore=[], compiled_blocks=blocks)
+
+
+@pytest.mark.parametrize(("items", "expected"), [
+    (
+        [("system", "Sys", False), ("assistant", "Hello", True), ("user", "Hi", True), ("system", "After", False)],
+        [{"role": "user", "content": "The scene begins. Continue naturally."}, {"role": "assistant", "content": "Hello"},
+         {"role": "user", "content": "Hi\n\n[System instruction]\nAfter"}],
+    ),
+    (
+        [("user", "A", True), ("user", "   ", True), ("user", "B", True), ("assistant", "C", True), ("assistant", "D", True)],
+        [{"role": "user", "content": "A\n\nB"}, {"role": "assistant", "content": "C\n\nD"}],
+    ),
+    ([("system", "Only system", False)], [{"role": "user", "content": "Begin the roleplay."}]),
+])
+def test_plain_messages_keep_legacy_text_without_cache(items, expected):
+    payload = prepare_request(profile(False), blocks_context(*items), {}, "key").payload
+    assert payload["messages"] == expected
+
+
 def test_cache_mode_respects_existing_breakpoint_capacity_without_mutating_params():
     params = {"tools": [{"name": f"tool-{i}", "input_schema": {"type": "object"}, "cache_control": {"type": "ephemeral"}} for i in range(3)]}
     before = json.dumps(params, sort_keys=True)

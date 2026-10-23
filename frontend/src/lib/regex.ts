@@ -33,9 +33,10 @@ export function validateRegex(rule: RegexRule): string | null {
   if (/[^gims]/.test(rule.flags)) return "匹配选项包含不支持的旧 flags；请重新选择匹配选项";
   if (new Set(rule.flags).size !== rule.flags.length) return "匹配选项存在重复值；请重新选择匹配选项";
   if (!rule.targets.length) return "请至少选择一个应用位置";
-  if (rule.mode === "veil" && rule.targets.includes("outgoing_prompt")) {
-    return "隐式遮罩不能用于发送给模型的 Prompt";
+  if (rule.mode !== "replace" && rule.targets.includes("outgoing_prompt")) {
+    return "发送给模型的 Prompt 仅支持显式替换";
   }
+  if (rule.mode === "hover" && rule.targets.some((target) => target !== "display")) return "悬停预览仅支持聊天显示";
   try {
     compileRegex(rule);
     return null;

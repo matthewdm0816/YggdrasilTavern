@@ -1,3 +1,5 @@
+import { displayMessageText, type MacroContext } from "../lib/macros";
+import { useMessageMacroContext } from "./MessageMacroProvider";
 import { useEffect, useId, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -51,14 +53,14 @@ function roleLabel(role: Message["role"]): string {
   return "系统";
 }
 
-function messageSummary(message: Message): string {
-  const compact = markdownPreviewText(message.content);
+function messageSummary(message: Message, context?: MacroContext): string {
+  const compact = markdownPreviewText(displayMessageText(message.content, context));
   if (!compact) return "（空消息）";
   return compact.length > 96 ? `${compact.slice(0, 96)}…` : compact;
 }
 
-function searchableMessageText(message: Message): string {
-  return [message.id, message.speaker, roleLabel(message.role), message.role, message.status, messageStatusLabel(message.status), message.content, message.thinking_content]
+function searchableMessageText(message: Message, context?: MacroContext): string {
+  return [message.id, message.speaker, roleLabel(message.role), message.role, message.status, messageStatusLabel(message.status), message.content, displayMessageText(message.content, context), message.thinking_content, displayMessageText(message.thinking_content, context)]
     .join("\n")
     .toLocaleLowerCase();
 }
@@ -144,12 +146,12 @@ export function activePathExpandedNodeIds(model: ForestModel, activePathIds: str
   return ids;
 }
 
-export function visibleForestRows(model: ForestModel, expandedIds: ReadonlySet<string>, searchQuery = ""): VisibleForestRow[] {
+export function visibleForestRows(model: ForestModel, expandedIds: ReadonlySet<string>, searchQuery = "", context?: MacroContext): VisibleForestRow[] {
   const query = searchQuery.trim().toLocaleLowerCase();
   const subtreeMatches = new Map<string, boolean>();
 
   function isMatch(node: ForestNode): boolean {
-    return Boolean(query) && searchableMessageText(node.message).includes(query);
+    return Boolean(query) && searchableMessageText(node.message, context).includes(query);
   }
 
   function hasMatch(node: ForestNode): boolean {
@@ -193,6 +195,7 @@ function scrollBehavior(): ScrollBehavior {
 }
 
 export function ForestTreeView({ tree, onClose, onSelectMessage }: Props) {
+  const macroContext = useMessageMacroContext();
   const titleId = useId();
   const previewId = useId();
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -222,7 +225,7 @@ export function ForestTreeView({ tree, onClose, onSelectMessage }: Props) {
   const firstRootId = model.roots[0]?.message.id || null;
   const shownId = hoveredId || focusedId || pinnedId || activeLeafId || firstRootId;
   const shownMessage = shownId ? messagesById.get(shownId) : undefined;
-  const visibleRows = useMemo(() => visibleForestRows(model, expandedIds, searchQuery), [expandedIds, model, searchQuery]);
+  const visibleRows = useMemo(() => visibleForestRows(model, expandedIds, searchQuery, macroContext), [expandedIds, model, searchQuery, macroContext]);
   const searchMatchCount = visibleRows.filter((row) => row.isSearchMatch).length;
   const hiddenNodeCount = Math.max(0, tree.messages.length - visibleRows.length);
 
@@ -378,7 +381,7 @@ export function ForestTreeView({ tree, onClose, onSelectMessage }: Props) {
             <span className={`forest-tree-role role-${message.role}`}>{roleLabel(message.role)}</span>
             <span className="forest-tree-node-copy">
               <span className="forest-tree-node-speaker">{message.speaker || roleLabel(message.role)}</span>
-              <span className="forest-tree-node-summary">{messageSummary(message)}</span>
+              <span className="forest-tree-node-summary">{messageSummary(message, macroContext)}</span>
             </span>
             <span className="forest-tree-node-tail">
               {isCurrent && <span className="forest-tree-current-badge">当前</span>}
@@ -445,7 +448,7 @@ export function ForestTreeView({ tree, onClose, onSelectMessage }: Props) {
                   </div>
                 </header>
                 <div className="forest-tree-preview-scroll">
-                  <pre className="forest-tree-preview-content">{shownMessage.content || "（空消息）"}</pre>
+                  <pre className="forest-tree-preview-content">{displayMessageText(shownMessage.content, macroContext) || "（空消息）"}</pre>
                   {shownMessage.error && <div className="forest-tree-message-error" role="alert">节点错误：{messageErrorText(shownMessage.error)}</div>}
                 </div>
                 <footer className="forest-tree-preview-footer">

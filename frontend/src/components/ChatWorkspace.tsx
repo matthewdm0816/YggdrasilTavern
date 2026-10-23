@@ -1,3 +1,8 @@
+import { validateRegex } from "../lib/regex";
+import { MacroText } from "./MacroText";
+import { displayMessageText, containsMacros } from "../lib/macros";
+import { useMacroDisplayMode } from "../features/chat/macroDisplay";
+import { useMessageMacroContext } from "./MessageMacroProvider";
 import { FormEvent, KeyboardEvent, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ChevronLeft,
@@ -222,6 +227,11 @@ export function ChatWorkspace({
 
   const messageIndex = useMemo(() => buildMessageIndex(tree?.messages || []), [tree?.messages]);
   const activeMessages = useMemo(() => getActiveMessages(tree, messageIndex), [tree, messageIndex]);
+  const macroContext = useMessageMacroContext();
+  const macroDisplay = useMacroDisplayMode();
+  const [previewReplacements, setPreviewReplacements] = useState<Record<string, boolean>>({});
+  const invalidRegexRules = useMemo(() => regexRules.filter((rule) => rule.enabled && validateRegex(rule)), [regexRules]);
+  const hasHoverRules = regexRules.some((rule) => rule.enabled && rule.mode === "hover" && rule.targets.includes("display") && !validateRegex(rule));
   const character = characters.find((item) => item.id === activeSession?.character_id);
   const hasKeyboardShortcut = useMediaQuery("(hover: hover) and (pointer: fine)");
   const contentRevision = activeMessages.map((message) => `${message.id}:${message.content.length}:${message.thinking_content.length}:${message.status}`).join("|");
@@ -375,7 +385,7 @@ export function ChatWorkspace({
   async function copyMessage(message: Message) {
     try {
       if (!navigator.clipboard?.writeText) throw new Error("浏览器未提供剪贴板访问，请在 HTTPS 或本机地址下使用复制功能。");
-      await navigator.clipboard.writeText(message.content);
+      await navigator.clipboard.writeText(displayMessageText(message.content, macroContext));
       setInteractionError(null);
     } catch (cause) {
       setInteractionError("复制消息失败：" + (cause instanceof Error ? cause.message : String(cause)));
@@ -530,7 +540,7 @@ export function ChatWorkspace({
                 {message.thinking_content && (
                   <details className="thinking-box" open={message.status === "streaming"}>
                     <summary>Thinking · {message.thinking_token_count || "估算中"} tokens</summary>
-                    <pre>{message.thinking_content}</pre>
+                    <pre><MacroText content={message.thinking_content} showAllReplacements={Boolean(previewReplacements[message.id])} /></pre>
                   </details>
                 )}
                 {isEditing ? (
@@ -546,7 +556,7 @@ export function ChatWorkspace({
                     </div>
                   </div>
                 ) : message.content ? (
-                  <RegexMessage content={message.content} role={message.role} rules={regexRules} />
+                  <RegexMessage content={message.content} role={message.role} rules={regexRules} showAllReplacements={Boolean(previewReplacements[message.id])} />
                 ) : message.status === "streaming" ? <p className="message-content">…</p> : null}
                 {message.error && <p className="message-error">{messageErrorText(message.error)}</p>}
                 <footer className="message-footer">
@@ -566,6 +576,7 @@ export function ChatWorkspace({
                       <button className="icon-button message-quick-action" type="button" title="重新生成此回复" aria-label="重新生成此回复" disabled={messageActionsBusy || !canGenerate} onClick={() => onRegenerate(message.id)}><RefreshCcw size={15} /></button>
                     )}
                     <ActionMenu label="消息操作">
+                      {(hasHoverRules || (macroDisplay.mode === "hover" && (containsMacros(message.content) || containsMacros(message.thinking_content)))) && <button type="button" data-close-menu onClick={() => setPreviewReplacements((current) => ({ ...current, [message.id]: !current[message.id] }))}>{previewReplacements[message.id] ? "恢复原文" : "整条显示替换后"}</button>}
                       <button type="button" data-close-menu disabled={!message.content} onClick={() => void copyMessage(message)}><Copy size={16} />复制正文</button>
                       {message.role === "assistant" && onReadMessage && <button type="button" data-close-menu disabled={messageActionsBusy || message.status !== "complete"} onClick={() => onReadMessage(message)}><Volume2 size={16} />朗读消息…</button>}
                       <button type="button" data-close-menu disabled={messageActionsBusy} onClick={() => void duplicateMessage(message)}><CopyPlus size={16} />复制为新分支</button>
@@ -593,6 +604,7 @@ export function ChatWorkspace({
           {treeActionLabel || mutating ? <><LoaderCircle size={16} className="chat-operation-spinner" /><span>{treeActionLabel ? `${treeActionLabel}中…` : "正在更新会话…"}</span></> : <span>{treeActionResult}</span>}
           {!treeActionLabel && !mutating && <button className="icon-button" type="button" aria-label="关闭操作结果" onClick={() => setTreeActionResults((current) => ({ ...current, [sessionId]: null }))}><X size={14} /></button>}
         </div>}
+        {!!invalidRegexRules.length && <div className="composer-error regex-errors" role="alert"><strong>Regex 规则有误，相关规则已跳过：</strong>{invalidRegexRules.map((rule) => <div key={rule.id}>{rule.name || rule.id}：{validateRegex(rule)}</div>)}</div>}
         {(interactionError || loadError) && <div className="composer-error" role="alert">{interactionError || loadError}</div>}
         <div className="composer-tools">
           {modelPicker}

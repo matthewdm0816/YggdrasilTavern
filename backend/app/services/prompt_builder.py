@@ -18,6 +18,7 @@ from .token_counter import count_text_tokens
 from .token_limits import ResolvedTokenLimits, resolve_profile_token_limits
 from .tree import active_path
 from .worldbook_import import iter_worldbook_entries, normalize_worldbook_entry, normalize_worldbook_settings, worldbook_import_warnings
+from .macros import expand_macros
 
 
 DEFAULT_SYSTEM = (
@@ -54,36 +55,6 @@ class LoreCandidate:
     activation_reason: str = "message"
     recursion_step: int = 0
     triggered_by: tuple[tuple[str, str], ...] = ()
-
-
-def expand_macros(text: str, character: Optional[models.Character | PromptCharacter], user_name: str, original: str = "") -> str:
-    if not text:
-        return ""
-    char_name = character.name if character else "Assistant"
-    replacements = {
-        "{{char}}": char_name,
-        "<BOT>": char_name,
-        "{{user}}": user_name,
-        "<USER>": user_name,
-        "{{description}}": character.description if character else "",
-        "{{personality}}": character.personality if character else "",
-        "{{scenario}}": character.scenario if character else "",
-        "{{charFirstMessage}}": character.first_mes if character else "",
-        "{{original}}": original,
-    }
-    result = text
-    for key, value in replacements.items():
-        result = result.replace(key, value)
-
-    if character:
-        greetings = [character.first_mes] + list(character.alternate_greetings or [])
-
-        def greeting(match: re.Match[str]) -> str:
-            index = int(match.group(1))
-            return greetings[index] if 0 <= index < len(greetings) else ""
-
-        result = re.sub(r"\{\{charFirstMessage::(\d+)\}\}", greeting, result)
-    return result
 
 
 def _candidate_from_entry(entry: models.WorldBookEntry) -> LoreCandidate:
@@ -422,6 +393,8 @@ def compile_context(inputs: PromptInputs) -> schemas.ContextPreviewOut:
     preset = inputs.preset
     user_name = str(preset.get("user_name") or "User")
     path = list(inputs.path)
+    # Scan expanded copies; persisted history and the later prompt pass stay raw.
+    scan_path = [replace(message, content=expand_macros(message.content, character, user_name)) for message in path]
     diagnostics: List[schemas.PromptDiagnostic] = []
     if inputs.worldbook_regex_config_error:
         diagnostics.append(
@@ -461,7 +434,7 @@ def compile_context(inputs: PromptInputs) -> schemas.ContextPreviewOut:
         keys=[expand_macros(key, character, user_name) for key in item.keys],
         secondary_keys=[expand_macros(key, character, user_name) for key in item.secondary_keys],
     ) for item in book.candidates)) for book in scan_books]
-    activated_lore = activate_lore_books(scan_books, path)
+    activated_lore = activate_lore_books(scan_books, scan_path)
     activated_lore.sort(key=lambda item: (item.order, item.worldbook_id, item.id))
 
     lore_before = [item.content for item in activated_lore if item.position in {"before_char", "before_char_defs", "0"}]

@@ -1,3 +1,4 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { ChangeEvent, useEffect, useRef, useState } from "react";
 import { Download, FlipHorizontal2, FlipVertical2, Pencil, Plus, RotateCw, Save, ToggleLeft, ToggleRight, Trash2, Upload, X } from "lucide-react";
 import { api, AvatarTransform, Character, CharacterSummary, WorldBook, WorldBookEntry } from "../lib/api";
@@ -137,6 +138,7 @@ function AvatarEditor({ character, onApply, onError }: { character: Character; o
 }
 
 export function CharacterManager({ characters, onChanged, onError, openRequestId }: CommonProps & { characters: CharacterSummary[]; openRequestId?: string | null }) {
+  const queryClient = useQueryClient();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState<Character | null>(null);
   const [loaded, setLoaded] = useState("");
@@ -155,7 +157,7 @@ export function CharacterManager({ characters, onChanged, onError, openRequestId
     setBusy(true);
     setEditingId(characterId);
     try {
-      const character = await api.character(characterId);
+      const character = await queryClient.fetchQuery({ queryKey: ["character", characterId], queryFn: () => api.character(characterId), staleTime: Infinity });
       setDraft(character);
       setLoaded(JSON.stringify(character));
     } catch (cause) {
@@ -171,6 +173,7 @@ export function CharacterManager({ characters, onChanged, onError, openRequestId
     setBusy(true);
     try {
       await api.updateCharacter(draft.id, draft);
+      await queryClient.invalidateQueries({ queryKey: ["character", draft.id] });
       onChanged();
       setEditingId(null);
     } catch (cause) {

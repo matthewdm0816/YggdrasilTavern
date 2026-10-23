@@ -1,13 +1,18 @@
+import { useMacroDisplayMode } from "../features/chat/macroDisplay";
+import { displayMessageText, macroPreviews } from "../lib/macros";
+import { useMessageMacroContext } from "./MessageMacroProvider";
 import { memo, useEffect, useMemo, useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
 import { Message, RegexRule } from "../lib/api";
-import { DisplayBlock, transformMessageContent } from "../lib/regex";
+import { DisplayBlock, transformMessageContent, validateRegex } from "../lib/regex";
+import { regexPreviews } from "../lib/textPreview";
 import { MarkdownMessage } from "./MarkdownMessage";
 
 type Props = {
   content: string;
   role: Message["role"];
   rules: RegexRule[];
+  showAllReplacements?: boolean;
 };
 
 type RenderGroup =
@@ -30,8 +35,17 @@ function groupBlocks(blocks: DisplayBlock[]): RenderGroup[] {
   return groups;
 }
 
-export const RegexMessage = memo(function RegexMessage({ content, role, rules }: Props) {
-  const blocks = useMemo(() => transformMessageContent(content, role, rules), [content, role, rules]);
+export const RegexMessage = memo(function RegexMessage({ content, role, rules, showAllReplacements = false }: Props) {
+  const macroContext = useMessageMacroContext();
+  const macroDisplay = useMacroDisplayMode();
+  const displayContent = macroDisplay.mode === "expanded" ? displayMessageText(content, macroContext) : content;
+  const hoverRules = useMemo(() => rules.filter((rule) => rule.enabled && rule.mode === "hover" && !validateRegex(rule)), [rules]);
+  const previews = useMemo(() => (text: string) => {
+    const macros = macroDisplay.mode === "hover" ? macroPreviews(text, macroContext) : [];
+    const regex = regexPreviews(text, hoverRules).filter((item) => !macros.some((macro) => macro.start < item.end && macro.end > item.start));
+    return [...macros, ...regex].sort((a, b) => a.start - b.start);
+  }, [hoverRules, macroDisplay.mode, macroContext]);
+  const blocks = useMemo(() => transformMessageContent(displayContent, role, rules), [displayContent, role, rules]);
   const groups = useMemo(() => groupBlocks(blocks), [blocks]);
   const [revealed, setRevealed] = useState<Set<string>>(new Set());
 
@@ -51,7 +65,7 @@ export const RegexMessage = memo(function RegexMessage({ content, role, rules }:
       {groups.map((group) => {
         if (group.kind === "markdown") {
           return group.text.trim()
-            ? <MarkdownMessage key={group.id} content={group.text} />
+            ? <MarkdownMessage key={group.id} content={group.text} previews={previews} showAllReplacements={showAllReplacements} />
             : <span key={group.id}>{group.text}</span>;
         }
         const block = group.block;
@@ -75,7 +89,7 @@ export const RegexMessage = memo(function RegexMessage({ content, role, rules }:
               {isRevealed ? <Eye size={15} /> : <EyeOff size={15} />}
               {isRevealed ? "点击重新遮罩" : `Regex 隐式替换 · ${block.ruleNames.join("、") || "命中"}`}
             </span>
-            <div className="veil-content"><MarkdownMessage content={block.text} /></div>
+            <div className="veil-content"><MarkdownMessage content={block.text} previews={isRevealed ? previews : undefined} showAllReplacements={showAllReplacements} /></div>
           </div>
         );
       })}

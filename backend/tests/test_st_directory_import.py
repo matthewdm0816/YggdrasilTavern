@@ -254,7 +254,9 @@ def test_import_api_preview_apply_no_secret_readback_and_new_session_defaults(db
     assert len(client.get("/api/settings/worldbooks-regex").json()["worldbook_ids"]) == 1
     assert session.json()["api_profile_id"]
     tree = client.get(f"/api/sessions/{session.json()['id']}/tree").json()
-    assert tree["messages"][0]["content"] == "Hi Ada"
+    assert tree["messages"][0]["content"] == "Hi {{user}}"
+    context = client.post(f"/api/sessions/{session.json()['id']}/context/preview").json()
+    assert any(message["content"] == "Hi Ada" for message in context["messages"])
     assert client.post("/api/imports/sillytavern/apply", json={"token": preview.json()["token"]}).status_code == 410
     credentials = client.get("/api/saved-credentials").json()
     old_key = next(item for item in credentials if "Saved key" in item["name"])

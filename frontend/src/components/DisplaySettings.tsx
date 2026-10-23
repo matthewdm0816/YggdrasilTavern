@@ -1,3 +1,4 @@
+import { useMacroDisplayMode, type MacroDisplayMode } from "../features/chat/macroDisplay";
 import { useEffect, useState, type ReactNode } from "react";
 import { Palette } from "lucide-react";
 import { CollapsibleSection } from "./CollapsibleSection";
@@ -37,6 +38,7 @@ export function applyFontSizeSettings(sizes = loadSizes()) {
 
 export function DisplaySettings({ children }: { children?: ReactNode }) {
   const [sizes, setSizes] = useState(loadSizes);
+  const macroDisplay = useMacroDisplayMode();
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     applyFontSizeSettings(sizes);
@@ -50,6 +52,8 @@ export function DisplaySettings({ children }: { children?: ReactNode }) {
   }, [sizes]);
   return <CollapsibleSection contentId="display-settings-content" title="外观与字号" icon={<Palette size={16} />} storageKey="yggdrasil-tavern.display.expanded">
     {children}
+    <label className="form-field"><span>宏显示方式</span><select aria-label="宏显示方式" value={macroDisplay.mode} onChange={(event) => macroDisplay.setMode(event.target.value as MacroDisplayMode)}><option value="expanded">直接显示替换后</option><option value="hover">显示原文，悬停或点按看替换后</option></select></label>
+    {macroDisplay.error && <p className="field-error" role="alert">{macroDisplay.error}</p>}
     {(["desktop", "mobile"] as const).map((target) => <label className="form-field font-size-setting" key={target}>
       <span>{target === "desktop" ? "电脑字号" : "移动端字号"} · {sizes[target]} px</span>
       <input aria-label={target === "desktop" ? "电脑字号" : "移动端字号"} type="range" min={target === "mobile" ? 10 : 12} max="22" step="1" value={sizes[target]} onChange={(event) => setSizes((current) => ({ ...current, [target]: Number(event.target.value) }))} />

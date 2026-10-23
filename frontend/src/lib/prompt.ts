@@ -67,6 +67,6 @@ function isRegexRule(value: unknown): value is RegexRule {
     typeof rule.flags === "string" &&
     typeof rule.replacement === "string" &&
     Array.isArray(rule.targets) &&
-    (rule.mode === "replace" || rule.mode === "veil")
+    (rule.mode === "replace" || rule.mode === "veil" || rule.mode === "hover")
   );
 }

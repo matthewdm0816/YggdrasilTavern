@@ -1,0 +1,182 @@
+{
+  "cases": [
+    {
+      "id": "all-named",
+      "text": "{{char}}|{{user}}|{{description}}|{{personality}}|{{scenario}}|{{charFirstMessage}}|{{original}}|<BOT>|<USER>",
+      "character": {
+        "name": "Apeiria",
+        "description": "White-haired AI",
+        "personality": "Curious",
+        "scenario": "The sea",
+        "first_mes": "Hello {{user}}",
+        "alternate_greetings": [
+          "Welcome <USER>",
+          "Bye"
+        ]
+      },
+      "user_name": "Owner",
+      "original": "Original",
+      "expected": "Apeiria|Owner|White-haired AI|Curious|The sea|Hello {{user}}|Original|Apeiria|Owner"
+    },
+    {
+      "id": "indexed",
+      "text": "{{charFirstMessage::0}}|{{charFirstMessage::1}}|{{charFirstMessage::2}}|{{charFirstMessage::99}}",
+      "character": {
+        "name": "Apeiria",
+        "description": "White-haired AI",
+        "personality": "Curious",
+        "scenario": "The sea",
+        "first_mes": "Hello {{user}}",
+        "alternate_greetings": [
+          "Welcome <USER>",
+          "Bye"
+        ]
+      },
+      "user_name": "Owner",
+      "expected": "Hello {{user}}|Welcome <USER>|Bye|"
+    },
+    {
+      "id": "unicode-index",
+      "text": "{{charFirstMessage::١}}|{{charFirstMessage::２}}",
+      "character": {
+        "name": "Apeiria",
+        "description": "White-haired AI",
+        "personality": "Curious",
+        "scenario": "The sea",
+        "first_mes": "Hello {{user}}",
+        "alternate_greetings": [
+          "Welcome <USER>",
+          "Bye"
+        ]
+      },
+      "user_name": "Owner",
+      "expected": "Welcome <USER>|Bye"
+    },
+    {
+      "id": "no-character",
+      "text": "{{char}}|<BOT>|{{user}}|{{description}}|{{charFirstMessage::0}}",
+      "character": null,
+      "user_name": "Owner",
+      "expected": "Assistant|Assistant|Owner||{{charFirstMessage::0}}"
+    },
+    {
+      "id": "unknown-case-space",
+      "text": "{{CHAR}} {{ user }} {{random}} {{charFirstMessage::-1}}",
+      "character": {
+        "name": "Apeiria",
+        "description": "White-haired AI",
+        "personality": "Curious",
+        "scenario": "The sea",
+        "first_mes": "Hello {{user}}",
+        "alternate_greetings": [
+          "Welcome <USER>",
+          "Bye"
+        ]
+      },
+      "user_name": "Owner",
+      "expected": "{{CHAR}} {{ user }} {{random}} {{charFirstMessage::-1}}"
+    },
+    {
+      "id": "literal-replacements",
+      "text": "{{char}} / {{user}}",
+      "character": {
+        "name": "$& $$ \\",
+        "description": "White-haired AI",
+        "personality": "Curious",
+        "scenario": "The sea",
+        "first_mes": "Hello {{user}}",
+        "alternate_greetings": [
+          "Welcome <USER>",
+          "Bye"
+        ]
+      },
+      "user_name": "<USER> $1",
+      "expected": "$& $$ \\ / <USER> $1 $1"
+    },
+    {
+      "id": "ordered-nested",
+      "text": "{{char}} {{description}}",
+      "character": {
+        "name": "{{user}}",
+        "description": "{{char}} {{scenario}}",
+        "personality": "Curious",
+        "scenario": "The sea",
+        "first_mes": "Hello {{user}}",
+        "alternate_greetings": [
+          "Welcome <USER>",
+          "Bye"
+        ]
+      },
+      "user_name": "Owner",
+      "expected": "Owner {{char}} The sea"
+    },
+    {
+      "id": "indexed-last-pass",
+      "text": "{{charFirstMessage}} / {{charFirstMessage::0}}",
+      "character": {
+        "name": "Apeiria",
+        "description": "White-haired AI",
+        "personality": "Curious",
+        "scenario": "The sea",
+        "first_mes": "{{charFirstMessage::1}}",
+        "alternate_greetings": [
+          "Last"
+        ]
+      },
+      "user_name": "Owner",
+      "expected": "Last / {{charFirstMessage::1}}"
+    },
+    {
+      "id": "original-late",
+      "text": "{{original}}",
+      "character": {
+        "name": "Apeiria",
+        "description": "White-haired AI",
+        "personality": "Curious",
+        "scenario": "The sea",
+        "first_mes": "Hello {{user}}",
+        "alternate_greetings": [
+          "Welcome <USER>",
+          "Bye"
+        ]
+      },
+      "user_name": "Owner",
+      "original": "{{user}}",
+      "expected": "{{user}}"
+    },
+    {
+      "id": "empty-fields",
+      "text": "{{description}}{{personality}}{{scenario}}{{charFirstMessage}}{{original}}",
+      "character": {
+        "name": "Apeiria",
+        "description": "",
+        "personality": "",
+        "scenario": "",
+        "first_mes": "",
+        "alternate_greetings": [
+          "Welcome <USER>",
+          "Bye"
+        ]
+      },
+      "user_name": "Owner",
+      "expected": ""
+    },
+    {
+      "id": "multiline",
+      "text": "{{char}}\n{{user}}\n{{char}}",
+      "character": {
+        "name": "Apeiria",
+        "description": "White-haired AI",
+        "personality": "Curious",
+        "scenario": "The sea",
+        "first_mes": "Hello {{user}}",
+        "alternate_greetings": [
+          "Welcome <USER>",
+          "Bye"
+        ]
+      },
+      "user_name": "オーナー",
+      "expected": "Apeiria\nオーナー\nApeiria"
+    }
+  ]
+}

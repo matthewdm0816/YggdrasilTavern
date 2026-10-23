@@ -190,9 +190,11 @@ def test_session_creation_materializes_alternate_greetings_as_root_swipes():
 
     tree = client.get(f"/api/sessions/{session['id']}/tree").json()
     roots = sorted((item for item in tree["messages"] if item["parent_id"] is None), key=lambda item: item["sort_order"])
-    assert [item["content"] for item in roots] == ["First Ada from Luna", "Second Ada from Luna", "Third"]
+    assert [item["content"] for item in roots] == ["First {{user}} from {{char}}", "Second <USER> from <BOT>", "Third"]
     assert tree["session"]["active_root_child_id"] == roots[0]["id"]
     assert tree["active_path_ids"] == [roots[0]["id"]]
+    preview = client.post(f"/api/sessions/{session['id']}/context/preview").json()
+    assert any(message["content"] == "First Ada from Luna" for message in preview["messages"])
     assert "prompt_slots" not in session["preset"]
 
 

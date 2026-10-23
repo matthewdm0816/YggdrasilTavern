@@ -115,8 +115,10 @@ def normalize_regex_rules(raw_rules: Any) -> List[Dict[str, Any]]:
             rule = schemas.RegexRule.model_validate(raw)
         except ValidationError as exc:
             raise _validation_detail(f"Invalid regex_rules[{index}]", exc) from exc
-        if rule.mode == "veil" and "outgoing_prompt" in rule.targets:
-            raise ValueError(f"Regex rule '{rule.id}' cannot use veil mode for outgoing_prompt")
+        if rule.mode != "replace" and "outgoing_prompt" in rule.targets:
+            raise ValueError(f"Regex rule '{rule.id}' cannot use {rule.mode} mode for outgoing_prompt")
+        if rule.mode == "hover" and set(rule.targets) != {"display"}:
+            raise ValueError(f"Regex rule '{rule.id}' hover mode only supports display")
         if "outgoing_prompt" in rule.targets:
             try:
                 python_flags, _ = _compile_flags(rule.flags)

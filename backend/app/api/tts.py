@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from .. import models, schemas
 from ..database import get_db
 from ..services import tts
+from ..services.macros import expand_message_content
 from ..services.tts_text import extract_tts_text
 
 
@@ -92,7 +93,7 @@ async def generate_tts(message_id: str, request: Request, payload: schemas.TtsGe
     settings = db.get(models.TtsSettings, tts.SETTINGS_ID)
     if settings is None or not settings.enabled:
         raise HTTPException(status_code=409, detail="请先在语音设置中启用 TTS")
-    text = payload.text if payload is not None and payload.text is not None else extract_tts_text(message.content, settings.text_mode).text
+    text = expand_message_content(message.session, payload.text) if payload is not None and payload.text is not None else extract_tts_text(expand_message_content(message.session, message.content), settings.text_mode).text
     try:
         audio = await _until_disconnected(request, tts.synthesize(settings, text))
     except ValueError as exc:

@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from .. import models, schemas
 from . import providers
+from .macros import expand_message_content
 from .errors import ApplicationError
 from .prompt_builder import build_limited_context, prompt_errors
 from .token_counter import (
@@ -235,8 +236,8 @@ async def start_generation(
             if not message_row or not run_row or not session_row:
                 raise RuntimeError("Generation state disappeared before it could be persisted")
 
-            text_tokens = count_text_tokens(full_text, model_name)
-            estimated_thinking_tokens = count_text_tokens(thinking_text, model_name)
+            text_tokens = count_text_tokens(expand_message_content(session_row, full_text), model_name)
+            estimated_thinking_tokens = count_text_tokens(expand_message_content(session_row, thinking_text), model_name)
             reported_reasoning_tokens = reasoning_tokens_from_usage(usage)
             provider_input_tokens = input_tokens_from_usage(usage)
             provider_output_tokens = output_tokens_from_usage(usage)

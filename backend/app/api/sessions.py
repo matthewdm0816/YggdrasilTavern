@@ -8,7 +8,8 @@ from sqlalchemy.orm import Session
 
 from .. import models, schemas
 from ..database import get_db
-from ..services.prompt_builder import apply_context_token_limit, build_context, build_limited_context, expand_macros
+from ..services.prompt_builder import apply_context_token_limit, build_context, build_limited_context
+from ..services.macros import expand_message_content
 from ..services.token_counter import cached_tokens_from_usage, count_text_tokens
 from ..services.token_limits import default_token_limits
 from ..services.tree import (
@@ -84,7 +85,6 @@ def create_session(payload: schemas.SessionCreate, db: Session = Depends(get_db)
         profile = db.get(models.APIProfile, session.api_profile_id) if session.api_profile_id else None
         if character and session.preset.get("auto_greeting", True):
             greetings = [character.first_mes, *list(character.alternate_greetings or [])]
-            user_name = str(session.preset.get("user_name") or "User")
             first_greeting_id: Optional[str] = None
             for greeting in greetings:
                 if not isinstance(greeting, str) or not greeting.strip():
@@ -95,7 +95,7 @@ def create_session(payload: schemas.SessionCreate, db: Session = Depends(get_db)
                     parent_id=None,
                     role="assistant",
                     speaker=character.name,
-                    content=expand_macros(greeting, character, user_name),
+                    content=greeting,
                     model=profile.model if profile else None,
                     select_new=first_greeting_id is None,
                     commit=False,
@@ -197,8 +197,8 @@ def update_message(message_id: str, payload: schemas.MessageUpdate, db: Session 
         else:
             message.speaker = "System"
     model_name = session.api_profile.model if session.api_profile else None
-    message.token_count = count_text_tokens(message.content, model_name)
-    message.thinking_token_count = count_text_tokens(message.thinking_content, model_name)
+    message.token_count = count_text_tokens(expand_message_content(session, message.content), model_name)
+    message.thinking_token_count = count_text_tokens(expand_message_content(session, message.thinking_content), model_name)
     message.cached_tokens = cached_tokens_from_usage(message.usage)
     db.commit()
     db.refresh(message)

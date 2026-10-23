@@ -422,7 +422,7 @@ class RegexRule(BaseModel):
     enabled: bool = True
     scope: Literal["session", "character", "global"] = "session"
     targets: List[RegexTarget] = Field(default_factory=lambda: ["display"], min_length=1)
-    mode: Literal["replace", "veil"] = "replace"
+    mode: Literal["replace", "veil", "hover"] = "replace"
     pattern: str = Field(min_length=1)
     flags: str = Field(default="", pattern=r"^[gims]*$")
     replacement: str = ""

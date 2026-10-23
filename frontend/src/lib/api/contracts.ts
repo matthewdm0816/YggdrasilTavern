@@ -8,6 +8,7 @@ type WithRequired<T, K extends keyof T> = Pick<T, K> & Partial<Omit<T, K>>;
 export type ProfileCreateInput = APIProfileWrite &
   WithRequired<Schema["APIProfileCreate"], "name" | "provider_type" | "base_url" | "model">;
 export type ProfileUpdateInput = Schema["APIProfileUpdate"];
+export type ProfileModelsDiscoverInput = Schema["ModelsDiscoverIn"];
 export type CharacterCreateInput = WithRequired<Schema["CharacterCreate"], "name">;
 export type CharacterUpdateInput = Schema["CharacterUpdate"];
 export type WorldBookCreateInput = WithRequired<Schema["WorldBookCreate"], "name">;
@@ -39,14 +40,14 @@ type ExplicitRequired<T, Defaulted extends keyof T> = Exclude<RequiredKeys<T>, D
  */
 export type CreateRequirementChecks = [
   Assert<Equal<ExplicitRequired<Schema["APIProfileCreate"],
-    "api_key_env" | "input_token_limit" | "output_token_limit">,
+    "api_key_env" | "input_token_limit" | "output_token_limit" | "anthropic_prompt_cache">,
     "name" | "provider_type" | "base_url" | "model">>,
   Assert<Equal<ExplicitRequired<Schema["CharacterCreate"],
     "description" | "personality" | "scenario" | "first_mes" | "mes_example" |
     "creator_notes" | "system_prompt" | "post_history_instructions" |
     "creator" | "character_version">, "name">>,
   Assert<Equal<ExplicitRequired<Schema["WorldBookCreate"],
-    "description" | "scan_depth" | "token_budget" | "recursive_scanning">, "name">>,
+    "description" | "scan_depth" | "token_budget" | "recursive_scanning" | "max_recursion_steps">, "name">>,
   Assert<Equal<ExplicitRequired<Schema["SessionFolderCreate"], "sort_order">, "name">>,
   Assert<Equal<ExplicitRequired<Schema["SessionCreate"], "title" | "pinned" | "archived">,
     "character_id">>,

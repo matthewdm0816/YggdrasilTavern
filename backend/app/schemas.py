@@ -18,16 +18,30 @@ class APIProfileBase(BaseModel):
     model: str
     api_key_env: str = Field(default="", pattern=r"^(?:[A-Za-z_][A-Za-z0-9_]*)?$")
     default_params: Dict[str, Any] = Field(default_factory=dict)
+    excluded_body_params: List[str] = Field(default_factory=list)
+    anthropic_prompt_cache: bool = False
     input_token_limit: int = Field(default=262144, ge=1024, le=8 * 1024 * 1024)
     output_token_limit: int = Field(default=32768, ge=1, le=1024 * 1024)
+
+    @model_validator(mode="after")
+    def validate_excluded_body_params(self) -> "APIProfileBase":
+        from .services.provider_protocols.request_settings import normalize_excluded_body_params
+
+        self.excluded_body_params = normalize_excluded_body_params(self.excluded_body_params)
+        return self
 
 
 class APIProfileCreate(APIProfileBase):
     api_key: Optional[str] = None
+    custom_headers: Dict[str, str] = Field(default_factory=dict, json_schema_extra={"writeOnly": True})
 
     @model_validator(mode="after")
     def require_credential(self) -> "APIProfileCreate":
-        if not (self.api_key or "").strip() and not self.api_key_env:
+        from .services.provider_protocols.request_settings import has_custom_auth, normalize_custom_headers, validate_body_params
+
+        validate_body_params(self.default_params)
+        self.custom_headers = normalize_custom_headers(self.custom_headers)
+        if not (self.api_key or "").strip() and not self.api_key_env and not has_custom_auth(self.custom_headers):
             raise ValueError("请填写 API Key")
         return self
 
@@ -42,8 +56,27 @@ class APIProfileUpdate(BaseModel):
     api_key: Optional[str] = None
     api_key_env: Optional[str] = Field(default=None, pattern=r"^(?:[A-Za-z_][A-Za-z0-9_]*)?$")
     default_params: Optional[Dict[str, Any]] = None
+    custom_headers: Dict[str, Optional[str]] = Field(default_factory=dict, json_schema_extra={"writeOnly": True})
+    excluded_body_params: Optional[List[str]] = None
+    anthropic_prompt_cache: Optional[bool] = None
     input_token_limit: Optional[int] = Field(default=None, ge=1024, le=8 * 1024 * 1024)
     output_token_limit: Optional[int] = Field(default=None, ge=1, le=1024 * 1024)
+
+    @model_validator(mode="after")
+    def validate_request_customizations(self) -> "APIProfileUpdate":
+        from .services.provider_protocols.request_settings import normalize_custom_headers, normalize_excluded_body_params, validate_body_params
+
+        if "default_params" in self.model_fields_set:
+            validate_body_params(self.default_params)
+        if "custom_headers" in self.model_fields_set:
+            self.custom_headers = normalize_custom_headers(self.custom_headers, allow_deletions=True)
+        if "excluded_body_params" in self.model_fields_set:
+            if self.excluded_body_params is None:
+                raise ValueError("排除的正文参数必须是字段名列表")
+            self.excluded_body_params = normalize_excluded_body_params(self.excluded_body_params)
+        if "anthropic_prompt_cache" in self.model_fields_set and self.anthropic_prompt_cache is None:
+            raise ValueError("Anthropic 提示词缓存开关必须是布尔值")
+        return self
 
 
 class RemoteModelInfo(BaseModel):
@@ -59,6 +92,7 @@ class RemoteModelInfo(BaseModel):
 class APIProfileOut(APIProfileBase, ORMModel):
     id: str
     has_api_key: bool = False
+    custom_header_names: List[str] = Field(default_factory=list)
     model_catalog: List[RemoteModelInfo] = Field(default_factory=list)
     models_refreshed_at: Optional[datetime] = None
     created_at: datetime
@@ -78,6 +112,14 @@ class ModelsDiscoverIn(BaseModel):
     path_override: Optional[str] = None
     api_key: Optional[str] = None
     profile_id: Optional[str] = None
+    custom_headers: Dict[str, Optional[str]] = Field(default_factory=dict, json_schema_extra={"writeOnly": True})
+
+    @model_validator(mode="after")
+    def validate_discovery_headers(self) -> "ModelsDiscoverIn":
+        from .services.provider_protocols.request_settings import normalize_custom_headers
+
+        self.custom_headers = normalize_custom_headers(self.custom_headers, allow_deletions=True)
+        return self
 
 
 class CharacterBase(BaseModel):
@@ -130,6 +172,7 @@ class CharacterUpdate(BaseModel):
 
 class CharacterOut(CharacterBase, ORMModel):
     id: str
+    import_warnings: List[str] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
 
@@ -144,9 +187,12 @@ class WorldBookEntryBase(BaseModel):
     selective: bool = False
     order: int = 100
     position: str = "after_char"
-    depth: Optional[int] = None
+    depth: Optional[int] = Field(default=None, ge=0)
     case_sensitive: bool = False
     match_whole_words: bool = False
+    exclude_recursion: bool = False
+    prevent_recursion: bool = False
+    delay_until_recursion: int = Field(default=0, ge=0)
     raw_json: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -167,6 +213,7 @@ class WorldBookBase(BaseModel):
     scan_depth: int = 8
     token_budget: int = 4000
     recursive_scanning: bool = False
+    max_recursion_steps: int = Field(default=0, ge=0)
     raw_json: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -180,12 +227,14 @@ class WorldBookUpdate(BaseModel):
     scan_depth: Optional[int] = None
     token_budget: Optional[int] = None
     recursive_scanning: Optional[bool] = None
+    max_recursion_steps: Optional[int] = Field(default=None, ge=0)
     raw_json: Optional[Dict[str, Any]] = None
     entries: Optional[List[WorldBookEntryCreate]] = None
 
 
 class WorldBookOut(WorldBookBase, ORMModel):
     id: str
+    import_warnings: List[str] = Field(default_factory=list)
     entries: List[WorldBookEntryOut] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
@@ -560,6 +609,11 @@ class CompiledPromptBlock(BaseModel):
     speaker: str = ""
 
 
+class LoreTrigger(BaseModel):
+    id: str
+    worldbook_id: str
+
+
 class ActivatedLore(BaseModel):
     id: str
     worldbook_id: str
@@ -567,6 +621,9 @@ class ActivatedLore(BaseModel):
     position: str
     content: str
     keys: List[str]
+    activation_reason: Literal["message", "constant", "recursion", "recursion_delay"] = "message"
+    recursion_step: int = 0
+    triggered_by: List[LoreTrigger] = Field(default_factory=list)
 
 
 class ContextPreviewOut(BaseModel):

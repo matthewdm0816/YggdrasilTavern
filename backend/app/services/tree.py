@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session, selectinload
 from .. import models
 from .errors import ApplicationError
 from .token_counter import count_text_tokens
+from .macros import expand_message_content
 
 
 def get_session_or_404(db: Session, session_id: str) -> models.ChatSession:
@@ -174,8 +175,8 @@ def create_message(
         thinking_content=thinking_content,
         speaker=speaker,
         status=status,
-        token_count=count_text_tokens(content, model),
-        thinking_token_count=count_text_tokens(thinking_content, model),
+        token_count=count_text_tokens(expand_message_content(session, content), model),
+        thinking_token_count=count_text_tokens(expand_message_content(session, thinking_content), model),
         sort_order=_next_sort_order(db, session.id, parent_id),
     )
     db.add(message)

@@ -35,13 +35,14 @@ const blockTags = new Set(["p", "li", "blockquote", "pre", "h1", "h2", "h3", "h4
 type Container = Root | Element;
 
 /** Keep the existing HAST structure; a cross-element match shares one preview ID. */
-export function previewPlugin(resolve: PreviewResolver) {
+export function previewPlugin(resolve: PreviewResolver, restoreText: (value: string) => string = (value) => value) {
   return () => (tree: Root) => {
     let text = "";
     const positions = new Map<Text, number>();
     function collect(parent: Container) {
       for (const child of parent.children) {
         if (child.type === "text") {
+          child.value = restoreText(child.value);
           positions.set(child, text.length);
           text += child.value;
         } else if (child.type === "element") {

@@ -1,3 +1,4 @@
+import { MessageMacroProvider } from "./components/MessageMacroProvider";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, X } from "lucide-react";
@@ -171,7 +172,7 @@ export default function AppShell() {
   ].filter(Boolean).join(" ");
 
   return (
-    <main className={shellClass}>
+    <MessageMacroProvider session={activeSession} tree={tree}><main className={shellClass}>
       {drawer && <button className="workspace-scrim" aria-label="关闭面板" onClick={() => { setMobilePanel(null); if (!isMobile) setRightPreference(false); }} />}
       <Sidebar
         onOpenTtsSettings={openTtsSettings}
@@ -269,6 +270,6 @@ export default function AppShell() {
           <button className="icon-button" aria-label="关闭错误" onClick={() => { setDismissedError(displayedError); setError(null); chat.clearError(); }}><X size={15} /></button>
         </div>
       )}
-    </main>
+    </main></MessageMacroProvider>
   );
 }

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Iterable, List, Optional, Sequence
 
 from sqlalchemy import select
@@ -17,6 +17,7 @@ from .prompt_config import (
 from .token_counter import count_text_tokens
 from .token_limits import ResolvedTokenLimits, resolve_profile_token_limits
 from .tree import active_path
+from .macros import expand_macros
 
 
 DEFAULT_SYSTEM = (
@@ -47,36 +48,6 @@ class LoreCandidate:
     depth: Optional[int] = None
     case_sensitive: bool = False
     match_whole_words: bool = False
-
-
-def expand_macros(text: str, character: Optional[models.Character | PromptCharacter], user_name: str, original: str = "") -> str:
-    if not text:
-        return ""
-    char_name = character.name if character else "Assistant"
-    replacements = {
-        "{{char}}": char_name,
-        "<BOT>": char_name,
-        "{{user}}": user_name,
-        "<USER>": user_name,
-        "{{description}}": character.description if character else "",
-        "{{personality}}": character.personality if character else "",
-        "{{scenario}}": character.scenario if character else "",
-        "{{charFirstMessage}}": character.first_mes if character else "",
-        "{{original}}": original,
-    }
-    result = text
-    for key, value in replacements.items():
-        result = result.replace(key, value)
-
-    if character:
-        greetings = [character.first_mes] + list(character.alternate_greetings or [])
-
-        def greeting(match: re.Match[str]) -> str:
-            index = int(match.group(1))
-            return greetings[index] if 0 <= index < len(greetings) else ""
-
-        result = re.sub(r"\{\{charFirstMessage::(\d+)\}\}", greeting, result)
-    return result
 
 
 def _candidate_from_entry(entry: models.WorldBookEntry) -> LoreCandidate:
@@ -352,6 +323,8 @@ def compile_context(inputs: PromptInputs) -> schemas.ContextPreviewOut:
     preset = inputs.preset
     user_name = str(preset.get("user_name") or "User")
     path = list(inputs.path)
+    # Scan expanded copies; persisted history and the later prompt pass stay raw.
+    scan_path = [replace(message, content=expand_macros(message.content, character, user_name)) for message in path]
     diagnostics: List[schemas.PromptDiagnostic] = []
     if inputs.worldbook_regex_config_error:
         diagnostics.append(
@@ -380,14 +353,14 @@ def compile_context(inputs: PromptInputs) -> schemas.ContextPreviewOut:
         activated_lore.extend(
             activate_lore(
                 worldbook.candidates,
-                path,
+                scan_path,
                 scan_depth=worldbook.scan_depth,
                 budget=worldbook.token_budget,
             )
         )
     # An embedded character book is an independent source with its own conservative budget.
     activated_lore.extend(
-        activate_lore(_candidates_from_character_book(character), path, scan_depth=8, budget=4000)
+        activate_lore(_candidates_from_character_book(character), scan_path, scan_depth=8, budget=4000)
     )
     activated_lore.sort(key=lambda item: (item.order, item.worldbook_id, item.id))
 

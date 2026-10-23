@@ -1,3 +1,6 @@
+import { useMacroDisplayMode } from "../features/chat/macroDisplay";
+import { displayMessageText, macroPreviews } from "../lib/macros";
+import { useMessageMacroContext } from "./MessageMacroProvider";
 import { memo, useEffect, useMemo, useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
 import { Message, RegexRule } from "../lib/api";
@@ -33,10 +36,17 @@ function groupBlocks(blocks: DisplayBlock[]): RenderGroup[] {
 }
 
 export const RegexMessage = memo(function RegexMessage({ content, role, rules, showAllReplacements = false }: Props) {
+  const macroContext = useMessageMacroContext();
+  const macroDisplay = useMacroDisplayMode();
+  const displayContent = macroDisplay.mode === "expanded" ? displayMessageText(content, macroContext) : content;
   const hoverRules = useMemo(() => rules.filter((rule) => rule.enabled && rule.mode === "hover" && !validateRegex(rule)), [rules]);
-  const previews = useMemo(() => (text: string) => regexPreviews(text, hoverRules), [hoverRules]);
+  const previews = useMemo(() => (text: string) => {
+    const macros = macroDisplay.mode === "hover" ? macroPreviews(text, macroContext) : [];
+    const regex = regexPreviews(text, hoverRules).filter((item) => !macros.some((macro) => macro.start < item.end && macro.end > item.start));
+    return [...macros, ...regex].sort((a, b) => a.start - b.start);
+  }, [hoverRules, macroDisplay.mode, macroContext]);
   const errors = rules.filter((rule) => rule.enabled && validateRegex(rule));
-  const blocks = useMemo(() => transformMessageContent(content, role, rules), [content, role, rules]);
+  const blocks = useMemo(() => transformMessageContent(displayContent, role, rules), [displayContent, role, rules]);
   const groups = useMemo(() => groupBlocks(blocks), [blocks]);
   const [revealed, setRevealed] = useState<Set<string>>(new Set());
 

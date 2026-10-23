@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from .. import models, schemas
 from .errors import ApplicationError
 from .provider_protocols.transport import safe_endpoint, safe_error_text
+from .macros import expand_message_content
 from .tts_text import extract_tts_text
 
 
@@ -143,7 +144,7 @@ def read_message(db: Session, message_id: str) -> models.Message:
 def preview_message(db: Session, message_id: str, mode: str | None = None) -> schemas.TtsPreviewOut:
     message = read_message(db, message_id)
     settings = settings_state(db)
-    extracted = extract_tts_text(message.content, mode or settings.text_mode)
+    extracted = extract_tts_text(expand_message_content(message.session, message.content), mode or settings.text_mode)
     warnings = list(extracted.warnings)
     limit = max_characters(settings.provider)
     if len(extracted.text) > limit:

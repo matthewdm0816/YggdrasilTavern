@@ -107,3 +107,13 @@ describe("Forest visibility", () => {
     expect(shouldJumpToNode("node", "node")).toBe(true);
   });
 });
+
+
+it("searches expanded macro text while keeping raw content and thinking searchable", () => {
+  const node = { ...message("macro", null, 0), content: "Hello {{user}}", thinking_content: "{{scenario}}" };
+  const model = buildForest([node]);
+  const context = { user_name: "Owner", character: { name: "A", description: "", personality: "", scenario: "Sea", first_mes: "", alternate_greetings: [] } };
+  for (const query of ["Owner", "Sea", "{{user}}", "{{scenario}}"])
+    expect(visibleForestRows(model, new Set(), query, context).map((row) => row.node.message.id)).toEqual(["macro"]);
+  expect(node.content).toBe("Hello {{user}}");
+});

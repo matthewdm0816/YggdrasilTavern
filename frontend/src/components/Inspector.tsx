@@ -1,3 +1,5 @@
+import { displayMessageText } from "../lib/macros";
+import { useMessageMacroContext } from "./MessageMacroProvider";
 import { useQuery } from "@tanstack/react-query";
 import { Eye, GitFork, RefreshCcw } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -11,6 +13,7 @@ type Props = {
 };
 
 export function Inspector({ tree, selectedSessionId, onSessionUpdated }: Props) {
+  const macroContext = useMessageMacroContext();
   const [systemPrompt, setSystemPrompt] = useState("");
   const [saving, setSaving] = useState(false);
   const previewQuery = useQuery({
@@ -50,7 +53,7 @@ export function Inspector({ tree, selectedSessionId, onSessionUpdated }: Props) 
         <div key={message.id}>
           <div className={active ? "branch-node active" : "branch-node"} style={{ paddingLeft: 10 + depth * 16 }}>
             <span>{message.role === "assistant" ? "A" : "U"}</span>
-            <p>{message.content || "空消息"}</p>
+            <p>{displayMessageText(message.content, macroContext) || "空消息"}</p>
           </div>
           {renderBranch(message.id, depth + 1)}
         </div>

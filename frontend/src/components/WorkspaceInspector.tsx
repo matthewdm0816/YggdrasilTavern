@@ -1,3 +1,5 @@
+import { displayMessageText } from "../lib/macros";
+import { useMessageMacroContext } from "./MessageMacroProvider";
 import { useQuery } from "@tanstack/react-query";
 import { GitFork, Globe2, Network, RefreshCcw, X } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
@@ -44,6 +46,7 @@ export function WorkspaceInspector({
     if (tab === "all" || tab === "prompt") setPromptVisited(true);
     setActiveTab(tab);
   }
+  const macroContext = useMessageMacroContext();
   const [branchFeedbackBySession, setBranchFeedbackBySession] = useState<Record<string, BranchFeedback>>({});
   const selectingSessions = useRef(new Set<string>());
   const currentTree = tree?.session.id === selectedSessionId ? tree : undefined;
@@ -148,10 +151,10 @@ export function WorkspaceInspector({
                     aria-current={group.activeMessageId === message.id ? "true" : undefined}
                     disabled={branchFeedback?.selecting}
                     onClick={() => void selectBranch(message.id)}
-                    title={markdownPreviewText(message.content) || "空消息"}
+                    title={markdownPreviewText(displayMessageText(message.content, macroContext)) || "空消息"}
                   >
                     <span>{message.role === "assistant" ? "A" : message.role === "user" ? "U" : "S"}</span>
-                    <p>{markdownPreviewText(message.content) || "空消息"}</p>
+                    <p>{markdownPreviewText(displayMessageText(message.content, macroContext)) || "空消息"}</p>
                   </button>
                 ))}
               </div>

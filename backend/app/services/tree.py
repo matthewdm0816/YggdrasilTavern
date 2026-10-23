@@ -29,7 +29,7 @@ def list_messages(db: Session, session_id: str) -> List[models.Message]:
     return list(
         db.scalars(
             select(models.Message)
-            .options(selectinload(models.Message.generation_run))
+            .options(selectinload(models.Message.generation_run).defer(models.GenerationRun.prompt_snapshot))
             .where(models.Message.session_id == session_id)
             .order_by(models.Message.parent_id.is_not(None), models.Message.sort_order, models.Message.created_at)
         )

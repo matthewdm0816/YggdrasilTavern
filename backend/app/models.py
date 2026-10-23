@@ -44,6 +44,9 @@ class APIProfile(TimestampMixin, Base):
     api_key: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     api_key_env: Mapped[str] = mapped_column(String(120), default="", nullable=False)
     default_params: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    custom_headers: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    excluded_body_params: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    anthropic_prompt_cache: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     input_token_limit: Mapped[int] = mapped_column(Integer, default=262144, nullable=False)
     output_token_limit: Mapped[int] = mapped_column(Integer, default=32768, nullable=False)
     model_catalog: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
@@ -52,6 +55,10 @@ class APIProfile(TimestampMixin, Base):
     @property
     def has_api_key(self) -> bool:
         return bool(self.api_key)
+
+    @property
+    def custom_header_names(self) -> list[str]:
+        return list((self.custom_headers or {}).keys())
 
 
 class GlobalPromptConfig(TimestampMixin, Base):
@@ -160,6 +167,12 @@ class Character(TimestampMixin, Base):
     extensions: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     character_book: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
 
+    @property
+    def import_warnings(self) -> list[str]:
+        from .services.worldbook_import import worldbook_import_warnings
+
+        return worldbook_import_warnings(self.character_book)
+
     sessions: Mapped[list["ChatSession"]] = relationship(back_populates="character")
 
 
@@ -182,6 +195,7 @@ class WorldBook(TimestampMixin, Base):
     scan_depth: Mapped[int] = mapped_column(Integer, default=8, nullable=False)
     token_budget: Mapped[int] = mapped_column(Integer, default=4000, nullable=False)
     recursive_scanning: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    max_recursion_steps: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     raw_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
 
     entries: Mapped[list["WorldBookEntry"]] = relationship(
@@ -189,6 +203,12 @@ class WorldBook(TimestampMixin, Base):
         cascade="all, delete-orphan",
         order_by="WorldBookEntry.order",
     )
+
+    @property
+    def import_warnings(self) -> list[str]:
+        from .services.worldbook_import import worldbook_import_warnings
+
+        return worldbook_import_warnings(self.raw_json)
 
 
 class WorldBookEntry(TimestampMixin, Base):
@@ -208,6 +228,9 @@ class WorldBookEntry(TimestampMixin, Base):
     depth: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     case_sensitive: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     match_whole_words: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    exclude_recursion: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    prevent_recursion: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    delay_until_recursion: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     raw_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
 
     worldbook: Mapped[WorldBook] = relationship(back_populates="entries")

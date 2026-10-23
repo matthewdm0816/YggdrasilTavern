@@ -1,7 +1,7 @@
 import type {
   CharacterCreateInput, CharacterUpdateInput, ChubImportInput, ContextPreviewInput, FolderCreateInput,
   FolderUpdateInput, MessageCreateInput, MessageUpdateInput, ProfileCreateInput,
-  ProfileUpdateInput, PromptConfigUpdateInput, SessionCreateInput, SessionUpdateInput,
+  ProfileUpdateInput, ProfileModelsDiscoverInput, PromptConfigUpdateInput, SessionCreateInput, SessionUpdateInput,
   SwipeCreateInput, WorldbookRegexConfigUpdateInput, WorldBookCreateInput, WorldBookUpdateInput
 } from "./contracts";
 import { download, request, upload } from "./http";
@@ -45,7 +45,7 @@ export const api = {
     request<{ ok: boolean }>(`/api/api-profiles/${profileId}`, { method: "DELETE" }),
   refreshProfileModels: (profileId: string) =>
     request<components["schemas"]["ModelsRefreshOut"]>(`/api/api-profiles/${profileId}/models/refresh`, { method: "POST", body: "{}" }),
-  discoverProfileModels: (payload: components["schemas"]["ModelsDiscoverIn"], signal?: AbortSignal) =>
+  discoverProfileModels: (payload: ProfileModelsDiscoverInput, signal?: AbortSignal) =>
     request<components["schemas"]["ModelsRefreshOut"]>("/api/api-profiles/models/discover", { method: "POST", body: JSON.stringify(payload), signal }),
   globalPromptConfig: () => request<GlobalPromptConfig>("/api/settings/prompt"),
   updateGlobalPromptConfig: (payload: PromptConfigUpdateInput) =>

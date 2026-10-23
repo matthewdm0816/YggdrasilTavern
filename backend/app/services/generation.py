@@ -134,6 +134,11 @@ async def start_generation(
     run_parameters = {
         **dict(profile.default_params or {}),
         "_yggdrasil_token_limits": limit_snapshot,
+        "_yggdrasil_request_settings": {
+            "custom_header_names": profile.custom_header_names,
+            "excluded_body_params": list(profile.excluded_body_params or []),
+            "anthropic_prompt_cache": bool(profile.anthropic_prompt_cache),
+        },
     }
     speaker = session.character.name if session.character else "Assistant"
     started_at = models.utc_now()

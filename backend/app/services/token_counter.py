@@ -29,6 +29,13 @@ def merge_usage(current: Dict[str, Any], update: Dict[str, Any]) -> Dict[str, An
             merged[key] = merge_usage(merged[key], value)
         else:
             merged[key] = value
+    if isinstance(merged.get("uncached_input_tokens"), int) and not isinstance(merged["uncached_input_tokens"], bool):
+        # Anthropic reports uncached input, cache reads, and cache writes separately.
+        # Recompute after merging so partial stream usage cannot erase prior counts.
+        merged["input_tokens"] = sum(
+            value for key in ("uncached_input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens")
+            if isinstance(value := merged.get(key), int) and not isinstance(value, bool) and value >= 0
+        )
     return merged
 
 

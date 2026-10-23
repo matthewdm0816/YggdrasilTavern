@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { generationTokenDisplay, getMessagePresentation, messageEditDraft, messageEditHasChanges } from "./ChatWorkspace";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { generationTokenDisplay, getMessagePresentation, MessageCacheUsage, messageEditDraft, messageEditHasChanges } from "./ChatWorkspace";
 
 describe("messageEditDraft", () => {
   it("keeps both visible content and thinking content editable", () => {
@@ -74,5 +76,33 @@ describe("generationTokenDisplay", () => {
       status: "cancelled",
       generation_run: { output_tokens: 1, duration_seconds: 4, tokens_per_second: 0.25 }
     })).toEqual({ outputTokens: 120, outputEstimated: true, tokensPerSecond: 30 });
+  });
+});
+
+describe("message cache usage", () => {
+  it("shows cache reads and writes separately from the persisted message usage", () => {
+    const html = renderToStaticMarkup(createElement(MessageCacheUsage, { message: {
+      cached_tokens: 0, usage: { cache_read_input_tokens: 1200, cache_creation_input_tokens: 600 }
+    } }));
+    expect(html).toContain("缓存读取 1200");
+    expect(html).toContain("缓存写入 600");
+  });
+
+  it("retains summarized and legacy cache reads while using full usage for writes", () => {
+    expect(renderToStaticMarkup(createElement(MessageCacheUsage, { message: {
+      cached_tokens: 300, usage: { cache_creation_input_tokens: 40 }, generation_run: { cached_input_tokens: 500 }
+    } }))).toBe("<span>缓存读取 500</span><span>缓存写入 40</span>");
+    expect(renderToStaticMarkup(createElement(MessageCacheUsage, { message: {
+      cached_tokens: 300, usage: {}
+    } }))).toBe("<span>缓存读取 300</span>");
+  });
+
+  it("shows a cache write on the first request and omits absent or invalid usage", () => {
+    expect(renderToStaticMarkup(createElement(MessageCacheUsage, { message: {
+      cached_tokens: 0, usage: { cache_creation_input_tokens: 700 }
+    } }))).toBe("<span>缓存写入 700</span>");
+    expect(renderToStaticMarkup(createElement(MessageCacheUsage, { message: {
+      cached_tokens: 0, usage: { cache_creation_input_tokens: NaN }
+    } }))).toBe("");
   });
 });

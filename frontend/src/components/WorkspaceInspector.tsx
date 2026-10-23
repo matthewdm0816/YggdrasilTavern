@@ -174,7 +174,7 @@ export function WorkspaceInspector({
         </div>
       )}
 
-      <ContextPreviewPanel selectedSessionId={selectedSessionId} previewQuery={previewQuery} />
+      <ContextPreviewPanel selectedSessionId={selectedSessionId} previewQuery={previewQuery} worldbooks={worldbooks} />
     </aside>
   );
 }

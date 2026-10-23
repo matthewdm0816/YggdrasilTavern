@@ -890,6 +890,13 @@ export interface components {
             default_params?: {
                 [key: string]: unknown;
             };
+            /** Excluded Body Params */
+            excluded_body_params?: string[];
+            /**
+             * Anthropic Prompt Cache
+             * @default false
+             */
+            anthropic_prompt_cache: boolean;
             /**
              * Input Token Limit
              * @default 262144
@@ -902,6 +909,10 @@ export interface components {
             output_token_limit: number;
             /** Api Key */
             api_key?: string | null;
+            /** Custom Headers */
+            custom_headers?: {
+                [key: string]: string;
+            };
         };
         /** APIProfileOut */
         APIProfileOut: {
@@ -924,6 +935,13 @@ export interface components {
             default_params?: {
                 [key: string]: unknown;
             };
+            /** Excluded Body Params */
+            excluded_body_params?: string[];
+            /**
+             * Anthropic Prompt Cache
+             * @default false
+             */
+            anthropic_prompt_cache: boolean;
             /**
              * Input Token Limit
              * @default 262144
@@ -941,6 +959,8 @@ export interface components {
              * @default false
              */
             has_api_key: boolean;
+            /** Custom Header Names */
+            custom_header_names?: string[];
             /** Model Catalog */
             model_catalog?: components["schemas"]["RemoteModelInfo"][];
             /** Models Refreshed At */
@@ -976,6 +996,14 @@ export interface components {
             default_params?: {
                 [key: string]: unknown;
             } | null;
+            /** Custom Headers */
+            custom_headers?: {
+                [key: string]: string | null;
+            };
+            /** Excluded Body Params */
+            excluded_body_params?: string[] | null;
+            /** Anthropic Prompt Cache */
+            anthropic_prompt_cache?: boolean | null;
             /** Input Token Limit */
             input_token_limit?: number | null;
             /** Output Token Limit */
@@ -995,6 +1023,19 @@ export interface components {
             content: string;
             /** Keys */
             keys: string[];
+            /**
+             * Activation Reason
+             * @default message
+             * @enum {string}
+             */
+            activation_reason: "message" | "constant" | "recursion" | "recursion_delay";
+            /**
+             * Recursion Step
+             * @default 0
+             */
+            recursion_step: number;
+            /** Triggered By */
+            triggered_by?: components["schemas"]["LoreTrigger"][];
         };
         /** AuthStatus */
         AuthStatus: {
@@ -1185,6 +1226,8 @@ export interface components {
             } | null;
             /** Id */
             id: string;
+            /** Import Warnings */
+            import_warnings?: string[];
             /**
              * Created At
              * Format: date-time
@@ -1582,6 +1625,13 @@ export interface components {
             /** Password */
             password: string;
         };
+        /** LoreTrigger */
+        LoreTrigger: {
+            /** Id */
+            id: string;
+            /** Worldbook Id */
+            worldbook_id: string;
+        };
         /** MessageCreate */
         MessageCreate: {
             /** Role */
@@ -1756,6 +1806,10 @@ export interface components {
             api_key?: string | null;
             /** Profile Id */
             profile_id?: string | null;
+            /** Custom Headers */
+            custom_headers?: {
+                [key: string]: string | null;
+            };
         };
         /** ModelsRefreshOut */
         ModelsRefreshOut: {
@@ -2418,6 +2472,11 @@ export interface components {
              * @default false
              */
             recursive_scanning: boolean;
+            /**
+             * Max Recursion Steps
+             * @default 0
+             */
+            max_recursion_steps: number;
             /** Raw Json */
             raw_json?: {
                 [key: string]: unknown;
@@ -2475,6 +2534,21 @@ export interface components {
              * @default false
              */
             match_whole_words: boolean;
+            /**
+             * Exclude Recursion
+             * @default false
+             */
+            exclude_recursion: boolean;
+            /**
+             * Prevent Recursion
+             * @default false
+             */
+            prevent_recursion: boolean;
+            /**
+             * Delay Until Recursion
+             * @default 0
+             */
+            delay_until_recursion: number;
             /** Raw Json */
             raw_json?: {
                 [key: string]: unknown;
@@ -2530,6 +2604,21 @@ export interface components {
              * @default false
              */
             match_whole_words: boolean;
+            /**
+             * Exclude Recursion
+             * @default false
+             */
+            exclude_recursion: boolean;
+            /**
+             * Prevent Recursion
+             * @default false
+             */
+            prevent_recursion: boolean;
+            /**
+             * Delay Until Recursion
+             * @default 0
+             */
+            delay_until_recursion: number;
             /** Raw Json */
             raw_json?: {
                 [key: string]: unknown;
@@ -2573,12 +2662,19 @@ export interface components {
              * @default false
              */
             recursive_scanning: boolean;
+            /**
+             * Max Recursion Steps
+             * @default 0
+             */
+            max_recursion_steps: number;
             /** Raw Json */
             raw_json?: {
                 [key: string]: unknown;
             };
             /** Id */
             id: string;
+            /** Import Warnings */
+            import_warnings?: string[];
             /** Entries */
             entries?: components["schemas"]["WorldBookEntryOut"][];
             /**
@@ -2604,6 +2700,8 @@ export interface components {
             token_budget?: number | null;
             /** Recursive Scanning */
             recursive_scanning?: boolean | null;
+            /** Max Recursion Steps */
+            max_recursion_steps?: number | null;
             /** Raw Json */
             raw_json?: {
                 [key: string]: unknown;

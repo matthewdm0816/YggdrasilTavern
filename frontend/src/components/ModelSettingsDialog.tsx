@@ -1,8 +1,13 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AlertCircle, CloudDownload, Eye, EyeOff, LoaderCircle, Pencil, Plus, Trash2, X } from "lucide-react";
 import { api, APIProfile, ProviderType, RemoteModelInfo } from "../lib/api";
 import { sortByName } from "../lib/order";
+import {
+  customHeaderDrafts, customHeaderPatch, customHeadersForCreate, hasCustomHeaderAuthentication,
+  parseDefaultParamsJson, updateDefaultParam, type CustomHeaderDraft
+} from "../lib/profileRequestSettings";
+import { ProfileRequestSettings } from "./ProfileRequestSettings";
 
 export type ProfileDraft = {
   name: string;
@@ -12,6 +17,9 @@ export type ProfileDraft = {
   model: string;
   api_key: string;
   default_params: Record<string, unknown>;
+  custom_headers: CustomHeaderDraft[];
+  excluded_body_params: string[];
+  anthropic_prompt_cache: boolean;
   input_token_limit: number;
   output_token_limit: number;
 };
@@ -24,6 +32,9 @@ export const defaultProfile: ProfileDraft = {
   model: "gpt-5",
   api_key: "",
   default_params: { _thinking_level: "auto" },
+  custom_headers: [],
+  excluded_body_params: [],
+  anthropic_prompt_cache: false,
   input_token_limit: 256 * 1024,
   output_token_limit: 32 * 1024
 };
@@ -50,16 +61,45 @@ export function formatTokenLimit(value?: number | null): string {
 
 export function profileDraftHasChanges(draft: ProfileDraft, existing?: APIProfile) {
   if (!existing) return true;
+  let headersChanged: boolean;
+  try {
+    headersChanged = Object.keys(customHeaderPatch(draft.custom_headers, existing.custom_header_names)).length > 0;
+  } catch {
+    // Invalid header edits are unsaved changes; the editor displays their validation error.
+    headersChanged = true;
+  }
   return draft.name.trim() !== existing.name
     || draft.provider_type !== existing.provider_type
     || draft.base_url.trim() !== existing.base_url
     || (draft.path_override || null) !== (existing.path_override || null)
     || draft.model.trim() !== existing.model
     || Boolean(draft.api_key.trim())
+    || headersChanged
+    || JSON.stringify(draft.excluded_body_params) !== JSON.stringify(existing.excluded_body_params || [])
+    || draft.anthropic_prompt_cache !== Boolean(existing.anthropic_prompt_cache)
     || draft.input_token_limit !== existing.input_token_limit
     || draft.output_token_limit !== existing.output_token_limit
     || JSON.stringify(draft.default_params) !== JSON.stringify({ _thinking_level: "auto", ...existing.default_params });
 }
+
+export function draftFromProfile(item: APIProfile): ProfileDraft {
+  return {
+    name: item.name,
+    provider_type: item.provider_type,
+    base_url: item.base_url,
+    path_override: item.path_override || "",
+    model: item.model,
+    api_key: "",
+    default_params: { _thinking_level: "auto", ...item.default_params },
+    custom_headers: customHeaderDrafts(item.custom_header_names || []),
+    excluded_body_params: [...(item.excluded_body_params || [])],
+    anthropic_prompt_cache: Boolean(item.anthropic_prompt_cache),
+    input_token_limit: item.input_token_limit,
+    output_token_limit: item.output_token_limit
+  };
+}
+
+const noHeaderNames: string[] = [];
 
 function effectiveProfileLimits(profile: APIProfile, model?: RemoteModelInfo) {
   const output = model?.max_output_tokens
@@ -119,6 +159,8 @@ export function ModelSettingsDialog({
   onProfileUpdated
 }: Props) {
   const [profile, setProfile] = useState(defaultProfile);
+  const [defaultParamsJson, setDefaultParamsJson] = useState(() => JSON.stringify(defaultProfile.default_params, null, 2));
+  const [defaultParamsError, setDefaultParamsError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [refreshingProfileId, setRefreshingProfileId] = useState<string | null>(null);
   const [switchingModel, setSwitchingModel] = useState(false);
@@ -141,7 +183,16 @@ export function ModelSettingsDialog({
     ? (switchingModel ? "正在切换模型…" : "正在加载模型列表…")
     : busy ? "正在更新连接配置…" : null;
   const editedProfile = profiles.find((item) => item.id === editingProfileId);
-  const profileDirty = profileDraftHasChanges(profile, editedProfile);
+  const savedHeaderNames = editedProfile?.custom_header_names || noHeaderNames;
+  const headerValidation = useMemo(() => {
+    try {
+      return { patch: customHeaderPatch(profile.custom_headers, savedHeaderNames), error: null };
+    } catch (cause) {
+      return { patch: {}, error: cause instanceof Error ? cause.message : String(cause) };
+    }
+  }, [profile.custom_headers, savedHeaderNames]);
+  const requestSettingsError = defaultParamsError || headerValidation.error;
+  const profileDirty = profileDraftHasChanges(profile, editedProfile) || Boolean(defaultParamsError);
   const activeConnectionKey = activeProfile ? profileConnectionKey(activeProfile) : "";
   const activeCatalog = modelsById(activeProfile?.model_catalog || []);
   const orderedDraftModels = modelsById(draftModels);
@@ -163,8 +214,13 @@ export function ModelSettingsDialog({
     const existing = profiles.find((item) => item.id === editingProfileId);
     setDraftModels([]);
     setDiscoveringDraftModels(false);
-    if (!profile.base_url.trim() || (!profile.api_key.trim() && !existing?.has_api_key && !existing?.api_key_env)) {
-      setDraftModelsNotice("填写服务地址和 API Key 后自动获取模型列表；也可直接手输模型名称。");
+    if (headerValidation.error) {
+      setDraftModelsNotice("请先修正高级请求设置中的请求头，再获取模型列表；也可直接手输模型名称。");
+      return;
+    }
+    if (!profile.base_url.trim() || (!profile.api_key.trim() && !existing?.has_api_key && !existing?.api_key_env
+      && !hasCustomHeaderAuthentication(profile.custom_headers, savedHeaderNames))) {
+      setDraftModelsNotice("填写服务地址和 API Key 或认证请求头后自动获取模型列表；也可直接手输模型名称。");
       return;
     }
     setDraftModelsNotice("等待获取模型列表…");
@@ -176,7 +232,8 @@ export function ModelSettingsDialog({
           base_url: profile.base_url.trim(),
           path_override: profile.path_override || null,
           api_key: profile.api_key.trim() || null,
-          profile_id: editingProfileId
+          profile_id: editingProfileId,
+          custom_headers: headerValidation.patch
         }, controller.signal);
         if (controller.signal.aborted) return;
         setDraftModels(result.models);
@@ -195,7 +252,7 @@ export function ModelSettingsDialog({
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [profileEditorOpen, editingProfileId, profile.provider_type, profile.base_url, profile.path_override, profile.api_key, discoveryAttempt]);
+  }, [profileEditorOpen, editingProfileId, profile.provider_type, profile.base_url, profile.path_override, profile.api_key, profile.custom_headers, headerValidation, discoveryAttempt]);
 
   useEffect(() => {
     const dialog = settingsDialogRef.current;
@@ -225,6 +282,8 @@ export function ModelSettingsDialog({
   function resetProfileEditor() {
     setEditingProfileId(null);
     setProfile(defaultProfile);
+    setDefaultParamsJson(JSON.stringify(defaultProfile.default_params, null, 2));
+    setDefaultParamsError(null);
     setProfileEditorOpen(false);
     setShowApiKey(false);
   }
@@ -234,6 +293,8 @@ export function ModelSettingsDialog({
     setProfileNotice(null);
     setEditingProfileId(null);
     setProfile(defaultProfile);
+    setDefaultParamsJson(JSON.stringify(defaultProfile.default_params, null, 2));
+    setDefaultParamsError(null);
     setProfileEditorOpen(true);
     setShowApiKey(false);
   }
@@ -242,29 +303,44 @@ export function ModelSettingsDialog({
     setProfileError(null);
     setProfileNotice(null);
     setEditingProfileId(item.id);
-    setProfile({
-      name: item.name,
-      provider_type: item.provider_type,
-      base_url: item.base_url,
-      path_override: item.path_override || "",
-      model: item.model,
-      api_key: "",
-      default_params: { _thinking_level: "auto", ...item.default_params },
-      input_token_limit: item.input_token_limit,
-      output_token_limit: item.output_token_limit
-    });
+    const draft = draftFromProfile(item);
+    setProfile(draft);
+    setDefaultParamsJson(JSON.stringify(draft.default_params, null, 2));
+    setDefaultParamsError(null);
     setProfileEditorOpen(true);
     setShowApiKey(false);
   }
 
+  function changeDefaultParamsJson(text: string) {
+    setDefaultParamsJson(text);
+    try {
+      const params = parseDefaultParamsJson(text);
+      setProfile((current) => ({ ...current, default_params: params }));
+      setDefaultParamsError(null);
+    } catch (cause) {
+      setDefaultParamsError(cause instanceof Error ? cause.message : String(cause));
+    }
+  }
+
+  function changeDefaultParam(name: string, value: unknown) {
+    const params = updateDefaultParam(profile.default_params, name, value);
+    setProfile((current) => ({ ...current, default_params: params }));
+    setDefaultParamsJson(JSON.stringify(params, null, 2));
+  }
+
   async function saveProfile() {
+    if (requestSettingsError) {
+      reportProfileError(requestSettingsError);
+      return;
+    }
     if (!profile.name.trim() || !profile.base_url.trim() || !profile.model.trim()) {
       reportProfileError("请填写连接配置名称、服务地址和模型名称");
       return;
     }
     const existing = editingProfileId ? profiles.find((item) => item.id === editingProfileId) : undefined;
-    if (!profile.api_key.trim() && !existing?.has_api_key && !existing?.api_key_env) {
-      reportProfileError("请填写 API Key；保存后会遮罩，编辑时留空表示不替换");
+    if (!profile.api_key.trim() && !existing?.has_api_key && !existing?.api_key_env
+      && !hasCustomHeaderAuthentication(profile.custom_headers, savedHeaderNames)) {
+      reportProfileError("请填写 API Key 或高级请求设置中的认证请求头；已保存的 API Key 留空表示不替换");
       return;
     }
     if (!Number.isFinite(profile.input_token_limit) || !Number.isFinite(profile.output_token_limit) || profile.input_token_limit < 1024 || profile.output_token_limit < 1) {
@@ -285,14 +361,16 @@ export function ModelSettingsDialog({
         model: profile.model.trim(),
         ...(profile.api_key.trim() ? { api_key: profile.api_key.trim() } : {}),
         default_params: profile.default_params,
+        excluded_body_params: profile.excluded_body_params,
+        anthropic_prompt_cache: profile.anthropic_prompt_cache,
         input_token_limit: profile.input_token_limit,
         output_token_limit: profile.output_token_limit
       };
       if (editingProfileId) {
-        savedProfile = await api.updateProfile(editingProfileId, payload);
+        savedProfile = await api.updateProfile(editingProfileId, { ...payload, custom_headers: headerValidation.patch });
         onProfileUpdated?.(savedProfile);
       } else {
-        const created = await api.createProfile(payload);
+        const created = await api.createProfile({ ...payload, custom_headers: customHeadersForCreate(profile.custom_headers) });
         savedProfile = created;
         createdProfileId = created.id;
         onProfileUpdated?.(created);
@@ -482,9 +560,25 @@ export function ModelSettingsDialog({
               <label className="form-field"><span>最大输出 Token</span><input type="number" min="1" step="1024" value={profile.output_token_limit} onChange={(event) => setProfile({ ...profile, output_token_limit: Number(event.target.value) })} /><small>包含 Thinking token。</small></label>
             </div>
             {editingProfileId === activeProfile?.id && activeRemoteModel ? <small className="model-capability-note">远端报告：{activeRemoteModel.max_input_tokens ? `最大输入 ${formatTokenLimit(activeRemoteModel.max_input_tokens)}；` : ""}{activeRemoteModel.max_output_tokens ? `最大输出 ${formatTokenLimit(activeRemoteModel.max_output_tokens)}；` : ""}{activeRemoteModel.max_total_tokens ? `总上下文 ${formatTokenLimit(activeRemoteModel.max_total_tokens)}；` : ""}{!activeRemoteModel.max_input_tokens && !activeRemoteModel.max_output_tokens && !activeRemoteModel.max_total_tokens ? "未提供 Context 上限。" : "配置高于模型能力时会自动收紧生效值。"}</small> : null}
-            <label className="form-field"><span>思考强度（Thinking Level）</span><select value={String(profile.default_params._thinking_level ?? "auto")} onChange={(event) => setProfile({ ...profile, default_params: { ...profile.default_params, _thinking_level: event.target.value } })}>{thinkingLevelOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
-            <label className="form-field"><span>Temperature</span><input type="number" min="0" max="2" step="0.1" value={String(profile.default_params.temperature ?? "")} onChange={(event) => setProfile({ ...profile, default_params: { ...profile.default_params, temperature: event.target.value === "" ? undefined : Number(event.target.value) } })} /><small>越高越随机。</small></label>
-            <button className={profileDirty ? "primary-button" : "secondary-button"} type="button" disabled={busy || refreshingProfileId !== null || !profileDirty} onClick={saveProfile}>
+            <label className="form-field"><span>思考强度（Thinking Level）</span><select disabled={Boolean(defaultParamsError)} value={String(profile.default_params._thinking_level ?? "auto")} onChange={(event) => changeDefaultParam("_thinking_level", event.target.value)}>{thinkingLevelOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+            <label className="form-field"><span>Temperature</span><input type="number" min="0" max="2" step="0.1" disabled={Boolean(defaultParamsError)} value={String(profile.default_params.temperature ?? "")} onChange={(event) => changeDefaultParam("temperature", event.target.value === "" ? undefined : Number(event.target.value))} /><small>越高越随机。{defaultParamsError ? "请先修正下方 JSON，再调整温度或思考强度。" : ""}</small></label>
+            <ProfileRequestSettings
+              providerType={profile.provider_type}
+              headers={profile.custom_headers}
+              savedHeaderNames={savedHeaderNames}
+              onHeadersChange={(custom_headers) => setProfile((current) => ({ ...current, custom_headers }))}
+              defaultParamsJson={defaultParamsJson}
+              onDefaultParamsJsonChange={changeDefaultParamsJson}
+              jsonError={defaultParamsError}
+              headersError={headerValidation.error}
+              excludedBodyParams={profile.excluded_body_params}
+              onExcludedBodyParamsChange={(excluded_body_params) => setProfile((current) => ({ ...current, excluded_body_params }))}
+              anthropicPromptCache={profile.anthropic_prompt_cache}
+              onAnthropicPromptCacheChange={(anthropic_prompt_cache) => setProfile((current) => ({ ...current, anthropic_prompt_cache }))}
+              disabled={busy || refreshingProfileId !== null}
+            />
+            {requestSettingsError && <p className="field-error" role="alert">{requestSettingsError}</p>}
+            <button className={profileDirty ? "primary-button" : "secondary-button"} type="button" disabled={busy || refreshingProfileId !== null || !profileDirty || Boolean(requestSettingsError)} onClick={saveProfile}>
               {editingProfileId ? <Pencil size={15} /> : <Plus size={15} />}
               {busy ? "保存中…" : editingProfileId ? "保存修改" : "新增连接配置"}
             </button>

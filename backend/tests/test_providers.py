@@ -55,7 +55,7 @@ def test_anthropic_start_usage_does_not_publish_provisional_output_count():
                 }
             },
         }
-    ) == {"input_tokens": 12, "cache_read_input_tokens": 4}
+    ) == {"input_tokens": 16, "uncached_input_tokens": 12, "cache_read_input_tokens": 4}
     assert extract_anthropic_usage(
         {"type": "message_delta", "usage": {"output_tokens": 37}}
     ) == {"output_tokens": 37}

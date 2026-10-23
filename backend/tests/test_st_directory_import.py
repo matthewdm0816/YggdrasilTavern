@@ -6,7 +6,7 @@ from sqlalchemy import create_engine, func, select, text
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
-from app import models
+from app import models, schemas
 from app.config import Settings
 from app.database import Base, Database, get_db
 from app.main import create_app
@@ -263,3 +263,178 @@ def test_import_api_preview_apply_no_secret_readback_and_new_session_defaults(db
     assert bound.status_code == 200 and bound.json()["has_api_key"]
     assert "test-inactive-secret" not in bound.text
     assert db.get(models.APIProfile, live_profile_id).api_key == "test-inactive-secret"
+
+
+def test_directory_worldbook_inherits_recursion_and_uses_shared_card_conversion():
+    files = fixture_files()
+    settings = json.loads(files["settings.json"])
+    settings["world_info_settings"].update(world_info_recursive=True, world_info_max_recursion_steps=3)
+    files["settings.json"] = json.dumps(settings).encode()
+    entry = {"keys": ["moon"], "content": "synthetic lore", "position": "after_char",
+             "extensions": {"scan_depth": 2, "depth": 9, "exclude_recursion": True,
+                            "prevent_recursion": True, "delay_until_recursion": 5}}
+    files["worlds/Lore.json"] = json.dumps({"entries": [entry]}).encode()
+    files["characters/Alice.json"] = json.dumps({"name": "Alice", "character_book": {"entries": [{**entry, "extensions": {**entry["extensions"], "position": 4}}]}}).encode()
+    plan = make_plan(files)
+    assert not plan.errors
+    book = next(item for item in plan.items if item.kind == "worldbook")
+    assert book.payload["recursive_scanning"] and book.payload["max_recursion_steps"] == 3
+    converted = book.payload["entries"][0]
+    assert converted["depth"] == 2 and converted["delay_until_recursion"] == 5
+    assert converted["exclude_recursion"] and converted["prevent_recursion"]
+    assert not any("递归世界书扫描尚未支持" in warning for warning in plan_report(plan)["warnings"])
+    character = next(item for item in plan.items if item.kind == "character")
+    assert any("@D" in warning for warning in character.warnings)
+
+
+@pytest.mark.parametrize("as_json", [True, False])
+def test_custom_request_settings_are_applied_without_header_readback(db, as_json):
+    files = fixture_files()
+    settings = json.loads(files["settings.json"])
+    changes = {
+        "custom_include_body": json.dumps({"temperature": 0.2, "top_k": 23, "nested": {"enabled": True}}) if as_json else 'temperature: 0.2\ntop_k: 23\nnested: {"enabled": true}',
+        "custom_include_headers": json.dumps({"X-Test-Token": "synthetic-header-secret"}) if as_json else "X-Test-Token: synthetic-header-secret",
+        "custom_exclude_body": json.dumps(["frequency_penalty", "seed"]) if as_json else "frequency_penalty: true\nseed: true",
+    }
+    settings["oai_settings"].update(changes)
+    files["settings.json"] = json.dumps(settings).encode()
+    preset = json.loads(files["OpenAI Settings/Preset.json"])
+    preset.update(changes)
+    files["OpenAI Settings/Preset.json"] = json.dumps(preset).encode()
+    plan = make_plan(files)
+    assert not plan.errors
+    assert not any("尚未转换" in warning and "custom_" in warning for warning in plan_report(plan)["warnings"])
+    result = apply_plan(db, plan)
+    profile = db.get(models.APIProfile, resource_id(plan.source, "profile", "settings.json:active"))
+    assert profile.custom_headers == {"X-Test-Token": "synthetic-header-secret"}
+    assert profile.excluded_body_params == ["frequency_penalty", "seed"]
+    assert profile.default_params["temperature"] == 0.2 and profile.default_params["top_k"] == 23
+    assert profile.default_params["nested"] == {"enabled": True}
+    resources = [{"raw_json": row.raw_json, "converted": row.converted, "warnings": row.warnings} for row in db.scalars(select(models.ImportedResource))]
+    assert "synthetic-header-secret" not in json.dumps([resources, result, plan_report(plan)])
+    assert "synthetic-header-secret" not in schemas.APIProfileOut.model_validate(profile).model_dump_json()
+
+
+def test_complex_custom_yaml_is_warned_and_never_partially_applied():
+    files = fixture_files()
+    settings = json.loads(files["settings.json"])
+    settings["oai_settings"].update(custom_include_body="temperature: 0.2\nnested:\n  token: private",
+                                  custom_include_headers="X-Test: |\n  synthetic-hidden-value",
+                                  custom_exclude_body="- seed\n- stop")
+    files["settings.json"] = json.dumps(settings).encode()
+    plan = make_plan(files)
+    profile = next(item for item in plan.items if item.kind == "profile" and item.key == "settings.json:active")
+    assert profile.payload["custom_headers"] == {} and profile.payload["excluded_body_params"] == []
+    assert profile.payload["default_params"]["temperature"] == 0.7
+    assert sum("格式尚未支持" in warning for warning in profile.warnings) == 3
+    assert "synthetic-hidden-value" not in json.dumps([item.raw for item in plan.items])
+    assert "synthetic-hidden-value" not in json.dumps(plan_report(plan))
+
+
+def test_custom_auth_header_can_supply_the_imported_profile_credential():
+    files = fixture_files()
+    files["secrets.json"] = b"{}"
+    settings = json.loads(files["settings.json"])
+    settings["oai_settings"]["custom_include_headers"] = '{"Authorization": "Bearer synthetic-import-only"}'
+    files["settings.json"] = json.dumps(settings).encode()
+    plan = make_plan(files)
+    assert not plan.errors
+    profile = next(item for item in plan.items if item.kind == "profile" and item.key == "settings.json:active")
+    assert profile.payload["api_key"] is None
+    assert profile.payload["custom_headers"] == {"Authorization": "Bearer synthetic-import-only"}
+    assert "synthetic-import-only" not in json.dumps([item.raw for item in plan.items])
+    assert "synthetic-import-only" not in json.dumps(plan_report(plan))
+
+
+def test_invalid_header_values_are_skipped_with_a_value_free_warning():
+    files = fixture_files()
+    settings = json.loads(files["settings.json"])
+    settings["oai_settings"]["custom_include_headers"] = json.dumps({"X-Test": "private-synthetic\r\nHeader: injected"})
+    files["settings.json"] = json.dumps(settings).encode()
+    plan = make_plan(files)
+    assert not plan.errors
+    profile = next(item for item in plan.items if item.kind == "profile" and item.key == "settings.json:active")
+    assert profile.payload["custom_headers"] == {}
+    assert any("custom_include_headers" in warning for warning in profile.warnings)
+    assert "private-synthetic" not in json.dumps(plan_report(plan))
+
+
+@pytest.mark.parametrize("custom_body", [
+    '{"temperature": 0.2, "top_k": NaN}',
+    '{"temperature": 0.2, "top_k": Infinity}',
+    '{"temperature": 0.2, "top_k": -Infinity}',
+    '{"temperature": 0.2, "top_k": 1e309}',
+    '{"temperature": 0.2, "nested": {"values": [1, NaN]}}',
+    '{"temperature": 0.2, "nested": {"values": [1, 1e309]}}',
+    'temperature: 0.2\ntop_k: NaN',
+    'temperature: 0.2\ntop_k: Infinity',
+    'temperature: 0.2\ntop_k: 1e309',
+    'temperature: 0.2\nnested: {"values": [1, -1e309]}',
+    {"temperature": 0.2, "nested": {"values": [float("nan")]}},
+    {"temperature": 0.2, "nested": {"values": [float("inf")]}},
+])
+def test_nonfinite_custom_body_is_warned_and_the_whole_option_is_skipped(custom_body):
+    files = fixture_files()
+    settings = json.loads(files["settings.json"])
+    settings["oai_settings"]["custom_include_body"] = custom_body
+    settings["oai_settings"]["custom_include_headers"] = '{"X-Test": "synthetic-header"}'
+    files["settings.json"] = json.dumps(settings).encode()
+    plan = make_plan(files)
+    assert not plan.errors
+    profile = next(item for item in plan.items if item.kind == "profile" and item.key == "settings.json:active")
+    assert profile.payload["default_params"]["temperature"] == 0.7
+    assert "top_k" not in profile.payload["default_params"] and "nested" not in profile.payload["default_params"]
+    assert profile.payload["custom_headers"] == {"X-Test": "synthetic-header"}
+    assert any("custom_include_body" in warning and "数字必须有限" in warning for warning in profile.warnings)
+
+
+def test_finite_custom_body_numbers_and_nonfinite_looking_strings_are_preserved():
+    files = fixture_files()
+    settings = json.loads(files["settings.json"])
+    settings["oai_settings"]["custom_include_body"] = '{"scale": 1e300, "nested": [0, -2.5, "NaN", "Infinity"]}'
+    files["settings.json"] = json.dumps(settings).encode()
+    plan = make_plan(files)
+    profile = next(item for item in plan.items if item.kind == "profile" and item.key == "settings.json:active")
+    assert profile.payload["default_params"]["scale"] == 1e300
+    assert profile.payload["default_params"]["nested"] == [0, -2.5, "NaN", "Infinity"]
+    assert not any("custom_include_body" in warning for warning in profile.warnings)
+
+
+def test_direct_worldbook_and_character_import_expose_persistent_warnings_and_roundtrip(db):
+    app = create_app(init_on_startup=False, settings=Settings(
+        auth_enabled=False, auth_username=None, auth_password=None, auth_secret=None,
+    ))
+    def override():
+        yield db
+    app.dependency_overrides[get_db] = override
+    client = TestClient(app)
+    book = {"name": "Synthetic", "recursive_scanning": True, "max_recursion_steps": 3,
+            "entries": [{"keys": ["moon"], "content": "synthetic", "position": "after_char",
+                         "extensions": {"position": 4, "depth": 9, "scan_depth": 1,
+                                        "exclude_recursion": True, "delay_until_recursion": 5}}]}
+    imported = client.post("/api/worldbooks/import", files={"file": ("synthetic.json", json.dumps(book).encode(), "application/json")})
+    assert imported.status_code == 200
+    initial = imported.json()
+    assert initial["entries"][0]["depth"] == 1 and not initial["entries"][0]["enabled"]
+    assert any("@D" in warning for warning in initial["import_warnings"])
+    db.expire_all()
+    assert client.get("/api/worldbooks").json()[0]["import_warnings"] == initial["import_warnings"]
+    edited_entry = {**initial["entries"][0], "position": "before_char", "enabled": True, "depth": 2,
+                    "exclude_recursion": False, "prevent_recursion": True, "delay_until_recursion": 7}
+    updated = client.patch(f"/api/worldbooks/{initial['id']}", json={"entries": [edited_entry], "max_recursion_steps": 4})
+    assert updated.status_code == 200
+    exported = client.get(f"/api/worldbooks/{initial['id']}/export")
+    assert exported.status_code == 200
+    reimported = client.post("/api/worldbooks/import", files={"file": ("roundtrip.json", exported.content, "application/json")})
+    assert reimported.status_code == 200
+    final = reimported.json()
+    assert final["max_recursion_steps"] == 4 and final["recursive_scanning"]
+    entry = final["entries"][0]
+    assert entry["enabled"] and entry["position"] == "before_char" and entry["depth"] == 2
+    assert not entry["exclude_recursion"] and entry["prevent_recursion"] and entry["delay_until_recursion"] == 7
+    assert final["import_warnings"] == []
+    card = {"spec": "chara_card_v2", "data": {"name": "Synthetic", "character_book": book}}
+    character = client.post("/api/characters/import", files={"file": ("character.json", json.dumps(card).encode(), "application/json")})
+    assert character.status_code == 200 and character.json()["import_warnings"]
+    db.expire_all()
+    assert client.get(f"/api/characters/{character.json()['id']}").json()["import_warnings"] == character.json()["import_warnings"]

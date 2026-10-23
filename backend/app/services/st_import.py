@@ -5,12 +5,13 @@ import binascii
 import io
 import json
 from pathlib import Path
-from typing import Any, Dict, Iterable, List
+from typing import Any, Dict, List
 
 from fastapi import HTTPException
 from PIL import Image
 
 from .. import schemas
+from .worldbook_import import iter_worldbook_entries, normalize_worldbook_entry, normalize_worldbook_settings
 
 
 def _as_list(value: Any) -> List[str]:
@@ -144,55 +145,28 @@ def character_to_v2_json(character: Any) -> Dict[str, Any]:
     return {"spec": "chara_card_v2", "spec_version": "2.0", "data": data}
 
 
-def _iter_worldbook_entries(raw: Dict[str, Any]) -> Iterable[Dict[str, Any]]:
-    entries = raw.get("entries") or raw.get("world_info") or raw.get("lorebook", {}).get("entries", [])
-    if isinstance(entries, dict):
-        for uid, entry in entries.items():
-            if isinstance(entry, dict):
-                with_uid = dict(entry)
-                with_uid.setdefault("uid", str(uid))
-                yield with_uid
-    elif isinstance(entries, list):
-        for entry in entries:
-            if isinstance(entry, dict):
-                yield entry
-
-
 def normalize_worldbook(
     raw: Dict[str, Any],
     *,
     fallback_name: str = "Imported Worldbook",
+    defaults: Dict[str, Any] | None = None,
 ) -> schemas.WorldBookCreate:
+    if not isinstance(raw, dict):
+        raise HTTPException(status_code=400, detail="Worldbook JSON root must be an object")
     entries = []
-    for raw_entry in _iter_worldbook_entries(raw):
-        keys = raw_entry.get("keys", raw_entry.get("key", []))
-        secondary = raw_entry.get("secondary_keys", raw_entry.get("keysecondary", []))
-        enabled = raw_entry.get("enabled")
-        if enabled is None:
-            enabled = not bool(raw_entry.get("disable", False))
+    for raw_entry in iter_worldbook_entries(raw):
+        normalized, _warnings = normalize_worldbook_entry(raw_entry, defaults=defaults)
         entries.append(
             schemas.WorldBookEntryCreate(
-                uid=str(raw_entry.get("uid", "")) or None,
-                keys=_as_list(keys),
-                secondary_keys=_as_list(secondary),
-                content=str(raw_entry.get("content", "")),
-                enabled=bool(enabled),
-                constant=bool(raw_entry.get("constant", False)),
-                selective=bool(raw_entry.get("selective", False)),
-                order=int(raw_entry.get("insertion_order", raw_entry.get("order", 100)) or 100),
-                position=str(raw_entry.get("position", "after_char")),
-                depth=raw_entry.get("depth"),
-                case_sensitive=bool(raw_entry.get("case_sensitive", False)),
-                match_whole_words=bool(raw_entry.get("match_whole_words", False)),
+                **normalized,
+                uid=str(raw_entry.get("uid", raw_entry.get("id", ""))) or None,
                 raw_json=raw_entry,
             )
         )
     return schemas.WorldBookCreate(
         name=str(raw.get("name") or raw.get("display_name") or fallback_name),
         description=str(raw.get("description", "")),
-        scan_depth=int(raw.get("scan_depth", 8) or 8),
-        token_budget=int(raw.get("token_budget", raw.get("budget", 4000)) or 4000),
-        recursive_scanning=bool(raw.get("recursive_scanning", raw.get("recursive", False))),
+        **normalize_worldbook_settings(raw, defaults=defaults),
         raw_json=raw,
         entries=entries,
     )

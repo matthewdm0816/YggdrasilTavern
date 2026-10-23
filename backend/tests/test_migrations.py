@@ -125,7 +125,6 @@ def test_single_generation_migration_preserves_overlapping_partial_messages(tmp_
     finally:
         engine.dispose()
 
-
 def test_global_worldbook_regex_migration_takes_latest_session_values(tmp_path, monkeypatch):
     database_path = tmp_path / "worldbook-regex.db"
     database_url = f"sqlite:///{database_path.as_posix()}"
@@ -135,22 +134,21 @@ def test_global_worldbook_regex_migration_takes_latest_session_values(tmp_path, 
     old_rule = {"id": "old-rule", "pattern": "a", "replacement": "b", "targets": ["display"], "mode": "replace"}
     try:
         with Session(engine, expire_on_commit=False) as db:
-            old_book = models.WorldBook(name="Old")
-            new_book = models.WorldBook(name="New")
-            db.add_all([old_book, new_book])
-            db.flush()
+            # Seed the historical schema without newer ORM-only columns.
+            for book_id in ("old-book", "new-book"):
+                db.execute(text("INSERT INTO worldbooks (id, name, description, scan_depth, token_budget, recursive_scanning, raw_json, created_at, updated_at) VALUES (:id, :id, '', 8, 4000, 0, '{}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"), {"id": book_id})
             older = models.ChatSession(
-                title="Older", preset={"worldbook_ids": [old_book.id], "regex_rules": [old_rule]},
+                title="Older", preset={"worldbook_ids": ["old-book"], "regex_rules": [old_rule]},
             )
             newer = models.ChatSession(
-                title="Newer", worldbook_id=new_book.id, preset={"worldbook_ids": ["deleted-book"], "regex_rules": []},
+                title="Newer", worldbook_id="new-book", preset={"worldbook_ids": ["deleted-book"], "regex_rules": []},
             )
             db.add_all([older, newer])
             db.commit()
             db.execute(text("UPDATE sessions SET updated_at = '2026-01-01 00:00:00' WHERE id = :id"), {"id": older.id})
             db.execute(text("UPDATE sessions SET updated_at = '2026-02-01 00:00:00' WHERE id = :id"), {"id": newer.id})
             db.commit()
-            new_book_id, newer_id = new_book.id, newer.id
+            new_book_id, newer_id = "new-book", newer.id
         command.upgrade(config, "head")
         with Session(engine) as db:
             shared = db.get(models.GlobalWorldbookRegexConfig, "default")
@@ -217,6 +215,79 @@ def test_tts_migration_preserves_existing_chat_and_avatars_and_leaves_speech_dis
             assert db.execute(avatar_query, {"id": character_id}).one() == original_avatar
         with engine.connect() as connection:
             assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "0009_character_avatar_thumbnails"
+            assert connection.exec_driver_sql("PRAGMA foreign_key_check").fetchall() == []
+    finally:
+        engine.dispose()
+
+
+def test_worldbook_migration_repairs_only_recognizable_unedited_st_depths(tmp_path, monkeypatch):
+    import json
+
+    database_url = f"sqlite:///{(tmp_path / 'worldbook-depth.db').as_posix()}"
+    config = alembic_config(database_url, monkeypatch)
+    command.upgrade(config, "0010_tts_settings")
+    engine = create_engine(database_url)
+    cases = [
+        ("st-insertion", 4, {"key": ["a"], "depth": 4}, None),
+        ("st-explicit-scan", 4, {"key": ["a"], "depth": 4, "scanDepth": 2}, 2),
+        ("st-inherit-scan", 4, {"key": ["a"], "depth": 4, "scanDepth": None}, None),
+        ("user-edited", 3, {"key": ["a"], "depth": 4}, 3),
+        ("native", 4, {"keys": ["a"], "depth": 4, "position": "after_char"}, 4),
+        ("already-correct", 2, {"key": ["a"], "depth": 4, "scanDepth": 2}, 2),
+        ("invalid-scan", 4, {"key": ["a"], "depth": 4, "scanDepth": -1}, 4),
+        ("bool-is-not-depth", 1, {"key": ["a"], "depth": True}, 1),
+        ("card-extension", 4, {"keys": ["a"], "extensions": {
+            "depth": 4, "scan_depth": 1, "exclude_recursion": True,
+            "prevent_recursion": True, "delay_until_recursion": 3,
+        }}, 1),
+    ]
+    try:
+        with engine.begin() as connection:
+            connection.execute(text("INSERT INTO worldbooks (id, name, description, scan_depth, token_budget, recursive_scanning, raw_json, created_at, updated_at) VALUES ('book', 'Book', '', 8, 4000, 1, :raw, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"),
+                               {"raw": json.dumps({"max_recursion_steps": 2})})
+            for name, depth, raw, _ in cases:
+                connection.execute(text('INSERT INTO worldbook_entries (id, worldbook_id, keys, secondary_keys, content, enabled, constant, selective, "order", position, depth, case_sensitive, match_whole_words, raw_json, created_at, updated_at) VALUES (:id, \'book\', \'["a"]\', \'[]\', \'original\', 1, 0, 0, 100, \'after_char\', :depth, 0, 0, :raw, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)'),
+                                   {"id": name, "depth": depth, "raw": json.dumps(raw)})
+        with Session(engine, expire_on_commit=False) as db:
+            session = models.ChatSession(id="chat", title="Preserved")
+            db.add(session)
+            db.flush()
+            root = models.Message(id="root", session_id="chat", role="user", content="root")
+            db.add(root)
+            db.flush()
+            db.add_all([
+                models.Message(id="left", session_id="chat", parent_id="root", role="assistant", content="original reply"),
+                models.Message(id="right", session_id="chat", parent_id="root", role="assistant",
+                               content="partial reply", thinking_content="partial thought", status="interrupted"),
+            ])
+            db.flush()
+            session.active_root_child_id = "root"
+            root.selected_child_id = "right"
+            db.commit()
+
+        command.upgrade(config, "0011_worldbook_recursion")
+        with engine.connect() as connection:
+            rows = {row["id"]: row for row in connection.execute(text("SELECT * FROM worldbook_entries")).mappings()}
+            for name, _, raw, expected in cases:
+                assert rows[name]["depth"] == expected
+                assert json.loads(rows[name]["raw_json"]) == raw
+                assert rows[name]["content"] == "original"
+            assert rows["card-extension"]["exclude_recursion"] == 1
+            assert rows["card-extension"]["prevent_recursion"] == 1
+            assert rows["card-extension"]["delay_until_recursion"] == 3
+            assert rows["native"]["exclude_recursion"] == 0
+            assert connection.execute(text("SELECT max_recursion_steps FROM worldbooks")).scalar_one() == 2
+            assert connection.exec_driver_sql("PRAGMA foreign_key_check").fetchall() == []
+        with Session(engine) as db:
+            assert db.get(models.Message, "root").selected_child_id == "right"
+            assert db.get(models.Message, "left").content == "original reply"
+            assert db.get(models.Message, "right").content == "partial reply"
+            assert db.get(models.Message, "right").thinking_content == "partial thought"
+            assert db.get(models.Message, "right").status == "interrupted"
+        command.downgrade(config, "0010_tts_settings")
+        with engine.connect() as connection:
+            assert connection.execute(text("SELECT depth FROM worldbook_entries WHERE id = 'st-insertion'")).scalar_one() is None
+            assert connection.execute(text("SELECT content FROM messages WHERE id = 'right'")).scalar_one() == "partial reply"
             assert connection.exec_driver_sql("PRAGMA foreign_key_check").fetchall() == []
     finally:
         engine.dispose()

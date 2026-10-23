@@ -8,9 +8,10 @@ export type ProviderType = "anthropic_messages" | "openai_chat_completions" | "o
 
 type WireProfile = components["schemas"]["APIProfileOut"];
 export type APIProfile = Omit<WireProfile, "provider_type" | "default_params" |
-  "model_catalog" | "created_at" | "updated_at"> & {
+  "model_catalog" | "anthropic_prompt_cache" | "created_at" | "updated_at"> & {
   provider_type: ProviderType;
   default_params: Record<string, unknown>;
+  anthropic_prompt_cache?: boolean;
   model_catalog: RemoteModelInfo[];
   created_at?: string;
   updated_at?: string;
@@ -24,6 +25,9 @@ export type APIProfileWrite = {
   api_key?: string;
   api_key_env?: string;
   default_params: Record<string, unknown>;
+  custom_headers?: Record<string, string>;
+  excluded_body_params?: string[];
+  anthropic_prompt_cache?: boolean;
   input_token_limit?: number;
   output_token_limit?: number;
 };
@@ -59,6 +63,7 @@ export type CharacterSummary = {
 };
 
 export type Character = CharacterSummary & {
+  import_warnings?: string[];
   description: string;
   personality: string;
   scenario: string;
@@ -89,6 +94,9 @@ export type WorldBookEntry = {
   depth?: number | null;
   case_sensitive: boolean;
   match_whole_words: boolean;
+  exclude_recursion: boolean;
+  prevent_recursion: boolean;
+  delay_until_recursion: number;
   raw_json: Record<string, unknown>;
 };
 
@@ -99,6 +107,8 @@ export type WorldBook = {
   scan_depth: number;
   token_budget: number;
   recursive_scanning: boolean;
+  max_recursion_steps: number;
+  import_warnings?: string[];
   raw_json: Record<string, unknown>;
   entries: WorldBookEntry[];
 };
@@ -248,7 +258,12 @@ export type MessageTreeMutation = SessionTree & Pick<components["schemas"]["Mess
 export type ContextPreview = {
   system: string;
   messages: Array<{ role: string; speaker: string; content: string }>;
-  activated_lore: Array<{ id: string; worldbook_id: string; order: number; position: string; content: string; keys: string[] }>;
+  activated_lore: Array<{
+    id: string; worldbook_id: string; order: number; position: string; content: string; keys: string[];
+    activation_reason?: "message" | "constant" | "recursion" | "recursion_delay";
+    recursion_step?: number;
+    triggered_by?: Array<{ id: string; worldbook_id: string }>;
+  }>;
   compiled_blocks: CompiledPromptBlock[];
   diagnostics: PromptDiagnostic[];
   worldbook_ids: string[];

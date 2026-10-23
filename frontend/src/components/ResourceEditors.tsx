@@ -229,6 +229,7 @@ export function CharacterManager({ characters, onChanged, onError, openRequestId
                 <label>版本<input value={draft.character_version || ""} onChange={(event) => update("character_version", event.target.value)} /></label>
                 <label>标签（逗号分隔）<CommaListInput value={draft.tags || []} onChange={(tags) => update("tags", tags)} /></label>
               </div>
+              {!!draft.import_warnings?.length && <div role="status"><strong>角色卡世界书导入提示</strong><ul>{draft.import_warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul></div>}
               {([
                 ["description", "角色描述", 220], ["personality", "性格", 220], ["scenario", "场景", 220], ["first_mes", "首条消息", 220],
                 ["mes_example", "示例对话", 220], ["system_prompt", "角色 System Prompt", 160], ["post_history_instructions", "Post-History Instruction", 160], ["creator_notes", "作者备注", 160]
@@ -255,7 +256,7 @@ export function CharacterManager({ characters, onChanged, onError, openRequestId
 }
 
 function newEntry(worldbookId: string): WorldBookEntry {
-  return { id: temporaryId("entry"), worldbook_id: worldbookId, keys: [], secondary_keys: [], content: "", enabled: true, constant: false, selective: false, order: 100, position: "after_char", uid: null, depth: null, case_sensitive: false, match_whole_words: false, raw_json: {} };
+  return { id: temporaryId("entry"), worldbook_id: worldbookId, keys: [], secondary_keys: [], content: "", enabled: true, constant: false, selective: false, order: 100, position: "after_char", uid: null, depth: null, case_sensitive: false, match_whole_words: false, exclude_recursion: false, prevent_recursion: false, delay_until_recursion: 0, raw_json: {} };
 }
 
 export function WorldbookManager({ worldbooks, onChanged, onError }: CommonProps & { worldbooks: WorldBook[] }) {
@@ -310,6 +311,11 @@ export function WorldbookManager({ worldbooks, onChanged, onError }: CommonProps
             <header><div><p className="eyebrow">World Book</p><h2>编辑世界书与条目</h2></div><button className="icon-button" title="关闭" aria-label="关闭世界书编辑" onClick={requestClose}><X size={17} /></button></header>
             <div className="resource-modal-body">
               <div className="editor-grid"><label>名称<input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} /></label><label>扫描最近消息数<input type="number" min="0" value={draft.scan_depth} onChange={(event) => setDraft({ ...draft, scan_depth: Number(event.target.value) })} /></label><label>激活内容 Token 上限<input type="number" min="0" value={draft.token_budget} onChange={(event) => setDraft({ ...draft, token_budget: Number(event.target.value) })} /></label></div>
+              <div className="editor-grid">
+                <label><input type="checkbox" checked={draft.recursive_scanning} onChange={(event) => setDraft({ ...draft, recursive_scanning: event.target.checked })} />递归扫描<small>用已激活条目的内容继续匹配其他条目的关键词。</small></label>
+                <label>最大扫描轮数<input type="number" min="0" step="1" value={draft.max_recursion_steps ?? 0} onChange={(event) => setDraft({ ...draft, max_recursion_steps: Number(event.target.value) })} /><small>包含首次扫描；0 表示不限轮数，1 表示只扫描一次。</small></label>
+              </div>
+              {!!draft.import_warnings?.length && <div role="status"><strong>世界书导入提示</strong><ul>{draft.import_warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul></div>}
               <label>描述<textarea value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} /></label>
               <div className="worldbook-entry-list">
                 {draft.entries.map((entry, index) => (
@@ -318,6 +324,12 @@ export function WorldbookManager({ worldbooks, onChanged, onError }: CommonProps
                     <label>主关键词（逗号分隔）<CommaListInput value={entry.keys} onChange={(keys) => patchEntry(index, { keys })} /></label>
                     <label>次关键词（逗号分隔）<CommaListInput value={entry.secondary_keys} onChange={(secondary_keys) => patchEntry(index, { secondary_keys })} /><small>开启“需次关键词”后，还必须命中这里的任一项。</small></label>
                     <label>内容<textarea value={entry.content} onChange={(event) => patchEntry(index, { content: event.target.value })} /></label>
+                    <div className="editor-grid">
+                      <label>条目扫描深度（最近消息数）<input type="number" min="0" step="1" placeholder="继承世界书设置" value={entry.depth ?? ""} onChange={(event) => patchEntry(index, { depth: event.target.value === "" ? null : Number(event.target.value) })} /><small>留空继承世界书设置；这是关键词扫描范围。</small></label>
+                      <label>递归延迟等级<input type="number" min="0" step="1" value={entry.delay_until_recursion ?? 0} onChange={(event) => patchEntry(index, { delay_until_recursion: Number(event.target.value) })} /><small>0 可在首次扫描激活；正数仅在递归扫描中生效，较低等级先完成。</small></label>
+                      <label><input type="checkbox" checked={entry.exclude_recursion ?? false} onChange={(event) => patchEntry(index, { exclude_recursion: event.target.checked })} />不由递归激活<small>只允许直接匹配对话中的关键词。</small></label>
+                      <label><input type="checkbox" checked={entry.prevent_recursion ?? false} onChange={(event) => patchEntry(index, { prevent_recursion: event.target.checked })} />不触发后续递归<small>该条目激活后，其内容不用于激活其他条目。</small></label>
+                    </div>
                     <div className="entry-options"><label>插入顺序<input type="number" value={entry.order} onChange={(event) => patchEntry(index, { order: Number(event.target.value) })} /><small>数字较小的条目先插入。</small></label><label>插入位置<select value={entry.position} onChange={(event) => patchEntry(index, { position: event.target.value })}><option value="before_char">角色设定之前</option><option value="after_char">角色设定之后</option></select></label><label title="不检查关键词，每次都插入"><input type="checkbox" checked={entry.constant} onChange={(event) => patchEntry(index, { constant: event.target.checked })} />始终插入</label><label title="主关键词命中后还需要次关键词"><input type="checkbox" checked={entry.selective} onChange={(event) => patchEntry(index, { selective: event.target.checked })} />需次关键词</label><label><input type="checkbox" checked={entry.case_sensitive} onChange={(event) => patchEntry(index, { case_sensitive: event.target.checked })} />区分大小写</label><label><input type="checkbox" checked={entry.match_whole_words} onChange={(event) => patchEntry(index, { match_whole_words: event.target.checked })} />仅匹配完整词</label></div>
                   </article>
                 ))}

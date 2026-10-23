@@ -207,6 +207,8 @@ export function ChatWorkspace({
 
   const messageIndex = useMemo(() => buildMessageIndex(tree?.messages || []), [tree?.messages]);
   const activeMessages = useMemo(() => getActiveMessages(tree, messageIndex), [tree, messageIndex]);
+  const [previewReplacements, setPreviewReplacements] = useState<Record<string, boolean>>({});
+  const hasHoverRules = regexRules.some((rule) => rule.enabled && rule.mode === "hover" && rule.targets.includes("display"));
   const character = characters.find((item) => item.id === activeSession?.character_id);
   const hasKeyboardShortcut = useMediaQuery("(hover: hover) and (pointer: fine)");
   const contentRevision = activeMessages.map((message) => `${message.id}:${message.content.length}:${message.thinking_content.length}:${message.status}`).join("|");
@@ -532,7 +534,7 @@ export function ChatWorkspace({
                     </div>
                   </div>
                 ) : message.content ? (
-                  <RegexMessage content={message.content} role={message.role} rules={regexRules} />
+                  <RegexMessage content={message.content} role={message.role} rules={regexRules} showAllReplacements={Boolean(previewReplacements[message.id])} />
                 ) : message.status === "streaming" ? <p className="message-content">…</p> : null}
                 {message.error && <p className="message-error">{messageErrorText(message.error)}</p>}
                 <footer className="message-footer">
@@ -552,6 +554,7 @@ export function ChatWorkspace({
                       <button className="icon-button message-quick-action" type="button" title="重新生成此回复" aria-label="重新生成此回复" disabled={messageActionsBusy || !canGenerate} onClick={() => onRegenerate(message.id)}><RefreshCcw size={15} /></button>
                     )}
                     <ActionMenu label="消息操作">
+                      {hasHoverRules && <button type="button" data-close-menu onClick={() => setPreviewReplacements((current) => ({ ...current, [message.id]: !current[message.id] }))}>{previewReplacements[message.id] ? "恢复原文" : "整条显示替换后"}</button>}
                       <button type="button" data-close-menu disabled={!message.content} onClick={() => void copyMessage(message)}><Copy size={16} />复制正文</button>
                       {message.role === "assistant" && onReadMessage && <button type="button" data-close-menu disabled={messageActionsBusy || message.status !== "complete"} onClick={() => onReadMessage(message)}><Volume2 size={16} />朗读消息…</button>}
                       <button type="button" data-close-menu disabled={messageActionsBusy} onClick={() => void duplicateMessage(message)}><CopyPlus size={16} />复制为新分支</button>

@@ -1865,7 +1865,7 @@ export interface components {
              * @default replace
              * @enum {string}
              */
-            mode: "replace" | "veil";
+            mode: "replace" | "veil" | "hover";
             /** Pattern */
             pattern: string;
             /**

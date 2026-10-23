@@ -4,6 +4,8 @@ import { RegexRule, RegexTarget } from "../lib/api";
 import { validateRegex } from "../lib/regex";
 import { CollapsibleSection } from "./CollapsibleSection";
 
+const modeLabels = { replace: "显式替换", veil: "隐式遮罩", hover: "悬停预览" };
+
 const targets: Array<{ value: RegexTarget; label: string; help?: string }> = [
   { value: "display", label: "聊天显示" },
   { value: "user_input", label: "用户消息" },
@@ -58,7 +60,7 @@ export function RegexRulesSection({ regexRules, setRegexRules }: Props) {
           const validation = validateRegex(rule);
           return (
             <details className={`regex-rule-card ${rule.enabled ? "enabled" : "disabled"}`} key={rule.id}>
-              <summary><span>{rule.name || "未命名 Regex"}</span><small>{rule.enabled ? "已启用" : "已停用"}{validation ? " · 规则有误" : ""}</small></summary>
+              <summary><span>{rule.name || "未命名 Regex"}</span><small>{rule.enabled ? "已启用" : "已停用"} · {modeLabels[rule.mode]}{validation ? " · 规则有误" : ""}</small></summary>
               <div className="regex-rule-fields">
                 <header>
                   <label className="form-field"><span>规则名称</span><input value={rule.name} onChange={(event) => patchRule(index, { name: event.target.value })} /></label>
@@ -83,12 +85,13 @@ export function RegexRulesSection({ regexRules, setRegexRules }: Props) {
                     </label>
                   ))}
                 </fieldset>
-                <label className="form-field"><span>处理方式</span><select value={rule.mode} onChange={(event) => patchRule(index, { mode: event.target.value as RegexRule["mode"] })}>
-                  <option value="replace">显式替换</option><option value="veil">隐式遮罩（点击显示）</option>
+                <label className="form-field"><span>处理方式</span><select value={rule.mode} onChange={(event) => patchRule(index, { mode: event.target.value as RegexRule["mode"], ...(event.target.value === "hover" ? { targets: ["display"] } : {}) })}>
+                  <option value="replace">显式替换</option><option value="veil">隐式遮罩（点击显示）</option><option value="hover">悬停预览（原文加虚线）</option>
                 </select></label>
+                {rule.mode === "hover" && <p className="section-help">只匹配 Markdown 渲染后的可见文字。电脑悬停或聚焦预览；手机点按切换。先显式替换，再遮罩，最后悬停预览；重叠匹配按规则顺序取第一个。</p>}
                 <fieldset className="target-grid">
                   <legend>应用位置</legend>
-                  {targets.map((target) => <label key={target.value}><input type="checkbox" checked={rule.targets.includes(target.value)} onChange={() => toggleTarget(index, target.value)} /><span><strong>{target.label}</strong>{target.help && <small>{target.help}</small>}</span></label>)}
+                  {targets.map((target) => <label key={target.value}><input type="checkbox" disabled={rule.mode === "hover" && target.value !== "display"} checked={rule.targets.includes(target.value)} onChange={() => toggleTarget(index, target.value)} /><span><strong>{target.label}</strong>{target.help && <small>{target.help}</small>}</span></label>)}
                 </fieldset>
                 <button className="icon-button danger-button" type="button" title="删除 Regex" aria-label={`删除 ${rule.name || "Regex"}`} onClick={() => setRegexRules((current) => current.filter((_, itemIndex) => itemIndex !== index))}><Trash2 size={15} /></button>
               </div>

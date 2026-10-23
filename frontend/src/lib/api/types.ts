@@ -196,7 +196,7 @@ export type RegexRule = {
   enabled: boolean;
   scope: "session" | "character" | "global";
   targets: RegexTarget[];
-  mode: "replace" | "veil";
+  mode: "replace" | "veil" | "hover";
   pattern: string;
   flags: string;
   replacement: string;

@@ -1,13 +1,15 @@
 import { memo, useEffect, useMemo, useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
 import { Message, RegexRule } from "../lib/api";
-import { DisplayBlock, transformMessageContent } from "../lib/regex";
+import { DisplayBlock, transformMessageContent, validateRegex } from "../lib/regex";
+import { regexPreviews } from "../lib/textPreview";
 import { MarkdownMessage } from "./MarkdownMessage";
 
 type Props = {
   content: string;
   role: Message["role"];
   rules: RegexRule[];
+  showAllReplacements?: boolean;
 };
 
 type RenderGroup =
@@ -30,7 +32,10 @@ function groupBlocks(blocks: DisplayBlock[]): RenderGroup[] {
   return groups;
 }
 
-export const RegexMessage = memo(function RegexMessage({ content, role, rules }: Props) {
+export const RegexMessage = memo(function RegexMessage({ content, role, rules, showAllReplacements = false }: Props) {
+  const hoverRules = useMemo(() => rules.filter((rule) => rule.enabled && rule.mode === "hover" && !validateRegex(rule)), [rules]);
+  const previews = useMemo(() => (text: string) => regexPreviews(text, hoverRules), [hoverRules]);
+  const errors = rules.filter((rule) => rule.enabled && validateRegex(rule));
   const blocks = useMemo(() => transformMessageContent(content, role, rules), [content, role, rules]);
   const groups = useMemo(() => groupBlocks(blocks), [blocks]);
   const [revealed, setRevealed] = useState<Set<string>>(new Set());
@@ -48,10 +53,11 @@ export const RegexMessage = memo(function RegexMessage({ content, role, rules }:
 
   return (
     <div className="regex-message">
+      {errors.map((rule) => <p key={rule.id} role="alert" className="field-error">Regex {rule.name || rule.id}：{validateRegex(rule)}</p>)}
       {groups.map((group) => {
         if (group.kind === "markdown") {
           return group.text.trim()
-            ? <MarkdownMessage key={group.id} content={group.text} />
+            ? <MarkdownMessage key={group.id} content={group.text} previews={previews} showAllReplacements={showAllReplacements} />
             : <span key={group.id}>{group.text}</span>;
         }
         const block = group.block;
@@ -75,7 +81,7 @@ export const RegexMessage = memo(function RegexMessage({ content, role, rules }:
               {isRevealed ? <Eye size={15} /> : <EyeOff size={15} />}
               {isRevealed ? "点击重新遮罩" : `Regex 隐式替换 · ${block.ruleNames.join("、") || "命中"}`}
             </span>
-            <div className="veil-content"><MarkdownMessage content={block.text} /></div>
+            <div className="veil-content"><MarkdownMessage content={block.text} previews={isRevealed ? previews : undefined} showAllReplacements={showAllReplacements} /></div>
           </div>
         );
       })}

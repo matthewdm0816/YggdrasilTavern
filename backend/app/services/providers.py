@@ -41,6 +41,7 @@ from .provider_protocols.transport import (
     safe_error_text,
 )
 from .token_limits import apply_provider_output_limit, resolve_profile_token_limits
+from .provider_protocols.request_settings import has_custom_auth, merge_request_headers
 
 
 DEFAULT_BASE_URLS = {
@@ -83,6 +84,8 @@ def models_endpoint_for(profile: models.APIProfile) -> str:
 
 def _api_key(profile: models.APIProfile) -> str:
     key = (profile.api_key or "").strip()
+    if not key and has_custom_auth(profile.custom_headers):
+        return ""
     if not key and profile.api_key_env:
         db = object_session(profile)
         if db is not None and not db.info.get("allow_server_credentials", True):
@@ -218,14 +221,16 @@ async def refresh_models(profile: models.APIProfile) -> List[schemas.RemoteModel
     params = dict(profile.default_params or {})
     if profile.provider_type == "anthropic_messages":
         headers = {
-            "x-api-key": key,
             "anthropic-version": str(params.get("anthropic_version", "2023-06-01")),
         }
+        if key:
+            headers["x-api-key"] = key
     elif profile.provider_type in {"openai_chat_completions", "openai_responses"}:
-        headers = {"Authorization": f"Bearer {key}"}
+        headers = {"Authorization": f"Bearer {key}"} if key else {}
     else:
         raise ApplicationError(status_code=400, detail=f"Unsupported provider type: {profile.provider_type}")
 
+    headers = merge_request_headers(headers, profile.custom_headers)
     url = models_endpoint_for(profile)
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
@@ -278,15 +283,17 @@ async def stream_completion(
     if prepare_request is None:
         raise ApplicationError(status_code=400, detail=f"Unsupported provider type: {profile.provider_type}")
     request = prepare_request(profile, context, params, key)
+    headers = merge_request_headers(request.headers, profile.custom_headers)
+    payload = {name: value for name, value in request.payload.items() if name not in (profile.excluded_body_params or [])}
     try:
         async for event in _stream_sse(
             url=url,
-            headers=request.headers,
-            payload=request.payload,
+            headers=headers,
+            payload=payload,
             text_extractor=request.text_extractor,
             thinking_extractor=request.thinking_extractor,
             usage_extractor=request.usage_extractor,
         ):
             yield event
     except httpx.HTTPError as exc:
-        raise ApplicationError(status_code=502, detail=f"生成回复时连接失败，请检查网络和服务地址。\n模型：{profile.model}\n请求地址：{safe_endpoint(url)}\n原因：{safe_error_text(exc, request.headers)}") from exc
+        raise ApplicationError(status_code=502, detail=f"生成回复时连接失败，请检查网络和服务地址。\n模型：{profile.model}\n请求地址：{safe_endpoint(url)}\n原因：{safe_error_text(exc, headers)}") from exc

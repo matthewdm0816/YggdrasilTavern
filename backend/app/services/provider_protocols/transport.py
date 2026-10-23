@@ -38,11 +38,13 @@ def _safe_provider_error(status_code: int, *, discovering_models: bool = False) 
 
 def safe_error_text(value: Any, headers: Dict[str, str]) -> str:
     text = str(value)
-    for name, secret in headers.items():
-        if name.lower() in {"authorization", "x-api-key", "api-key"} and secret:
-            text = text.replace(secret, "[已隐藏密钥]")
-            if secret.lower().startswith("bearer "):
-                text = text.replace(secret[7:], "[已隐藏密钥]")
+    # Every custom header may carry a credential, regardless of its name.
+    secrets = {secret for secret in headers.values() if secret}
+    secrets.update(secret[7:] for secret in list(secrets) if secret.lower().startswith("bearer ") and secret[7:])
+    secrets.update(json.dumps(secret)[1:-1] for secret in list(secrets))
+    secrets.update(repr(secret)[1:-1] for secret in list(secrets))
+    for secret in sorted(secrets, key=len, reverse=True):
+        text = text.replace(secret, "[已隐藏密钥]")
     text = re.sub(r"(?i)(bearer\s+)[^\s\"'<>]+", r"\1[已隐藏密钥]", text)
     text = re.sub(r"(?i)((?:api[_-]?key|access_token|token|password|secret)[\"']?\s*[:=]\s*[\"']?)[^\s\"'&,<>]+", r"\1[已隐藏密钥]", text)
     return text[:2000]

@@ -41,7 +41,7 @@ def prepare_request(
     payload = {**params, "model": profile.model, "messages": _openai_messages(context), "stream": True}
     payload.setdefault("stream_options", {"include_usage": True})
     return ProviderRequest(
-        headers={"Authorization": f"Bearer {key}", "content-type": "application/json"},
+        headers={**({"Authorization": f"Bearer {key}"} if key else {}), "content-type": "application/json"},
         payload=payload,
         text_extractor=extract_openai_chat_delta,
         thinking_extractor=extract_openai_chat_thinking_delta,

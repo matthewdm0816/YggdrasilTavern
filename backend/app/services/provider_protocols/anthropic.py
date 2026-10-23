@@ -87,7 +87,7 @@ def prepare_request(
     system, _ = _split_leading_system(context)
     return ProviderRequest(
         headers={
-            "x-api-key": key,
+            **({"x-api-key": key} if key else {}),
             "anthropic-version": anthropic_version,
             "content-type": "application/json",
         },

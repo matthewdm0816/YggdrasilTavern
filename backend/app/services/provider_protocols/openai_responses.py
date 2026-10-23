@@ -33,7 +33,7 @@ def prepare_request(
 ) -> ProviderRequest:
     instructions, response_input = _split_leading_system(context)
     return ProviderRequest(
-        headers={"Authorization": f"Bearer {key}", "content-type": "application/json"},
+        headers={**({"Authorization": f"Bearer {key}"} if key else {}), "content-type": "application/json"},
         payload={
             **params,
             "model": profile.model,

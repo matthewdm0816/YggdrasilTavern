@@ -12,6 +12,7 @@ from .. import models, schemas
 from ..database import get_db
 from ..services import providers
 from ..services.errors import ApplicationError
+from ..services.provider_protocols.request_settings import has_custom_auth, headers_need_replacement, patch_custom_headers
 from ._shared import api_profile_write_data as _api_profile_write_data
 
 router = APIRouter()
@@ -33,20 +34,25 @@ async def discover_profile_models(profile: models.APIProfile) -> schemas.ModelsR
 @router.post("/api-profiles/models/discover", response_model=schemas.ModelsRefreshOut)
 async def discover_api_profile_models(payload: schemas.ModelsDiscoverIn, db: Session = Depends(get_db)) -> schemas.ModelsRefreshOut:
     stored = db.get(models.APIProfile, payload.profile_id) if payload.profile_id else None
+    routing_changed = bool(stored and (payload.provider_type, payload.base_url.rstrip("/"), payload.path_override or None) != (
+        stored.provider_type, stored.base_url.rstrip("/"), stored.path_override or None
+    ))
+    if routing_changed and headers_need_replacement(stored.custom_headers, payload.custom_headers):
+        return schemas.ModelsRefreshOut(models=[], available=False, message="连接地址或协议已更改，请重新填写或移除已保存的自定义请求头后获取模型列表。")
+    custom_headers = patch_custom_headers(stored.custom_headers if stored else {}, payload.custom_headers)
     if stored and stored.api_key_env and not stored.api_key and not db.info.get("allow_server_credentials", True):
         raise HTTPException(403, "此账号需要填写自己的 API Key，不能读取服务器环境变量")
     key = (payload.api_key or "").strip()
     key_env = ""
-    if not key and stored:
-        if (payload.provider_type, payload.base_url.rstrip("/"), payload.path_override or None) != (
-            stored.provider_type, stored.base_url.rstrip("/"), stored.path_override or None
-        ):
+    if not key and stored and not has_custom_auth(custom_headers):
+        if routing_changed:
             return schemas.ModelsRefreshOut(models=[], available=False, message="连接地址或协议已更改，请重新输入 API Key 后获取模型列表；仍可手动填写模型名称。")
         key, key_env = stored.api_key, stored.api_key_env
     profile = models.APIProfile(
         name="模型列表预览", provider_type=payload.provider_type, base_url=payload.base_url,
         path_override=payload.path_override, model="", api_key=key, api_key_env=key_env,
         default_params=stored.default_params if stored else {},
+        custom_headers=custom_headers,
     )
     return await discover_profile_models(profile)
 
@@ -78,14 +84,23 @@ def update_api_profile(profile_id: str, payload: schemas.APIProfileUpdate, db: S
         field in data and data[field] != getattr(profile, field)
         for field in ("provider_type", "base_url", "path_override")
     )
+    header_patch = data.get("custom_headers", {})
+    if routing_changed and headers_need_replacement(profile.custom_headers, header_patch):
+        raise HTTPException(status_code=422, detail="修改连接地址或协议时，必须重新填写或移除已保存的自定义请求头，防止旧凭据被发送到新地址")
+    if "custom_headers" in data:
+        data["custom_headers"] = patch_custom_headers(profile.custom_headers, header_patch)
     has_existing_credential = bool(profile.api_key or profile.api_key_env)
-    supplied_replacement = bool(data.get("api_key") or data.get("api_key_env"))
+    supplied_replacement = bool(data.get("api_key") or data.get("api_key_env") or has_custom_auth(data.get("custom_headers")))
     if routing_changed and has_existing_credential and not supplied_replacement:
         raise HTTPException(
             status_code=422,
             detail="修改 API 协议、Base URL 或请求路径时，必须重新输入 API Key，防止旧 Key 被发送到新地址",
         )
-    credential_changed = any(field in data and data[field] != getattr(profile, field) for field in ("api_key", "api_key_env"))
+    if routing_changed:
+        # Only credentials explicitly supplied for the new route may survive.
+        data.setdefault("api_key", None)
+        data.setdefault("api_key_env", "")
+    credential_changed = any(field in data and data[field] != getattr(profile, field) for field in ("api_key", "api_key_env", "custom_headers"))
     if routing_changed or credential_changed:
         data["model_catalog"] = []
         data["models_refreshed_at"] = None
@@ -101,7 +116,7 @@ async def refresh_api_profile_models(profile_id: str, db: Session = Depends(get_
     profile = db.get(models.APIProfile, profile_id)
     if not profile:
         raise HTTPException(status_code=404, detail="API profile not found")
-    connection = {field: getattr(profile, field) for field in ("provider_type", "base_url", "path_override", "api_key", "api_key_env")}
+    connection = {field: getattr(profile, field) for field in ("provider_type", "base_url", "path_override", "api_key", "api_key_env", "custom_headers")}
     result = await discover_profile_models(profile)
     if not result.available:
         return result

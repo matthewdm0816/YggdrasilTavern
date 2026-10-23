@@ -23,15 +23,17 @@ export function SidebarResources({ profiles, characters, worldbooks, onChanged, 
   const [chubPath, setChubPath] = useState("");
   const [busy, setBusy] = useState(false);
   const [newCharacterId, setNewCharacterId] = useState<string | null>(null);
+  const [importWarnings, setImportWarnings] = useState<string[]>([]);
 
   async function importFile(event: ChangeEvent<HTMLInputElement>, kind: "character" | "worldbook") {
     const file = event.target.files?.[0];
     if (!file) return;
     onError?.("");
+    setImportWarnings([]);
     setBusy(true);
     try {
-      if (kind === "character") await api.importCharacter(file);
-      else await api.importWorldbook(file);
+      const imported = kind === "character" ? await api.importCharacter(file) : await api.importWorldbook(file);
+      setImportWarnings(imported.import_warnings ?? []);
       await onChanged();
     } catch (cause) {
       const label = kind === "character" ? "角色卡" : "世界书";
@@ -75,9 +77,10 @@ export function SidebarResources({ profiles, characters, worldbooks, onChanged, 
   async function importFromChub(kind: "character" | "worldbook") {
     if (!chubPath.trim()) return;
     setBusy(true);
+    setImportWarnings([]);
     try {
-      if (kind === "character") await api.importChubCharacter(chubPath.trim());
-      else await api.importChubWorldbook(chubPath.trim());
+      const imported = kind === "character" ? await api.importChubCharacter(chubPath.trim()) : await api.importChubWorldbook(chubPath.trim());
+      setImportWarnings(imported.import_warnings ?? []);
       setChubPath("");
       await onChanged();
     } catch (cause) {
@@ -89,6 +92,7 @@ export function SidebarResources({ profiles, characters, worldbooks, onChanged, 
 
   return (
     <>
+      {importWarnings.length > 0 && <div className="import-warning" role="status"><strong>已导入，请检查以下设置：</strong><ul>{importWarnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul></div>}
       <CollapsibleSection
         contentId="sidebar-characters-content"
         title={`角色卡 (${characters.length})`}

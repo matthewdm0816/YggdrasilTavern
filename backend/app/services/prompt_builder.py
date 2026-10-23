@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Iterable, List, Optional, Sequence
 
 from sqlalchemy import select
@@ -17,6 +17,7 @@ from .prompt_config import (
 from .token_counter import count_text_tokens
 from .token_limits import ResolvedTokenLimits, resolve_profile_token_limits
 from .tree import active_path
+from .worldbook_import import iter_worldbook_entries, normalize_worldbook_entry, normalize_worldbook_settings, worldbook_import_warnings
 
 
 DEFAULT_SYSTEM = (
@@ -47,6 +48,12 @@ class LoreCandidate:
     depth: Optional[int] = None
     case_sensitive: bool = False
     match_whole_words: bool = False
+    exclude_recursion: bool = False
+    prevent_recursion: bool = False
+    delay_until_recursion: int = 0
+    activation_reason: str = "message"
+    recursion_step: int = 0
+    triggered_by: tuple[tuple[str, str], ...] = ()
 
 
 def expand_macros(text: str, character: Optional[models.Character | PromptCharacter], user_name: str, original: str = "") -> str:
@@ -94,42 +101,23 @@ def _candidate_from_entry(entry: models.WorldBookEntry) -> LoreCandidate:
         depth=entry.depth,
         case_sensitive=entry.case_sensitive,
         match_whole_words=entry.match_whole_words,
+        exclude_recursion=entry.exclude_recursion,
+        prevent_recursion=entry.prevent_recursion,
+        delay_until_recursion=entry.delay_until_recursion,
     )
 
 
 def _candidates_from_character_book(character: Optional[models.Character | PromptCharacter]) -> List[LoreCandidate]:
     if not character or not character.character_book:
         return []
-    raw_entries = character.character_book.get("entries", [])
-    if isinstance(raw_entries, dict):
-        iterable = raw_entries.values()
-    else:
-        iterable = raw_entries
     candidates: List[LoreCandidate] = []
-    for idx, raw in enumerate(iterable):
-        if not isinstance(raw, dict):
-            continue
-        keys = raw.get("keys", raw.get("key", []))
-        if isinstance(keys, str):
-            keys = [part.strip() for part in keys.split(",") if part.strip()]
-        secondary = raw.get("secondary_keys", raw.get("keysecondary", []))
-        if isinstance(secondary, str):
-            secondary = [part.strip() for part in secondary.split(",") if part.strip()]
+    for idx, raw in enumerate(iter_worldbook_entries(character.character_book)):
+        normalized, _warnings = normalize_worldbook_entry(raw)
         candidates.append(
             LoreCandidate(
                 id=f"character_book:{idx}",
                 worldbook_id=f"character:{character.id}",
-                keys=list(keys or []),
-                secondary_keys=list(secondary or []),
-                content=str(raw.get("content", "")),
-                enabled=bool(raw.get("enabled", not raw.get("disable", False))),
-                constant=bool(raw.get("constant", False)),
-                selective=bool(raw.get("selective", False)),
-                order=int(raw.get("insertion_order", raw.get("order", 100)) or 100),
-                position=str(raw.get("position", "after_char")),
-                depth=raw.get("depth"),
-                case_sensitive=bool(raw.get("case_sensitive", False)),
-                match_whole_words=bool(raw.get("match_whole_words", False)),
+                **normalized,
             )
         )
     return candidates
@@ -195,31 +183,109 @@ def activate_lore(
     *,
     scan_depth: int,
     budget: int,
+    recursive_scanning: bool = False,
+    max_recursion_steps: int = 0,
 ) -> List[LoreCandidate]:
-    scan_messages = messages[-scan_depth:] if scan_depth > 0 else []
-    scan_text = "\n".join(f"{message.speaker or message.role}: {message.content}" for message in scan_messages)
-    activated: List[LoreCandidate] = []
-    used = 0
-    for candidate in sorted(candidates, key=lambda item: item.order):
-        if not candidate.enabled or not candidate.content.strip():
-            continue
-        entry_scan_depth = candidate.depth if candidate.depth is not None else scan_depth
-        if entry_scan_depth != scan_depth:
-            entry_messages = messages[-entry_scan_depth:] if entry_scan_depth and entry_scan_depth > 0 else []
-            entry_scan_text = "\n".join(f"{message.speaker or message.role}: {message.content}" for message in entry_messages)
-        else:
-            entry_scan_text = scan_text
+    return activate_lore_books((LoadedWorldBook(
+        id="single-book", scan_depth=scan_depth, token_budget=budget, candidates=tuple(candidates),
+        recursive_scanning=recursive_scanning, max_recursion_steps=max_recursion_steps,
+    ),), messages)
 
-        primary = _matches_any(candidate.keys, entry_scan_text, candidate)
-        secondary = _matches_any(candidate.secondary_keys, entry_scan_text, candidate)
-        should_activate = candidate.constant or (primary and (secondary or not candidate.selective))
-        if not should_activate:
+
+def _lore_matches(candidate: LoreCandidate, text: str) -> bool:
+    return candidate.constant or (
+        _matches_any(candidate.keys, text, candidate)
+        and (not candidate.selective or _matches_any(candidate.secondary_keys, text, candidate))
+    )
+
+
+def _lore_triggers(candidate: LoreCandidate, chat_text: str, sources: List[LoreCandidate]) -> tuple[tuple[str, str], ...]:
+    """Attribute matched spans, including regular expressions crossing source boundaries."""
+    if candidate.constant or not sources:
+        return ()
+    text = chat_text
+    ranges = []
+    for source in sources:
+        start = len(text) + 1
+        text += "\n" + source.content
+        ranges.append((start, len(text), source))
+    matched = set()
+    keys = candidate.keys + (candidate.secondary_keys if candidate.selective else [])
+    for key in keys:
+        if not _match_key(key, text, case_sensitive=candidate.case_sensitive, whole_words=candidate.match_whole_words):
             continue
-        next_size = used + count_text_tokens(candidate.content)
-        if budget > 0 and next_size > budget:
-            continue
-        activated.append(candidate)
-        used = next_size
+        regex = _regex_parts(key)
+        pattern, flags = regex if regex else (re.escape(key), 0)
+        if not regex and candidate.match_whole_words:
+            pattern = rf"\b{pattern}\b"
+        if not candidate.case_sensitive:
+            flags |= re.IGNORECASE
+        # _match_key already validated this expression against this same text.
+        for match in re.finditer(pattern, text, flags):
+            for start, end, source in ranges:
+                overlaps = match.start() < end and match.end() > start
+                zero_width_at_source = match.start() == match.end() and start <= match.start() <= end
+                if overlaps or zero_width_at_source:
+                    matched.add((source.worldbook_id, source.id))
+    return tuple((source.worldbook_id, source.id) for source in sources if (source.worldbook_id, source.id) in matched)
+
+
+def activate_lore_books(worldbooks: Sequence[LoadedWorldBook], messages: List[models.Message | PromptMessage]) -> List[LoreCandidate]:
+    """Scan a shared recursion pool while retaining each book's limits and budget."""
+    activated: List[LoreCandidate] = []
+    accepted: set[tuple[str, str]] = set()
+    used = {book.id: 0 for book in worldbooks}
+    pool: List[LoreCandidate] = []
+    chat_cache: dict[int, str] = {}
+    records = [(book, candidate) for book in worldbooks for candidate in sorted(book.candidates, key=lambda item: item.order)
+               if candidate.enabled and candidate.content.strip()]
+    levels = sorted({candidate.delay_until_recursion for book, candidate in records
+                     if book.recursive_scanning and candidate.delay_until_recursion > 0})
+    current_level = levels.pop(0) if levels else 0
+    step = 0
+    while True:
+        donors: List[LoreCandidate] = []
+        eligible = False
+        for book, candidate in records:
+            identity = (candidate.worldbook_id, candidate.id)
+            if identity in accepted:
+                continue
+            if book.max_recursion_steps > 0 and step >= book.max_recursion_steps:
+                continue
+            if step > 0 and (not book.recursive_scanning or candidate.exclude_recursion):
+                continue
+            eligible = True
+            if candidate.delay_until_recursion and (step == 0 or candidate.delay_until_recursion > current_level):
+                continue
+            depth = candidate.depth if candidate.depth is not None else book.scan_depth
+            if depth not in chat_cache:
+                selected = messages[-depth:] if depth > 0 else []
+                chat_cache[depth] = "\n".join(f"{message.speaker or message.role}: {message.content}" for message in selected)
+            chat_text = chat_cache[depth]
+            scan_text = chat_text + "".join("\n" + source.content for source in pool)
+            if not _lore_matches(candidate, scan_text):
+                continue
+            size = count_text_tokens(candidate.content)
+            if book.token_budget > 0 and used[book.id] + size > book.token_budget:
+                continue
+            triggers = _lore_triggers(candidate, chat_text, pool) if step > 0 else ()
+            reason = ("recursion" if step > 0 and not _lore_matches(candidate, chat_text) else
+                      "recursion_delay" if step > 0 else "constant" if candidate.constant else "message")
+            result = replace(candidate, activation_reason=reason, recursion_step=step, triggered_by=triggers)
+            activated.append(result)
+            accepted.add(identity)
+            used[book.id] += size
+            if book.recursive_scanning and not candidate.prevent_recursion:
+                donors.append(result)
+        # A pass sees only earlier passes; same-pass order cannot create extra depth.
+        pool.extend(donors)
+        if not eligible:
+            break
+        if not donors:
+            if not levels:
+                break
+            current_level = levels.pop(0)
+        step += 1
     return activated
 
 
@@ -252,6 +318,8 @@ class LoadedWorldBook:
     scan_depth: int
     token_budget: int
     candidates: tuple[LoreCandidate, ...]
+    recursive_scanning: bool = False
+    max_recursion_steps: int = 0
 
 
 @dataclass(frozen=True)
@@ -321,6 +389,8 @@ def load_context_inputs(
                 scan_depth=worldbook.scan_depth,
                 token_budget=worldbook.token_budget,
                 candidates=tuple(_candidate_from_entry(entry) for entry in worldbook.entries),
+                recursive_scanning=worldbook.recursive_scanning,
+                max_recursion_steps=worldbook.max_recursion_steps,
             )
         )
     slots, prompt_config_revision, _, prompt_config_error = global_prompt_state(db)
@@ -362,7 +432,7 @@ def compile_context(inputs: PromptInputs) -> schemas.ContextPreviewOut:
             )
         )
 
-    activated_lore: List[LoreCandidate] = []
+    scan_books: List[LoadedWorldBook] = []
     loaded_worldbook_ids: List[str] = []
     worldbooks_by_id = {worldbook.id: worldbook for worldbook in inputs.worldbooks}
     for worldbook_id in inputs.worldbook_ids:
@@ -377,18 +447,21 @@ def compile_context(inputs: PromptInputs) -> schemas.ContextPreviewOut:
             )
             continue
         loaded_worldbook_ids.append(worldbook.id)
-        activated_lore.extend(
-            activate_lore(
-                worldbook.candidates,
-                path,
-                scan_depth=worldbook.scan_depth,
-                budget=worldbook.token_budget,
-            )
-        )
-    # An embedded character book is an independent source with its own conservative budget.
-    activated_lore.extend(
-        activate_lore(_candidates_from_character_book(character), path, scan_depth=8, budget=4000)
-    )
+        scan_books.append(worldbook)
+    if character and character.character_book:
+        scan_books.append(LoadedWorldBook(
+            id=f"character:{character.id}", candidates=tuple(_candidates_from_character_book(character)),
+            **normalize_worldbook_settings(character.character_book),
+        ))
+        diagnostics.extend(schemas.PromptDiagnostic(level="warning", code="character_worldbook_import", message=warning)
+                           for warning in worldbook_import_warnings(character.character_book))
+    # Recursive scans use the same expanded content that will enter the prompt.
+    scan_books = [replace(book, candidates=tuple(replace(
+        item, content=expand_macros(item.content, character, user_name),
+        keys=[expand_macros(key, character, user_name) for key in item.keys],
+        secondary_keys=[expand_macros(key, character, user_name) for key in item.secondary_keys],
+    ) for item in book.candidates)) for book in scan_books]
+    activated_lore = activate_lore_books(scan_books, path)
     activated_lore.sort(key=lambda item: (item.order, item.worldbook_id, item.id))
 
     lore_before = [item.content for item in activated_lore if item.position in {"before_char", "before_char_defs", "0"}]
@@ -513,6 +586,10 @@ def compile_context(inputs: PromptInputs) -> schemas.ContextPreviewOut:
                 position=item.position,
                 content=item.content,
                 keys=item.keys,
+                activation_reason=item.activation_reason,
+                recursion_step=item.recursion_step,
+                triggered_by=[schemas.LoreTrigger(worldbook_id=book_id, id=entry_id)
+                              for book_id, entry_id in item.triggered_by],
             )
             for item in activated_lore
         ],

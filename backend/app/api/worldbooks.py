@@ -85,6 +85,8 @@ def export_worldbook(worldbook_id: str, db: Session = Depends(get_db)) -> JSONRe
             "description": worldbook.description,
             "scan_depth": worldbook.scan_depth,
             "token_budget": worldbook.token_budget,
+            "recursive_scanning": worldbook.recursive_scanning,
+            "max_recursion_steps": worldbook.max_recursion_steps,
             "entries": [_export_worldbook_entry(entry) for entry in worldbook.entries],
         }
     )
@@ -95,6 +97,14 @@ def _export_worldbook_entry(entry: models.WorldBookEntry) -> Dict[str, Any]:
     """Preserve unknown imported fields while current normalized edits win."""
 
     data = dict(entry.raw_json or {})
+    position = {"before_char": 0, "before_char_defs": 0, "after_char": 1, "after_char_defs": 1}.get(entry.position, entry.position)
+    extensions = dict(data["extensions"]) if isinstance(data.get("extensions"), dict) else {}
+    extensions.update(
+        position=position, scan_depth=entry.depth, scanDepth=entry.depth,
+        exclude_recursion=entry.exclude_recursion, prevent_recursion=entry.prevent_recursion,
+        delay_until_recursion=entry.delay_until_recursion,
+        case_sensitive=entry.case_sensitive, match_whole_words=entry.match_whole_words,
+    )
     data.update(
         {
             "uid": entry.uid,
@@ -109,10 +119,20 @@ def _export_worldbook_entry(entry: models.WorldBookEntry) -> Dict[str, Any]:
             "selective": entry.selective,
             "insertion_order": entry.order,
             "order": entry.order,
-            "position": entry.position,
-            "depth": entry.depth,
+            "position": position,
+            "scanDepth": entry.depth,
+            "scan_depth": entry.depth,
+            "excludeRecursion": entry.exclude_recursion,
+            "exclude_recursion": entry.exclude_recursion,
+            "preventRecursion": entry.prevent_recursion,
+            "prevent_recursion": entry.prevent_recursion,
+            "delayUntilRecursion": entry.delay_until_recursion,
+            "delay_until_recursion": entry.delay_until_recursion,
+            "caseSensitive": entry.case_sensitive,
             "case_sensitive": entry.case_sensitive,
+            "matchWholeWords": entry.match_whole_words,
             "match_whole_words": entry.match_whole_words,
+            "extensions": extensions,
         }
     )
     return data

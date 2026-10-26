@@ -45,6 +45,7 @@ type Props = {
   onCloseSettings: () => void;
   onOpenSettings?: () => void;
   onOpenTtsSettings?: () => void;
+  ttsSettingsError?: string | null;
   onBusyChange?: (busy: boolean) => void;
   onModelProgressChange?: (message: string | null) => void;
   onProfileUpdated?: (profile: APIProfile) => void;
@@ -73,6 +74,7 @@ export function Sidebar({
   onCloseSettings,
   onOpenSettings,
   onOpenTtsSettings,
+  ttsSettingsError,
   onBusyChange,
   onModelProgressChange,
   onProfileUpdated,
@@ -188,6 +190,7 @@ export function Sidebar({
                 模型与连接设置
               </button>
               {onOpenTtsSettings && <button className="secondary-button sidebar-settings-button" type="button" onClick={onOpenTtsSettings}><Volume2 size={16} />语音朗读（试验）</button>}
+              {ttsSettingsError && <p className="field-error sidebar-settings-error" role="alert">语音设置读取失败：{ttsSettingsError}</p>}
               <DisplaySettings>{appearanceControls}</DisplaySettings>
               <AccountPanel />
             </div>

@@ -69,6 +69,27 @@ describe("chat tree mutations", () => {
     expect(update).not.toHaveBeenCalled();
   });
 
+  it("saves edits and new branches of other messages while a reply is streaming", async () => {
+    const prompt = message({ id: "prompt", role: "user", speaker: "User", content: "Old prompt", thinking_content: "" });
+    const reply = message({ id: "reply", parent_id: "prompt", status: "streaming", content: "Streamed so far" });
+    const { client, chat } = controller(tree([prompt, reply]));
+    const edited = message({ ...prompt, content: "New prompt", updated_at: "2026-10-23" });
+    const update = vi.spyOn(api, "updateMessage").mockResolvedValue(edited);
+    // The server snapshot lags behind the text already streamed into the cache.
+    vi.spyOn(api, "tree").mockResolvedValue(tree([edited, { ...reply, content: "Streamed" }]));
+    await chat.handleUpdateMessage(prompt, "New prompt", "");
+    expect(update).toHaveBeenCalledWith("prompt", { content: "New prompt", thinking_content: "" });
+    const cached = client.getQueryData<SessionTree>(treeQueryKey("one"))?.messages;
+    expect(cached?.find((item) => item.id === "prompt")?.content).toBe("New prompt");
+    expect(cached?.find((item) => item.id === "reply")?.content).toBe("Streamed so far");
+
+    const branch = message({ ...prompt, id: "prompt-branch", content: "Branch prompt", updated_at: "2026-10-23" });
+    const create = vi.spyOn(api, "createSwipe").mockResolvedValue({ ...tree([edited, reply, branch]), active_path_ids: ["prompt-branch"] });
+    await chat.handleCreateSwipe(prompt, "Branch prompt", "");
+    expect(create).toHaveBeenCalledWith("prompt", expect.objectContaining({ content: "Branch prompt" }));
+    expect(client.getQueryData<SessionTree>(treeQueryKey("one"))?.active_path_ids).toEqual(["prompt-branch"]);
+  });
+
   it("blocks sends while deletion is pending and releases the guard after failure", async () => {
     const { client, chat } = controller(tree());
     let fail!: (cause: Error) => void;

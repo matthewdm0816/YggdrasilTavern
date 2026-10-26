@@ -221,6 +221,7 @@ export function useChatController({ selectedSessionId, activeProfileId, onMessag
     await mutateTree(sessionId, () => api.selectMessage(messageId), true);
   }
 
+  // Edits and new branches delete nothing, so they may run beside a stream; the server rejects edits to the streaming message itself.
   async function handleCreateSwipe(message: Message, content = message.content, thinkingContent = message.thinking_content) {
     const sessionId = message.session_id;
     await mutateTree(sessionId, () => api.createSwipe(message.id, {
@@ -229,7 +230,7 @@ export function useChatController({ selectedSessionId, activeProfileId, onMessag
       content,
       thinking_content: thinkingContent,
       status: "complete"
-    }));
+    }), true);
   }
 
   async function handleUpdateMessage(message: Message, content: string, thinkingContent: string) {
@@ -237,7 +238,7 @@ export function useChatController({ selectedSessionId, activeProfileId, onMessag
     await mutateTree(sessionId, async () => {
       await api.updateMessage(message.id, { content, thinking_content: thinkingContent });
       return api.tree(sessionId);
-    });
+    }, true);
   }
 
   async function handleChangeMessageRole(message: Message, role: Message["role"]) {

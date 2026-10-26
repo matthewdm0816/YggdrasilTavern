@@ -4,6 +4,11 @@
   margin: 8px 12px;
 }
 
+.sidebar-settings-error {
+  margin: 0 12px 8px;
+  overflow-wrap: anywhere;
+}
+
 .model-settings-dialog {
   width: min(680px, calc(100vw - 32px));
   max-width: 680px;

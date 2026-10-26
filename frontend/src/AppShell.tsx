@@ -10,7 +10,6 @@ import { Sidebar } from "./components/Sidebar";
 import { ChatWorkspace } from "./components/ChatWorkspace";
 import { WorkspaceInspector } from "./components/WorkspaceInspector";
 import { ModelPicker } from "./components/ModelPicker";
-import { Volume2 } from "lucide-react";
 import { useTtsPlayback } from "./features/tts/useTtsPlayback";
 import { TtsSettingsDialog } from "./features/tts/TtsSettingsDialog";
 import { TtsMessageDialog } from "./features/tts/TtsMessageDialog";
@@ -178,6 +177,7 @@ export default function AppShell() {
       {drawer && <button className="workspace-scrim" aria-label="关闭面板" onClick={() => { setMobilePanel(null); if (!isMobile) setRightPreference(false); }} />}
       <Sidebar
         onOpenTtsSettings={openTtsSettings}
+        ttsSettingsError={tts.settingsQuery.error ? (tts.settingsQuery.error instanceof Error ? tts.settingsQuery.error.message : String(tts.settingsQuery.error)) : null}
         onBusyChange={setSettingsBusy}
         onModelProgressChange={setModelSettingsProgress}
         onProfileUpdated={profileUpdated}
@@ -225,7 +225,7 @@ export default function AppShell() {
         streaming={chat.streaming}
         mutating={chat.mutating}
         onReadMessage={(message) => setTtsPreviewId(message.id)}
-        ttsControls={<><button className="secondary-button" type="button" onClick={openTtsSettings}><Volume2 size={15} />语音朗读设置</button><TtsPlaybackBar playback={tts} />{tts.settingsQuery.error && <p className="field-error" role="alert">语音设置读取失败：{tts.settingsQuery.error instanceof Error ? tts.settingsQuery.error.message : String(tts.settingsQuery.error)}</p>}</>}
+        ttsControls={<TtsPlaybackBar playback={tts} />}
         onSend={chat.handleSend}
         onGenerate={() => chat.handleGenerate()}
         onStop={chat.stopGeneration}

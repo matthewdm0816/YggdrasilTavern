@@ -220,7 +220,9 @@ export function ChatWorkspace({
   const treeActionResult = treeActionResults[sessionId];
   const submitting = Boolean(submittingSessions[sessionId]);
   const savingEdit = Boolean(savingEditSessions[sessionId]);
-  const messageActionsBusy = streaming || submitting || savingEdit || mutating || Boolean(treeActionLabel);
+  // Editing stays available while a reply streams; only the streaming message itself is locked.
+  const editBusy = submitting || savingEdit || mutating || Boolean(treeActionLabel);
+  const messageActionsBusy = streaming || editBusy;
   const scrollRef = useRef<HTMLDivElement>(null);
   const shouldFollowRef = useRef(true);
   const pendingRevealRef = useRef<string | null>(null);
@@ -545,13 +547,13 @@ export function ChatWorkspace({
                 )}
                 {isEditing ? (
                   <div className="editor-box">
-                    <label className="form-field"><span>正文</span><AutoSizeTextarea disabled={messageActionsBusy} value={edit.value} onChange={(event) => setEdit(sessionId, { ...edit, value: event.target.value })} /></label>
+                    <label className="form-field"><span>正文</span><AutoSizeTextarea disabled={editBusy} value={edit.value} onChange={(event) => setEdit(sessionId, { ...edit, value: event.target.value })} /></label>
                     {(message.role === "assistant" || message.thinking_content) && (
-                      <label className="form-field"><span>Thinking</span><AutoSizeTextarea disabled={messageActionsBusy} value={edit.thinkingValue} onChange={(event) => setEdit(sessionId, { ...edit, thinkingValue: event.target.value })} /></label>
+                      <label className="form-field"><span>Thinking</span><AutoSizeTextarea disabled={editBusy} value={edit.thinkingValue} onChange={(event) => setEdit(sessionId, { ...edit, thinkingValue: event.target.value })} /></label>
                     )}
                     <div className="inline-actions">
-                      <button className="primary-button" type="button" disabled={messageActionsBusy || (edit.value === message.content && edit.thinkingValue === message.thinking_content)} onClick={() => void saveEdit(message)}>{savingEdit ? "保存中…" : "保存修改"}</button>
-                      <button className="secondary-button" type="button" disabled={messageActionsBusy} onClick={() => void saveEdit(message, true)}>保存为新分支</button>
+                      <button className="primary-button" type="button" disabled={editBusy || (edit.value === message.content && edit.thinkingValue === message.thinking_content)} onClick={() => void saveEdit(message)}>{savingEdit ? "保存中…" : "保存修改"}</button>
+                      <button className="secondary-button" type="button" disabled={editBusy} onClick={() => void saveEdit(message, true)}>保存为新分支</button>
                       <button className="icon-button" type="button" title="取消" disabled={savingEdit} onClick={cancelEdit}><X size={16} /></button>
                     </div>
                   </div>
@@ -571,7 +573,7 @@ export function ChatWorkspace({
                     <button className="icon-button" type="button" title="上一个分支" aria-label="上一个分支" disabled={!previous || mutating || Boolean(treeActionLabel)} onClick={() => previous && selectSwipeFromToolbar(previous.id)}><ChevronLeft size={16} /></button>
                     <span className="swipe-counter" aria-label={"第 " + (index + 1) + " 个，共 " + siblings.length + " 个分支"}>{index + 1}/{siblings.length}</span>
                     <button className="icon-button" type="button" title="下一个分支" aria-label="下一个分支" disabled={!next || mutating || Boolean(treeActionLabel)} onClick={() => next && selectSwipeFromToolbar(next.id)}><ChevronRight size={16} /></button>
-                    <button className="icon-button message-quick-action" type="button" title="编辑消息" aria-label="编辑消息" disabled={messageActionsBusy} onClick={() => startEdit(message)}><Edit3 size={15} /></button>
+                    <button className="icon-button message-quick-action" type="button" title="编辑消息" aria-label="编辑消息" disabled={editBusy || message.status === "streaming"} onClick={() => startEdit(message)}><Edit3 size={15} /></button>
                     {message.role === "assistant" && (
                       <button className="icon-button message-quick-action" type="button" title="重新生成此回复" aria-label="重新生成此回复" disabled={messageActionsBusy || !canGenerate} onClick={() => onRegenerate(message.id)}><RefreshCcw size={15} /></button>
                     )}
@@ -580,7 +582,7 @@ export function ChatWorkspace({
                       <button type="button" data-close-menu disabled={!message.content} onClick={() => void copyMessage(message)}><Copy size={16} />复制正文</button>
                       {message.role === "assistant" && onReadMessage && <button type="button" data-close-menu disabled={messageActionsBusy || message.status !== "complete"} onClick={() => onReadMessage(message)}><Volume2 size={16} />朗读消息…</button>}
                       <button type="button" data-close-menu disabled={messageActionsBusy} onClick={() => void duplicateMessage(message)}><CopyPlus size={16} />复制为新分支</button>
-                      <button type="button" data-close-menu disabled={messageActionsBusy} onClick={() => startEdit(message)}><Edit3 size={16} />编辑消息</button>
+                      <button type="button" data-close-menu disabled={editBusy || message.status === "streaming"} onClick={() => startEdit(message)}><Edit3 size={16} />编辑消息</button>
                       {message.role === "assistant" && <button type="button" data-close-menu disabled={messageActionsBusy || !canGenerate} onClick={() => onRegenerate(message.id)}><RefreshCcw size={16} />重新生成此回复</button>}
                       <div className="message-menu-divider" role="separator" />
                       {(["assistant", "user", "system"] as const).filter((role) => role !== message.role).map((role) => (

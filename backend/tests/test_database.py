@@ -57,28 +57,25 @@ def test_injected_memory_database_is_shared_between_requests_and_owned_by_caller
         database.dispose()
 
 
-def test_single_streaming_generation_is_enforced_across_database_sessions(tmp_path):
+def test_one_session_can_hold_parallel_streaming_generations(tmp_path):
     database = Database(f"sqlite:///{(tmp_path / 'concurrent.db').as_posix()}")
     try:
         database.initialize()
         with database.open_session() as first, database.open_session() as second:
             session = models.ChatSession(title="One session")
-            other_session = models.ChatSession(title="Other session")
-            first.add_all([session, other_session])
+            first.add(session)
             first.commit()
-            active = generation_run(session.id, status="streaming")
-            first.add(active)
-            first.commit()
-            second.add(generation_run(session.id, status="streaming"))
-            with pytest.raises(IntegrityError):
-                second.commit()
-            second.rollback()
-            second.add(generation_run(other_session.id, status="streaming"))
-            second.commit()
-            active.status = "complete"
+            first.add(generation_run(session.id, status="streaming"))
             first.commit()
             second.add(generation_run(session.id, status="streaming"))
             second.commit()
+            streaming = second.scalars(select(models.GenerationRun).where(
+                models.GenerationRun.session_id == session.id, models.GenerationRun.status == "streaming",
+            )).all()
+            assert len(streaming) == 2
+        assert "uq_generation_runs_streaming_session" not in {
+            index["name"] for index in inspect(database.engine).get_indexes("generation_runs")
+        }
     finally:
         database.dispose()
 
@@ -183,7 +180,7 @@ def test_application_upgrade_preserves_old_chat_tree_and_restores_foreign_keys(t
             assert_old_chat_preserved(connection)
             assert connection.exec_driver_sql("PRAGMA foreign_keys").scalar_one() == 1
             assert connection.exec_driver_sql("PRAGMA foreign_key_check").all() == []
-            assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "0012_custom_request_settings"
+            assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "0013_parallel_generations"
             with pytest.raises(IntegrityError):
                 connection.execute(text("UPDATE messages SET session_id = 'missing' WHERE id = 'chosen'"))
     finally:

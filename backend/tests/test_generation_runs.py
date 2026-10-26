@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import asyncio
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from threading import Barrier, Event
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
 
 import pytest
 from fastapi.testclient import TestClient
@@ -15,7 +15,6 @@ from app.api.generation import GenerationStreamingResponse
 from app.database import Base, Database, get_db
 from app.main import create_app
 from app.services import generation as generation_service, providers
-from app.services.errors import ApplicationError
 from app.services.generation import start_generation
 from app.services.token_counter import count_text_tokens
 from app.services.tree import create_message
@@ -364,46 +363,59 @@ def test_preview_and_generation_share_the_same_trimmed_active_path(monkeypatch):
 
 
 
-def test_streaming_run_rejects_same_session_without_changing_tree_and_allows_another(monkeypatch):
+def test_parallel_generation_needs_only_a_finished_parent(monkeypatch):
     client, testing_session = make_client()
-    _profile, first_session = create_profile_and_session(client)
-    _other_profile, other_session = create_profile_and_session(client)
-    client.post(
-        f"/api/sessions/{first_session['id']}/messages",
-        json={"role": "user", "content": "first conversation"},
-    )
-    client.post(
-        f"/api/sessions/{other_session['id']}/messages",
-        json={"role": "user", "content": "other conversation"},
-    )
-    before = client.get(f"/api/sessions/{first_session['id']}/tree").json()
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    _profile, session = create_profile_and_session(client)
+    tree_url = f"/api/sessions/{session['id']}/tree"
+    generate_url = f"/api/sessions/{session['id']}/generate/stream"
+    prompt = client.post(
+        f"/api/sessions/{session['id']}/messages", json={"role": "user", "content": "first prompt"},
+    ).json()
     with testing_session() as db:
-        db.add(
-            models.GenerationRun(
-                session_id=first_session["id"],
-                provider_type="openai_responses",
-                model="mock-model",
-                prompt_hash="0" * 64,
-                status="streaming",
-            )
+        streaming = create_message(
+            db, db.get(models.ChatSession, session["id"]), parent_id=prompt["id"],
+            role="assistant", content="partial", status="streaming",
         )
+        db.add(models.GenerationRun(
+            session_id=session["id"], output_message_id=streaming.id, provider_type="openai_responses",
+            model="mock-model", prompt_hash="0" * 64, status="streaming",
+        ))
         db.commit()
+        streaming_id = streaming.id
+    before = client.get(tree_url).json()
 
-    refused = client.post(f"/api/sessions/{first_session['id']}/generate/stream", json={})
-    assert refused.status_code == 409
-    assert "已有进行中的生成" in refused.json()["detail"]
-    after = client.get(f"/api/sessions/{first_session['id']}/tree").json()
+    # The session path now ends at the streaming reply, so nothing may start or append below it.
+    for refused in (
+        client.post(generate_url, json={}),
+        client.post(generate_url, json={"parent_message_id": streaming_id}),
+        client.post(f"/api/sessions/{session['id']}/messages", json={"role": "user", "content": "too early"}),
+    ):
+        assert refused.status_code == 409
+        assert "还在生成" in refused.json()["detail"]
+    both = client.post(generate_url, json={"parent_message_id": prompt["id"], "regenerate_message_id": streaming_id})
+    assert both.status_code == 400
+    after = client.get(tree_url).json()
     assert after["active_path_ids"] == before["active_path_ids"]
     assert [message["id"] for message in after["messages"]] == [message["id"] for message in before["messages"]]
-    with testing_session() as db:
-        assert len(list(db.scalars(select(models.GenerationRun)))) == 1
 
-    async def other_stream(profile, context):
-        yield providers.ProviderStreamEvent(kind="text", delta="unrelated session works")
+    seen_contexts: list[list[str]] = []
 
-    monkeypatch.setattr(providers, "stream_completion", other_stream)
-    with client.stream("POST", f"/api/sessions/{other_session['id']}/generate/stream", json={}) as response:
+    async def parallel_stream(profile, context):
+        seen_contexts.append([message.content for message in context.messages])
+        yield providers.ProviderStreamEvent(kind="text", delta="parallel reply")
+
+    monkeypatch.setattr(providers, "stream_completion", parallel_stream)
+    with client.stream("POST", generate_url, json={"parent_message_id": prompt["id"]}) as response:
         assert "message_completed" in "".join(response.iter_text())
+    assert seen_contexts == [["first prompt"]]
+    tree = client.get(tree_url).json()
+    parallel = next(message for message in tree["messages"] if message["content"] == "parallel reply")
+    assert parallel["parent_id"] == prompt["id"]
+    assert tree["active_path_ids"] == [prompt["id"], parallel["id"]]
+    assert next(message for message in tree["messages"] if message["id"] == streaming_id)["status"] == "streaming"
+    with testing_session() as db:
+        assert sorted(run.status for run in db.scalars(select(models.GenerationRun))) == ["complete", "streaming"]
 
 
 @pytest.mark.parametrize("terminal_status", ["complete", "failed", "cancelled"])
@@ -492,7 +504,7 @@ async def test_response_cancelled_before_first_event_releases_generation_slot(mo
         assert "message_completed" in "".join(response.iter_text())
 
 
-def test_simultaneous_starts_roll_back_losing_message(tmp_path, monkeypatch):
+def test_simultaneous_starts_from_one_message_create_sibling_replies(tmp_path, monkeypatch):
     database = Database(f"sqlite:///{(tmp_path / 'generation-race.db').as_posix()}")
     Base.metadata.create_all(database.engine)
     with database.open_session() as db:
@@ -516,50 +528,41 @@ def test_simultaneous_starts_roll_back_losing_message(tmp_path, monkeypatch):
         db.add(session)
         db.commit()
         session_id = session.id
-        create_message(db, session, parent_id=None, role="user", content="race")
+        prompt_id = create_message(db, session, parent_id=None, role="user", content="race").id
 
-    barrier = Barrier(2)
-    release_started_run = Event()
-    original_prepare_tree_mutation = generation_service.prepare_tree_mutation
+    entered = Barrier(2)
+    both_started = Barrier(2)
+    original_serialize = generation_service.serialize_session_writes
 
-    def synchronized_start(db, session, **kwargs):
-        barrier.wait(timeout=10)
-        return original_prepare_tree_mutation(db, session, **kwargs)
+    def synchronized_start(db, session):
+        entered.wait(timeout=10)
+        return original_serialize(db, session)
 
-    monkeypatch.setattr(generation_service, "prepare_tree_mutation", synchronized_start)
+    monkeypatch.setattr(generation_service, "serialize_session_writes", synchronized_start)
 
     def start_one():
         with database.open_session() as db:
+            # The client names the parent; the session path end becomes the first streaming reply.
+            request = schemas.GenerateRequest(parent_message_id=prompt_id)
+            handle = asyncio.run(generation_service.start_generation(session_id, request, db))
             try:
-                handle = asyncio.run(
-                    generation_service.start_generation(session_id, schemas.GenerateRequest(), db)
-                )
-            except ApplicationError as exc:
-                db.rollback()
-                return ("refused", exc.status_code)
-            try:
-                if not release_started_run.wait(timeout=10):
-                    raise TimeoutError("Concurrent request did not finish before release")
-                return ("started", 0)
+                # Both runs must stream at the same time before either closes.
+                both_started.wait(timeout=10)
+                return handle.output_message_id
             finally:
                 asyncio.run(handle.aclose())
 
     try:
         with ThreadPoolExecutor(max_workers=2) as pool:
             futures = [pool.submit(start_one), pool.submit(start_one)]
-            try:
-                next(as_completed(futures, timeout=15))
-            finally:
-                release_started_run.set()
-            results = [future.result(timeout=15) for future in futures]
+            reply_ids = [future.result(timeout=20) for future in futures]
 
-        assert sorted(results) == [("refused", 409), ("started", 0)]
+        assert len(set(reply_ids)) == 2
         with database.open_session() as db:
             runs = list(db.scalars(select(models.GenerationRun)))
-            messages = list(db.scalars(select(models.Message)))
-            assert len(runs) == 1
-            assert runs[0].status == "interrupted"
-            assert len(messages) == 2
-            assert len([message for message in messages if message.role == "assistant"]) == 1
+            assert len(runs) == 2
+            assert {run.status for run in runs} == {"interrupted"}
+            replies = [db.get(models.Message, reply_id) for reply_id in reply_ids]
+            assert {reply.parent_id for reply in replies} == {prompt_id}
     finally:
         database.dispose()

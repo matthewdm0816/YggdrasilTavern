@@ -338,15 +338,15 @@ def test_generation_reloads_selection_if_deletion_finishes_after_initial_session
         "base_url": "https://provider.test/v1", "api_key": "test-key",
     }).json()
     assert client.patch(f"/api/sessions/{sid}", json={"api_profile_id": profile["id"]}).status_code == 200
-    original_prepare = generation_service.prepare_tree_mutation
+    original_serialize = generation_service.serialize_session_writes
 
-    def finish_deletion_before_lock(db, cached_session, **kwargs):
+    def finish_deletion_before_lock(db, cached_session):
         assert cached_session.active_root_child_id == removed
         with client.app.state.tree_action_factory() as other_db:
             tree_service.delete_message_branch(other_db, removed)
-        return original_prepare(db, cached_session, **kwargs)
+        return original_serialize(db, cached_session)
 
-    monkeypatch.setattr(generation_service, "prepare_tree_mutation", finish_deletion_before_lock)
+    monkeypatch.setattr(generation_service, "serialize_session_writes", finish_deletion_before_lock)
     with client.app.state.tree_action_factory() as db:
         handle = asyncio.run(generation_service.start_generation(sid, schemas.GenerateRequest(), db))
         try:

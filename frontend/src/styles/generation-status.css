@@ -1,0 +1,75 @@
+/* The status panel drops below the whole chat header, not just the tag, so it stays on screen. */
+.chat-pane .chat-header { position: relative; }
+
+.generation-status { display: flex; align-items: center; }
+
+.generation-status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 2px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.generation-status-count { display: inline-flex; align-items: center; gap: 4px; }
+.generation-status-count.unread { color: var(--accent-text); }
+.generation-status-dot { flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%; background: var(--accent-text); }
+.generation-status-alert { flex: 0 0 auto; color: var(--red); }
+.generation-status-spinner { flex: 0 0 auto; animation: generation-status-spin 1s linear infinite; }
+
+@keyframes generation-status-spin { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .generation-status-spinner { animation: none; }
+}
+
+.generation-status-panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 12px;
+  z-index: 60;
+  width: min(380px, calc(100vw - 24px));
+  max-height: min(60dvh, 440px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md, 10px);
+  background: var(--pane);
+  box-shadow: var(--modal-shadow);
+}
+
+.generation-status-panel ul { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.generation-status-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+
+.generation-status-open {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px;
+  border: 0;
+  border-radius: var(--radius-sm, 6px);
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+
+.generation-status-open:hover:not(:disabled) { background: var(--surface-hover); }
+.generation-status-open:disabled { cursor: default; opacity: 1; }
+.generation-status-text { display: grid; min-width: 0; }
+.generation-status-text strong { font-size: 0.8125rem; }
+.generation-status-text span { overflow: hidden; color: var(--muted); font-size: 0.75rem; text-overflow: ellipsis; white-space: nowrap; }
+
+@media (max-width: 920px) {
+  .generation-status-chip { min-height: var(--mobile-control-size); padding: 0 6px; gap: 6px; font-size: .9rem; }
+  .generation-status-panel { right: 6px; left: 6px; width: auto; }
+  .generation-status-row .secondary-button { padding: 2px 6px; }
+}

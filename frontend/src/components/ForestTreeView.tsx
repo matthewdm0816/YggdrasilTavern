@@ -12,6 +12,7 @@ import {
   GitBranch,
   LocateFixed,
   Search,
+  Sparkles,
   X
 } from "lucide-react";
 import { Message, SessionTree } from "../lib/api";
@@ -24,6 +25,9 @@ type Props = {
   tree: SessionTree;
   onClose: () => void;
   onSelectMessage: (messageId: string) => Promise<void>;
+  /** Start a new reply below a node while the tree stays open. */
+  onContinueFrom: (messageId: string) => void;
+  canContinue: boolean;
 };
 
 export type ForestNode = {
@@ -194,7 +198,7 @@ function scrollBehavior(): ScrollBehavior {
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
 }
 
-export function ForestTreeView({ tree, onClose, onSelectMessage }: Props) {
+export function ForestTreeView({ tree, onClose, onSelectMessage, onContinueFrom, canContinue }: Props) {
   const macroContext = useMessageMacroContext();
   const titleId = useId();
   const previewId = useId();
@@ -212,6 +216,7 @@ export function ForestTreeView({ tree, onClose, onSelectMessage }: Props) {
   const [pinnedId, setPinnedId] = useState<string | null>(null);
   const [selectingId, setSelectingId] = useState<string | null>(null);
   const [selectionError, setSelectionError] = useState<string | null>(null);
+  const [continuedFromId, setContinuedFromId] = useState<string | null>(null);
 
   const messagesById = useMemo(() => new Map(tree.messages.map((message) => [message.id, message])), [tree.messages]);
   const activePath = useMemo(() => new Set(tree.active_path_ids), [tree.active_path_ids]);
@@ -453,7 +458,14 @@ export function ForestTreeView({ tree, onClose, onSelectMessage }: Props) {
                 </div>
                 <footer className="forest-tree-preview-footer">
                   {pinnedId === shownMessage.id ? (
-                    <><p>预览已固定。再次点击树中同一节点，或点击此按钮跳转到该分支。</p><button className="primary-button" type="button" disabled={Boolean(selectingId)} onClick={() => void activateNode(shownMessage)}><ArrowRight size={16} />{selectingId === shownMessage.id ? "正在跳转…" : "跳转到此节点"}</button></>
+                    <><p>预览已固定。再次点击树中同一节点，或点击此按钮跳转到该分支。</p>
+                      <div className="forest-tree-preview-actions">
+                        <button className="primary-button" type="button" disabled={Boolean(selectingId)} onClick={() => void activateNode(shownMessage)}><ArrowRight size={16} />{selectingId === shownMessage.id ? "正在跳转…" : "跳转到此节点"}</button>
+                        <button className="secondary-button" type="button" disabled={!canContinue || shownMessage.status === "streaming"}
+                          title={shownMessage.status === "streaming" ? "这条消息还在生成" : "在这条消息下面生成一条新回复"}
+                          onClick={() => { onContinueFrom(shownMessage.id); setContinuedFromId(shownMessage.id); }}><Sparkles size={16} />从这里继续生成</button>
+                      </div>
+                      {continuedFromId === shownMessage.id && <p role="status">已开始在这里生成新回复，它会作为这条消息的新分支出现；进度见聊天顶栏的生成状态。</p>}</>
                   ) : <p>{pinnedId ? "这是临时预览；移开后会回到已固定节点。" : "点击树中的节点可固定这段完整预览。"}</p>}
                 </footer>
               </>

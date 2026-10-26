@@ -6,6 +6,7 @@ import { AlertCircle, X } from "lucide-react";
 import { api, APIProfile, ChatSession, RegexRule, SessionTree } from "./lib/api";
 import { useAppStore } from "./state/useAppStore";
 import { useChatController } from "./features/chat/useChatController";
+import { loadGenerationLimit, saveGenerationLimit } from "./features/chat/generationLimit";
 import { Sidebar } from "./components/Sidebar";
 import { ChatWorkspace } from "./components/ChatWorkspace";
 import { WorkspaceInspector } from "./components/WorkspaceInspector";
@@ -64,7 +65,8 @@ export default function AppShell() {
     queryFn: () => api.sessions(showArchived ? { archived: true } : undefined)
   });
   const tts = useTtsPlayback(selectedSessionId);
-  const chat = useChatController({ selectedSessionId, activeProfileId, onMessageCompleted: (message) => {
+  const [generationLimit, setGenerationLimit] = useState(loadGenerationLimit);
+  const chat = useChatController({ selectedSessionId, activeProfileId, generationLimit, onMessageCompleted: (message) => {
     const latest = queryClient.getQueryData<SessionTree>(["tree", message.session_id]);
     if (latest?.active_path_ids.includes(message.id)) tts.onGenerated(message);
   } });
@@ -84,6 +86,29 @@ export default function AppShell() {
     spokenVersion.current = { id: message.id, content: message.content };
   }, [tree, tts.state.messageId, tts.stop]);
   const openTtsSettings = () => { setTtsPreviewId(null); setMobilePanel(null); setTtsSettingsOpen(true); };
+  const sessionTitles = useMemo(
+    () => Object.fromEntries((sessionsQuery.data || []).map((session) => [session.id, session.title])),
+    [sessionsQuery.data]
+  );
+  const changeGenerationLimit = (limit: number) => {
+    setGenerationLimit(limit);
+    try {
+      saveGenerationLimit(limit);
+    } catch (cause) {
+      console.error("Unable to persist the generation limit to localStorage.", cause);
+      setError("同时生成上限已生效，但无法保存到浏览器；刷新后会恢复默认值。");
+    }
+  };
+  // Replies in other sessions: select the reply there first, then switch to that session.
+  const openSessionMessage = (sessionId: string, messageId: string) => {
+    void chat.handleSelectMessageInSession(sessionId, messageId).then(() => {
+      setSelectedSessionId(sessionId);
+      setMobilePanel(null);
+    }, (cause) => {
+      chat.dismissUnread(messageId);
+      setError(`无法打开这条回复：${cause instanceof Error ? cause.message : String(cause)}`);
+    });
+  };
 
   useEffect(() => {
     if (!selectedSessionId && sessionsQuery.data?.length) setSelectedSessionId(sessionsQuery.data[0].id);
@@ -177,6 +202,8 @@ export default function AppShell() {
       {drawer && <button className="workspace-scrim" aria-label="关闭面板" onClick={() => { setMobilePanel(null); if (!isMobile) setRightPreference(false); }} />}
       <Sidebar
         onOpenTtsSettings={openTtsSettings}
+        generationLimit={generationLimit}
+        onGenerationLimitChange={changeGenerationLimit}
         ttsSettingsError={tts.settingsQuery.error ? (tts.settingsQuery.error instanceof Error ? tts.settingsQuery.error.message : String(tts.settingsQuery.error)) : null}
         onBusyChange={setSettingsBusy}
         onModelProgressChange={setModelSettingsProgress}
@@ -227,9 +254,13 @@ export default function AppShell() {
         onReadMessage={(message) => setTtsPreviewId(message.id)}
         ttsControls={<TtsPlaybackBar playback={tts} />}
         onSend={chat.handleSend}
-        onGenerate={() => chat.handleGenerate()}
-        onStop={chat.stopGeneration}
-        onRegenerate={chat.handleGenerate}
+        onGenerate={() => void chat.handleGenerate()}
+        onGenerateFrom={(messageId) => void chat.handleGenerate({ parentMessageId: messageId })}
+        onRegenerate={(messageId) => void chat.handleGenerate({ regenerateMessageId: messageId })}
+        generation={{
+          active: chat.activeGenerations, unread: chat.unreadGenerations, sessionTitles,
+          onStop: chat.stopGeneration, onDismissUnread: chat.dismissUnread, onOpenSessionMessage: openSessionMessage
+        }}
         onSelectMessage={chat.handleSelectMessage}
         onCreateSwipe={chat.handleCreateSwipe}
         onUpdateMessage={chat.handleUpdateMessage}
@@ -249,7 +280,7 @@ export default function AppShell() {
         regexRules={worldbookRegexQuery.data?.regex_rules ?? NO_REGEX_RULES}
         modelPicker={<ModelPicker profiles={profilesQuery.data || []} activeProfileId={activeProfileId} onActiveProfileChange={setActiveProfileId}
           loadingMessage={modelSettingsProgress || (profilesQuery.isFetching ? "正在读取连接配置…" : null)}
-          onOpenSettings={openSettings} disabled={chat.streaming || profilesQuery.isFetching} onError={setError} onBusyChange={setPickerBusy} onProfileUpdated={profileUpdated}
+          onOpenSettings={openSettings} disabled={profilesQuery.isFetching} onError={setError} onBusyChange={setPickerBusy} onProfileUpdated={profileUpdated}
           onChanged={async () => { await queryClient.invalidateQueries({ queryKey: ["profiles"] }, { throwOnError: true }); }} />}
       />
       <WorkspaceInspector

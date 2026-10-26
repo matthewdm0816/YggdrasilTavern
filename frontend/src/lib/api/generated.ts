@@ -1437,6 +1437,8 @@ export interface components {
         GenerateRequest: {
             /** Regenerate Message Id */
             regenerate_message_id?: string | null;
+            /** Parent Message Id */
+            parent_message_id?: string | null;
             /** Api Profile Id */
             api_profile_id?: string | null;
         };

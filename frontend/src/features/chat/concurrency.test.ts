@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
 import { Message, SessionTree } from "../../lib/api";
-import { SessionGenerationRegistry } from "./SessionGenerationRegistry";
+import { GenerationRegistry } from "./GenerationRegistry";
 import { SessionSelectionQueue } from "./SessionSelectionQueue";
 import { loadTreeSnapshot, reconcileTreeSnapshot, treeQueryKey, upsertTreeMessage } from "./treeCache";
 import { SessionTreeEpoch } from "./SessionTreeEpoch";
@@ -39,16 +39,21 @@ function deferred<T>() {
 }
 
 describe("session concurrency", () => {
-  it("runs different sessions independently and stops only the selected session", () => {
-    const registry = new SessionGenerationRegistry();
-    const first = registry.begin("one")!;
-    expect(registry.begin("one")).toBeNull();
-    const second = registry.begin("two")!;
-    registry.stop("one");
-    expect(first.signal.aborted).toBe(true);
-    expect(second.signal.aborted).toBe(false);
-    registry.finish("one", first);
-    expect(registry.begin("one")).not.toBeNull();
+  it("runs several generations in one session and stops only the chosen one", () => {
+    const registry = new GenerationRegistry();
+    const left = registry.begin({ sessionId: "one", parentId: "prompt", label: "Prompt" });
+    const right = registry.begin({ sessionId: "one", parentId: "other", label: "Other" });
+    registry.begin({ sessionId: "two", parentId: null, label: "" });
+    expect(registry.size).toBe(3);
+    registry.attach(left.key, "reply");
+    expect(registry.list().find((info) => info.key === left.key)?.messageId).toBe("reply");
+    registry.stop(left.key);
+    expect(left.controller.signal.aborted).toBe(true);
+    expect(right.controller.signal.aborted).toBe(false);
+    registry.finish(left.key);
+    registry.finish(right.key);
+    expect(registry.isActive("one")).toBe(false);
+    expect(registry.isActive("two")).toBe(true);
   });
 
   it("serializes choices in one session and applies only the newest choice", async () => {

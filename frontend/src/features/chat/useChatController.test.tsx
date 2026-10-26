@@ -2,9 +2,14 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { api, type Message, type MessageTreeMutation, type SessionTree } from "../../lib/api";
+import { api, streamGenerate, type Message, type MessageTreeMutation, type SessionTree } from "../../lib/api";
 import { useChatController } from "./useChatController";
 import { treeQueryKey } from "./treeCache";
+
+vi.mock("../../lib/api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../lib/api")>()),
+  streamGenerate: vi.fn()
+}));
 
 function message(overrides: Partial<Message> = {}): Message {
   return {
@@ -19,19 +24,22 @@ function tree(messages: Message[] = [message()], id = "one"): SessionTree {
   return { session: { id, title: id, preset: {} }, messages, active_path_ids: messages.map((item) => item.id) };
 }
 
-function controller(initial: SessionTree) {
+function controller(initial: SessionTree, generationLimit = 4) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   client.setQueryData(treeQueryKey(initial.session.id), initial);
   let chat!: ReturnType<typeof useChatController>;
   function Capture() {
-    chat = useChatController({ selectedSessionId: initial.session.id, activeProfileId: "profile" });
+    chat = useChatController({ selectedSessionId: initial.session.id, activeProfileId: "profile", generationLimit });
     return null;
   }
   renderToStaticMarkup(createElement(QueryClientProvider, { client }, createElement(Capture)));
   return { client, chat };
 }
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.mocked(streamGenerate).mockReset();
+});
 
 describe("chat tree mutations", () => {
   it("replaces a deleted tree and returns the deleted count without affecting another session", async () => {
@@ -115,5 +123,51 @@ describe("chat tree mutations", () => {
     vi.spyOn(api, "pruneEmptyBranches").mockResolvedValue({ ...tree([emptyParent, preservedChild]), deleted_count: 1 });
     expect(await chat.handlePruneEmptyBranches()).toBe(1);
     expect(client.getQueryData<SessionTree>(treeQueryKey("one"))?.messages).toEqual([emptyParent, preservedChild]);
+  });
+});
+
+describe("parallel generation", () => {
+  it("streams several replies in one session from their own parents up to the page limit", async () => {
+    const prompt = message({ id: "prompt", role: "user", speaker: "User", content: "Prompt" });
+    const other = message({ id: "other", role: "user", speaker: "User", content: "Other branch" });
+    const reply = message({ id: "reply", parent_id: "prompt" });
+    const { chat } = controller(tree([prompt, other, reply]), 2);
+    const releases: Array<() => void> = [];
+    const stream = vi.mocked(streamGenerate).mockImplementation(() => new Promise<void>((resolve) => { releases.push(resolve); }));
+    vi.spyOn(api, "tree").mockResolvedValue(tree([prompt, other, reply]));
+    const first = chat.handleGenerate({ parentMessageId: "prompt" });
+    const second = chat.handleGenerate({ regenerateMessageId: "reply" });
+    const refused = chat.handleGenerate({ parentMessageId: "other" });
+    expect(stream).toHaveBeenCalledTimes(2);
+    expect(stream.mock.calls.map((call) => [call[1].parent_message_id, call[1].regenerate_message_id]))
+      .toEqual([["prompt", null], [null, "reply"]]);
+    releases.forEach((release) => release());
+    await Promise.all([first, second, refused]);
+    void chat.handleGenerate({ parentMessageId: "other" });
+    expect(stream).toHaveBeenCalledTimes(3);
+    expect(stream.mock.calls[2][1].parent_message_id).toBe("other");
+  });
+
+  it("refuses to send below a reply that is still streaming", async () => {
+    const prompt = message({ id: "prompt", role: "user", speaker: "User", content: "Prompt" });
+    const reply = message({ id: "reply", parent_id: "prompt", status: "streaming" });
+    const { chat } = controller(tree([prompt, reply]));
+    const append = vi.spyOn(api, "appendMessage");
+    await expect(chat.handleSend("next")).rejects.toThrow("还在生成");
+    expect(append).not.toHaveBeenCalled();
+    expect(streamGenerate).not.toHaveBeenCalled();
+  });
+
+  it("sends below the displayed path end and generates from the new prompt", async () => {
+    const reply = message();
+    const { chat } = controller(tree([reply]));
+    const prompt = message({ id: "new-prompt", parent_id: "reply", role: "user", speaker: "User", content: "next" });
+    const append = vi.spyOn(api, "appendMessage").mockResolvedValue(prompt);
+    vi.spyOn(api, "tree").mockResolvedValue(tree([reply, prompt]));
+    const stream = vi.mocked(streamGenerate).mockResolvedValue();
+    await chat.handleSend("next");
+    expect(append).toHaveBeenCalledWith("one", expect.objectContaining({ parent_id: "reply", content: "next" }));
+    expect(stream).toHaveBeenCalledWith("one", expect.objectContaining({ parent_message_id: "new-prompt" }),
+      expect.anything(), expect.anything());
   });
 });

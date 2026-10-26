@@ -12,7 +12,7 @@ function captureTreeQuery(initial: SessionTree) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   client.setQueryData(treeQueryKey(initial.session.id), initial);
   function Capture() {
-    useChatController({ selectedSessionId: initial.session.id, activeProfileId: "profile" });
+    useChatController({ selectedSessionId: initial.session.id, activeProfileId: "profile", generationLimit: 4 });
     return null;
   }
   renderToStaticMarkup(createElement(QueryClientProvider, { client }, createElement(Capture)));

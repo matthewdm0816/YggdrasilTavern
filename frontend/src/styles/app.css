@@ -2674,6 +2674,12 @@ textarea:focus {
   justify-self: start;
 }
 
+.forest-tree-preview-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .forest-tree-empty {
   display: grid;
   min-width: min(460px, 70vw);

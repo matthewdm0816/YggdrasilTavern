@@ -3,6 +3,7 @@ import { BookOpen, MessageSquarePlus, RefreshCcw, Settings, SlidersHorizontal, V
 import { api, APIProfile, CharacterSummary, ChatSession, WorldBook } from "../lib/api";
 import { DisplaySettings } from "./DisplaySettings";
 import { AccountPanel } from "./AccountPanel";
+import { GENERATION_LIMIT_OPTIONS } from "../features/chat/generationLimit";
 import {
   fallbackProfileIdAfterDelete,
   formatTokenLimit,
@@ -46,6 +47,8 @@ type Props = {
   onOpenSettings?: () => void;
   onOpenTtsSettings?: () => void;
   ttsSettingsError?: string | null;
+  generationLimit?: number;
+  onGenerationLimitChange?: (limit: number) => void;
   onBusyChange?: (busy: boolean) => void;
   onModelProgressChange?: (message: string | null) => void;
   onProfileUpdated?: (profile: APIProfile) => void;
@@ -75,6 +78,8 @@ export function Sidebar({
   onOpenSettings,
   onOpenTtsSettings,
   ttsSettingsError,
+  generationLimit,
+  onGenerationLimitChange,
   onBusyChange,
   onModelProgressChange,
   onProfileUpdated,
@@ -189,6 +194,12 @@ export function Sidebar({
                 <Settings size={16} />
                 模型与连接设置
               </button>
+              {generationLimit !== undefined && onGenerationLimitChange && <label className="form-field sidebar-generation-limit">
+                <span>同时生成上限（本浏览器，所有会话合计）</span>
+                <select aria-label="同时生成上限" value={generationLimit} onChange={(event) => onGenerationLimitChange(Number(event.target.value))}>
+                  {GENERATION_LIMIT_OPTIONS.map((limit) => <option key={limit} value={limit}>{limit} 个</option>)}
+                </select>
+              </label>}
               {onOpenTtsSettings && <button className="secondary-button sidebar-settings-button" type="button" onClick={onOpenTtsSettings}><Volume2 size={16} />语音朗读（试验）</button>}
               {ttsSettingsError && <p className="field-error sidebar-settings-error" role="alert">语音设置读取失败：{ttsSettingsError}</p>}
               <DisplaySettings>{appearanceControls}</DisplaySettings>

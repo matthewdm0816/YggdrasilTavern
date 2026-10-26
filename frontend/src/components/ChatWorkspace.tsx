@@ -33,6 +33,9 @@ import { messageErrorText, messageStatusLabel } from "../lib/messageStatus";
 import { useMediaQuery } from "../lib/useMediaQuery";
 import { AutoSizeTextarea } from "./AutoSizeTextarea";
 import { ForestTreeView } from "./ForestTreeView";
+import { GenerationStatus } from "./GenerationStatus";
+import type { ActiveGeneration } from "../features/chat/GenerationRegistry";
+import { pathEndGeneration, pathEndId, type UnreadGeneration } from "../features/chat/useChatController";
 import { RegexMessage } from "./RegexMessage";
 import { ActionMenu } from "./ActionMenu";
 import "../styles/chat-message-actions.css";
@@ -43,12 +46,15 @@ type Props = {
   characters: CharacterSummary[];
   loading: boolean;
   loadError: string | null;
+  /** True while any reply in this session streams. */
   streaming: boolean;
   mutating: boolean;
   onSend: (content: string) => Promise<void>;
   onGenerate: () => void;
-  onStop: () => void;
+  /** Start a new reply below any message, e.g. from the full chat tree. */
+  onGenerateFrom: (messageId: string) => void;
   onRegenerate: (messageId: string) => void;
+  generation: ChatGenerationState;
   onSelectMessage: (messageId: string) => Promise<void>;
   onCreateSwipe: (message: Message, content?: string, thinkingContent?: string) => Promise<void>;
   onUpdateMessage: (message: Message, content: string, thinkingContent: string) => Promise<void>;
@@ -69,6 +75,16 @@ type Props = {
   canGenerate: boolean;
   onQuickCreateSession?: (payload: Parameters<typeof api.createSession>[0]) => Promise<ChatSession>;
   onOpenSettings?: () => void;
+};
+
+export type ChatGenerationState = {
+  active: ActiveGeneration[];
+  unread: UnreadGeneration[];
+  sessionTitles: Record<string, string>;
+  onStop: (key: string) => void;
+  onDismissUnread: (messageId: string) => void;
+  /** Open a reply in another session; replies in this session are revealed in place. */
+  onOpenSessionMessage: (sessionId: string, messageId: string) => void;
 };
 
 function usageNumber(usage: Record<string, unknown>, ...keys: string[]): number {
@@ -175,8 +191,9 @@ export function ChatWorkspace({
   mutating,
   onSend,
   onGenerate,
-  onStop,
+  onGenerateFrom,
   onRegenerate,
+  generation,
   onSelectMessage,
   onCreateSwipe,
   onUpdateMessage,
@@ -220,9 +237,13 @@ export function ChatWorkspace({
   const treeActionResult = treeActionResults[sessionId];
   const submitting = Boolean(submittingSessions[sessionId]);
   const savingEdit = Boolean(savingEditSessions[sessionId]);
-  // Editing stays available while a reply streams; only the streaming message itself is locked.
+  // Editing and new replies stay available while other replies stream; only streaming messages are locked.
   const editBusy = submitting || savingEdit || mutating || Boolean(treeActionLabel);
+  // Deletion and role changes still wait until no reply in this session streams.
   const messageActionsBusy = streaming || editBusy;
+  const endGeneration = pathEndGeneration(tree, generation.active);
+  const pathEnd = tree?.messages.find((message) => message.id === pathEndId(tree));
+  const pathEndBusy = Boolean(endGeneration) || pathEnd?.status === "streaming";
   const scrollRef = useRef<HTMLDivElement>(null);
   const shouldFollowRef = useRef(true);
   const pendingRevealRef = useRef<string | null>(null);
@@ -266,7 +287,7 @@ export function ChatWorkspace({
 
   async function submitContent() {
     const content = draft.trim();
-    if (!sessionId || !tree || messageActionsBusy || !canGenerate || pendingSubmissions.current.has(sessionId)) return;
+    if (!sessionId || !tree || editBusy || pathEndBusy || !canGenerate || pendingSubmissions.current.has(sessionId)) return;
     pendingSubmissions.current.add(sessionId);
     setSubmittingSessions((current) => ({ ...current, [sessionId]: true }));
     setInteractionError(null);
@@ -466,6 +487,11 @@ export function ChatWorkspace({
           </div>
         </div>
         <div className="chat-actions">
+          <GenerationStatus active={generation.active} unread={generation.unread} sessionTitles={generation.sessionTitles}
+            currentSessionId={sessionId} onStop={generation.onStop} onDismiss={generation.onDismissUnread}
+            onOpen={(targetSessionId, messageId) => targetSessionId === sessionId
+              ? selectSwipeFromToolbar(messageId)
+              : generation.onOpenSessionMessage(targetSessionId, messageId)} />
           <button className="icon-button" type="button" title="当前路径分支与会话设置" aria-label="当前路径分支与会话设置" aria-expanded={rightOpen} onClick={onToggleRight}><PanelRight size={19} /></button>
           <button className="icon-button" type="button" title="浏览完整聊天树" aria-label="浏览完整聊天树" disabled={!tree} onClick={onOpenTree}><Network size={19} /></button>
           <ActionMenu label="会话操作">
@@ -575,15 +601,15 @@ export function ChatWorkspace({
                     <button className="icon-button" type="button" title="下一个分支" aria-label="下一个分支" disabled={!next || mutating || Boolean(treeActionLabel)} onClick={() => next && selectSwipeFromToolbar(next.id)}><ChevronRight size={16} /></button>
                     <button className="icon-button message-quick-action" type="button" title="编辑消息" aria-label="编辑消息" disabled={editBusy || message.status === "streaming"} onClick={() => startEdit(message)}><Edit3 size={15} /></button>
                     {message.role === "assistant" && (
-                      <button className="icon-button message-quick-action" type="button" title="重新生成此回复" aria-label="重新生成此回复" disabled={messageActionsBusy || !canGenerate} onClick={() => onRegenerate(message.id)}><RefreshCcw size={15} /></button>
+                      <button className="icon-button message-quick-action" type="button" title="重新生成此回复" aria-label="重新生成此回复" disabled={editBusy || !canGenerate || message.status === "streaming"} onClick={() => onRegenerate(message.id)}><RefreshCcw size={15} /></button>
                     )}
                     <ActionMenu label="消息操作">
                       {(hasHoverRules || (macroDisplay.mode === "hover" && (containsMacros(message.content) || containsMacros(message.thinking_content)))) && <button type="button" data-close-menu onClick={() => setPreviewReplacements((current) => ({ ...current, [message.id]: !current[message.id] }))}>{previewReplacements[message.id] ? "恢复原文" : "整条显示替换后"}</button>}
                       <button type="button" data-close-menu disabled={!message.content} onClick={() => void copyMessage(message)}><Copy size={16} />复制正文</button>
-                      {message.role === "assistant" && onReadMessage && <button type="button" data-close-menu disabled={messageActionsBusy || message.status !== "complete"} onClick={() => onReadMessage(message)}><Volume2 size={16} />朗读消息…</button>}
-                      <button type="button" data-close-menu disabled={messageActionsBusy} onClick={() => void duplicateMessage(message)}><CopyPlus size={16} />复制为新分支</button>
+                      {message.role === "assistant" && onReadMessage && <button type="button" data-close-menu disabled={editBusy || message.status !== "complete"} onClick={() => onReadMessage(message)}><Volume2 size={16} />朗读消息…</button>}
+                      <button type="button" data-close-menu disabled={editBusy || message.status === "streaming"} onClick={() => void duplicateMessage(message)}><CopyPlus size={16} />复制为新分支</button>
                       <button type="button" data-close-menu disabled={editBusy || message.status === "streaming"} onClick={() => startEdit(message)}><Edit3 size={16} />编辑消息</button>
-                      {message.role === "assistant" && <button type="button" data-close-menu disabled={messageActionsBusy || !canGenerate} onClick={() => onRegenerate(message.id)}><RefreshCcw size={16} />重新生成此回复</button>}
+                      {message.role === "assistant" && <button type="button" data-close-menu disabled={editBusy || !canGenerate || message.status === "streaming"} onClick={() => onRegenerate(message.id)}><RefreshCcw size={16} />重新生成此回复</button>}
                       <div className="message-menu-divider" role="separator" />
                       {(["assistant", "user", "system"] as const).filter((role) => role !== message.role).map((role) => (
                         <button key={role} type="button" data-close-menu disabled={messageActionsBusy} onClick={() => changeMessageRole(message, role)}><UserRound size={16} />改为{role === "assistant" ? "角色" : role === "user" ? "用户" : "系统"}消息</button>
@@ -610,7 +636,7 @@ export function ChatWorkspace({
         {(interactionError || loadError) && <div className="composer-error" role="alert">{interactionError || loadError}</div>}
         <div className="composer-tools">
           {modelPicker}
-          <button className="secondary-button continue-generation" type="button" title="从当前路径继续生成回复" disabled={!tree || messageActionsBusy || !canGenerate} onClick={onGenerate}><Sparkles size={15} /><span>继续</span></button>
+          <button className="secondary-button continue-generation" type="button" title="从当前路径继续生成回复" disabled={!tree || editBusy || pathEndBusy || !canGenerate} onClick={onGenerate}><Sparkles size={15} /><span>继续</span></button>
         </div>
         <form className="composer" onSubmit={(event) => void submit(event)}>
           <label className="composer-field"><span className="sr-only">发送消息</span><AutoSizeTextarea
@@ -620,10 +646,10 @@ export function ChatWorkspace({
               placeholder={hasKeyboardShortcut ? "输入消息（Ctrl+Enter 发送）" : "输入消息"}
               disabled={!tree}
             /></label>
-          {streaming ? (
-            <button className="send-button composer-stop-button" type="button" title="停止生成" aria-label="停止生成" onClick={onStop}><Square size={17} /></button>
+          {endGeneration ? (
+            <button className="send-button composer-stop-button" type="button" title="停止这条回复的生成" aria-label="停止生成" onClick={() => generation.onStop(endGeneration.key)}><Square size={17} /></button>
           ) : (
-            <button className="send-button" disabled={!tree || !canGenerate || messageActionsBusy} title={draft.trim() ? "发送 (Ctrl+Enter)" : "空白发送：继续生成"} aria-label={draft.trim() ? "发送" : "空白发送：继续生成"}>{draft.trim() ? <Send size={18} /> : <Sparkles size={18} />}</button>
+            <button className="send-button" disabled={!tree || !canGenerate || editBusy || pathEndBusy} title={draft.trim() ? "发送 (Ctrl+Enter)" : "空白发送：继续生成"} aria-label={draft.trim() ? "发送" : "空白发送：继续生成"}>{draft.trim() ? <Send size={18} /> : <Sparkles size={18} />}</button>
           )}
         </form>
       </div>
@@ -632,6 +658,8 @@ export function ChatWorkspace({
           tree={tree}
           onClose={onCloseTree}
           onSelectMessage={selectMessageAndReveal}
+          onContinueFrom={onGenerateFrom}
+          canContinue={canGenerate && !editBusy}
         />
       )}
     </section>

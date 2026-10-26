@@ -223,6 +223,16 @@ def last_active_message(db: Session, session: models.ChatSession) -> Optional[mo
     return path[-1] if path else None
 
 
+def serialize_session_writes(db: Session, session: models.ChatSession) -> None:
+    """Take the session's SQLite write lock before reading the tree for a write."""
+    db.execute(
+        update(models.ChatSession)
+        .where(models.ChatSession.id == session.id)
+        .values(updated_at=models.ChatSession.updated_at)
+    )
+    db.refresh(session)
+
+
 def prepare_tree_mutation(
     db: Session,
     session: models.ChatSession,
@@ -230,12 +240,7 @@ def prepare_tree_mutation(
     busy_detail: str = "此会话正在生成消息，请先停止生成，再删除分支或切换消息角色",
 ) -> None:
     """Serialize SQLite writes before inspecting the tree and generation state."""
-    db.execute(
-        update(models.ChatSession)
-        .where(models.ChatSession.id == session.id)
-        .values(updated_at=models.ChatSession.updated_at)
-    )
-    db.refresh(session)
+    serialize_session_writes(db, session)
     running_message = db.scalar(
         select(models.Message.id).where(
             models.Message.session_id == session.id, models.Message.status == "streaming",

@@ -24,7 +24,8 @@ function renderStreaming() {
   const nothing = async () => {};
   return renderToStaticMarkup(<ChatWorkspace tree={tree} activeSession={tree.session} characters={[]}
     loading={false} loadError={null} streaming={true} mutating={false} canGenerate={true}
-    onSend={nothing} onGenerate={noop} onStop={noop} onRegenerate={noop} onSelectMessage={nothing}
+    onSend={nothing} onGenerate={noop} onGenerateFrom={noop} onRegenerate={noop}
+    generation={{ active: [], unread: [], sessionTitles: {}, onStop: noop, onDismissUnread: noop, onOpenSessionMessage: noop }} onSelectMessage={nothing}
     onCreateSwipe={nothing} onUpdateMessage={nothing} onChangeMessageRole={nothing}
     onDeleteMessage={async () => 0} onPruneEmptyBranches={async () => 0}
     onToggleLeft={noop} onToggleRight={noop} leftOpen={false} rightOpen={false}

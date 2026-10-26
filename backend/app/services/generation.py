@@ -9,7 +9,6 @@ import time
 from dataclasses import dataclass
 from typing import Any, AsyncGenerator, Dict, Optional
 
-from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -27,7 +26,7 @@ from .token_counter import (
     output_tokens_from_usage,
     reasoning_tokens_from_usage,
 )
-from .tree import active_path, ancestor_path, create_message, get_message_or_404, get_session_or_404, prepare_tree_mutation
+from .tree import active_path, ancestor_path, create_message, get_message_or_404, get_session_or_404, serialize_session_writes
 
 
 @dataclass(frozen=True)
@@ -92,13 +91,10 @@ async def start_generation(
     profile = db.get(models.APIProfile, payload.api_profile_id) if payload.api_profile_id else session.api_profile
     if not profile:
         raise ApplicationError(status_code=400, detail="请先在本地应用中选择一个 API Profile")
-    prepare_tree_mutation(
-        db, session,
-        busy_detail="此 Chat session 已有进行中的生成，请等待或取消后重试",
-    )
-    path = active_path(db, session)
-    parent_id = path[-1].id if path else None
-    context_path = path
+    if payload.regenerate_message_id and payload.parent_message_id:
+        raise ApplicationError(status_code=400, detail="重新生成和指定起点不能同时使用")
+    # Several generations may run in one session; each only needs a finished parent.
+    serialize_session_writes(db, session)
     if payload.regenerate_message_id:
         base = get_message_or_404(db, payload.regenerate_message_id)
         if base.session_id != session.id:
@@ -107,6 +103,17 @@ async def start_generation(
             raise ApplicationError(status_code=400, detail="Only assistant messages can be regenerated")
         parent_id = base.parent_id
         context_path = ancestor_path(db, base, include_self=False)
+    elif payload.parent_message_id:
+        parent = get_message_or_404(db, payload.parent_message_id)
+        if parent.session_id != session.id:
+            raise ApplicationError(status_code=400, detail="Message belongs to another session")
+        parent_id = parent.id
+        context_path = ancestor_path(db, parent)
+    else:
+        context_path = active_path(db, session)
+        parent_id = context_path[-1].id if context_path else None
+    if context_path and context_path[-1].status == "streaming":
+        raise ApplicationError(status_code=409, detail="这条消息还在生成，请等它完成后再从这里继续")
 
     try:
         context = build_limited_context(db, session, profile, path_override=context_path)
@@ -188,17 +195,6 @@ async def start_generation(
         db.commit()
     except IntegrityError as exc:
         db.rollback()
-        competing_run_id = db.scalar(
-            select(models.GenerationRun.id).where(
-                models.GenerationRun.session_id == session_id,
-                models.GenerationRun.status == "streaming",
-            ).limit(1)
-        )
-        if competing_run_id is not None:
-            raise ApplicationError(
-                status_code=409,
-                detail="此 Chat session 已有进行中的生成，请等待或取消后重试",
-            ) from exc
         raise ApplicationError(
             status_code=409,
             detail="生成开始前 API Profile 或聊天数据已被修改，请刷新后重试",

@@ -652,6 +652,8 @@ class ContextPreviewRequest(BaseModel):
 
 class GenerateRequest(BaseModel):
     regenerate_message_id: Optional[str] = None
+    # Continue below this message instead of the session's current path end.
+    parent_message_id: Optional[str] = None
     api_profile_id: Optional[str] = None
 
 

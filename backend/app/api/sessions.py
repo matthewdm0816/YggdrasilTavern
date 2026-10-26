@@ -163,6 +163,8 @@ def append_message(session_id: str, payload: schemas.MessageCreate, db: Session 
     if parent_id is None:
         last = last_active_message(db, session)
         parent_id = last.id if last else None
+    if parent_id and get_message_or_404(db, parent_id).status == "streaming":
+        raise HTTPException(status_code=409, detail="这条消息还在生成，请等它完成后再接着写")
     return create_message(
         db,
         session,

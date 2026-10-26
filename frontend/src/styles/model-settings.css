@@ -263,3 +263,7 @@
     grid-column: 1 / -1;
   }
 }
+
+.sidebar-generation-limit {
+  margin: 8px 12px;
+}

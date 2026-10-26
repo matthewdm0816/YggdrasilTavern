@@ -120,8 +120,48 @@ def test_single_generation_migration_preserves_overlapping_partial_messages(tmp_
             assert all(message.status == "interrupted" for message in preserved)
             assert all(db.get(models.GenerationRun, run_id).status == "interrupted" for run_id in run_ids)
             assert db.get(models.GenerationRun, independent_id).status == "streaming"
-        assert any(index["name"] == "uq_generation_runs_streaming_session" and index["unique"]
+        # 0013 drops the single-run index again so one session can stream several branches.
+        assert all(index["name"] != "uq_generation_runs_streaming_session"
                    for index in inspect(engine).get_indexes("generation_runs"))
+    finally:
+        engine.dispose()
+
+
+def test_parallel_generation_migration_round_trip_keeps_partial_messages(tmp_path, monkeypatch):
+    database_url = f"sqlite:///{(tmp_path / 'parallel.db').as_posix()}"
+    config = alembic_config(database_url, monkeypatch)
+    command.upgrade(config, "head")
+    engine = create_engine(database_url)
+    single_index = "uq_generation_runs_streaming_session"
+    try:
+        with Session(engine, expire_on_commit=False) as db:
+            session = models.ChatSession(title="Parallel")
+            other = models.ChatSession(title="Single")
+            db.add_all([session, other])
+            db.flush()
+            messages = [models.Message(session_id=session.id, role="assistant", status="streaming", content=content)
+                        for content in ("Left branch", "Right branch")]
+            db.add_all(messages)
+            db.flush()
+            runs = [models.GenerationRun(
+                session_id=session.id, output_message_id=message.id, status="streaming",
+                provider_type="openai_responses", model="test", prompt_hash="test",
+            ) for message in messages]
+            single = models.GenerationRun(
+                session_id=other.id, status="streaming", provider_type="openai_responses", model="test", prompt_hash="test",
+            )
+            db.add_all([*runs, single])
+            db.commit()
+        command.downgrade(config, "0012_custom_request_settings")
+        with Session(engine) as db:
+            assert [db.get(models.Message, message.id).content for message in messages] == ["Left branch", "Right branch"]
+            assert all(db.get(models.Message, message.id).status == "interrupted" for message in messages)
+            assert all(db.get(models.GenerationRun, run.id).status == "interrupted" for run in runs)
+            assert db.get(models.GenerationRun, single.id).status == "streaming"
+        assert any(index["name"] == single_index and index["unique"]
+                   for index in inspect(engine).get_indexes("generation_runs"))
+        command.upgrade(config, "head")
+        assert all(index["name"] != single_index for index in inspect(engine).get_indexes("generation_runs"))
     finally:
         engine.dispose()
 

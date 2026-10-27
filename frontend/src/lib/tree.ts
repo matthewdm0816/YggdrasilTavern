@@ -38,6 +38,13 @@ export function siblingsFor(tree: SessionTree | undefined, message: Message, ind
   return sortMessages(tree.messages.filter((item) => item.parent_id === message.parent_id));
 }
 
+// Swipe navigation wraps around at both ends; a lone sibling has no neighbours.
+export function adjacentSiblings(siblings: Message[], index: number): { previous?: Message; next?: Message } {
+  const count = siblings.length;
+  if (count < 2) return {};
+  return { previous: siblings[(index - 1 + count) % count], next: siblings[(index + 1) % count] };
+}
+
 function freshestStreamText(remote: string, local: string, field: string, messageId: string): string {
   if (local.startsWith(remote)) return local;
   if (remote.startsWith(local)) return remote;

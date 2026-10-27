@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { activeMessages, buildMessageIndex, mergeStreamingMessages, siblingsFor } from "./tree";
+import { activeMessages, adjacentSiblings, buildMessageIndex, mergeStreamingMessages, siblingsFor } from "./tree";
 import { Message, SessionTree } from "./api";
 
 function message(id: string, parent_id: string | null, sort_order: number, content: string): Message {
@@ -105,6 +105,15 @@ describe("tree helpers", () => {
       active_path_ids: ["d", "b"]
     };
     expect(siblingsFor(tree, current).map((item) => item.content)).toEqual(["first", "second"]);
+  });
+
+  it("wraps swipe navigation at both ends and disables it for a lone sibling", () => {
+    const [a, b, c] = [message("a", "p", 0, "a"), message("b", "p", 1, "b"), message("c", "p", 2, "c")];
+    expect(adjacentSiblings([a, b, c], 0)).toEqual({ previous: c, next: b });
+    expect(adjacentSiblings([a, b, c], 1)).toEqual({ previous: a, next: c });
+    expect(adjacentSiblings([a, b, c], 2)).toEqual({ previous: b, next: a });
+    expect(adjacentSiblings([a, b], 0)).toEqual({ previous: b, next: b });
+    expect(adjacentSiblings([a], 0)).toEqual({});
   });
 
   it("keeps the fuller client stream when a swipe selection returns an older database batch", () => {

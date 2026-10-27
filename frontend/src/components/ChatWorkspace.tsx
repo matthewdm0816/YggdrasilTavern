@@ -27,7 +27,7 @@ import {
   X
 } from "lucide-react";
 import { api, CharacterSummary, ChatSession, Message, MessageDeleteScope, RegexRule, SessionTree } from "../lib/api";
-import { activeMessages as getActiveMessages, buildMessageIndex, siblingsFor } from "../lib/tree";
+import { activeMessages as getActiveMessages, adjacentSiblings, buildMessageIndex, siblingsFor } from "../lib/tree";
 import { useAppStore } from "../state/useAppStore";
 import { messageErrorText, messageStatusLabel } from "../lib/messageStatus";
 import { useMediaQuery } from "../lib/useMediaQuery";
@@ -550,8 +550,7 @@ export function ChatWorkspace({
         {activeMessages.map((message) => {
           const siblings = siblingsFor(tree, message, messageIndex);
           const index = siblings.findIndex((item) => item.id === message.id);
-          const previous = siblings[index - 1];
-          const next = siblings[index + 1];
+          const { previous, next } = adjacentSiblings(siblings, index);
           const isEditing = edit?.messageId === message.id;
           const inputTokens = message.generation_run?.input_tokens || usageNumber(message.usage, "input_tokens", "prompt_tokens");
           const tokenDisplay = generationTokenDisplay(message);

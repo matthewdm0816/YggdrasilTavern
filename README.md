@@ -26,6 +26,7 @@ Session root
 - **Save changes** updates the original message in place and does not create a branch.
 - **Save as new branch**, copy-as-swipe, and regeneration create siblings and preserve the original message and its descendants.
 - Interrupted and cancelled generations keep their partial assistant message instead of silently deleting it.
+- Closing, reloading or backgrounding the page does not stop a generation; the page picks the reply back up when it returns. Only Stop or a backend shutdown ends one early.
 
 This tree model is the core invariant of the project.
 

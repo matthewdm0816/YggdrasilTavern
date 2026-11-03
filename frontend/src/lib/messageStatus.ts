@@ -12,6 +12,9 @@ export function messageStatusLabel(status: string): string {
 
 // Lifecycle reasons written by the backend; provider errors are shown verbatim.
 const lifecycleErrors: Record<string, string> = {
+  "Generation stopped by user": "生成已停止：点击了停止。",
+  "Generation interrupted by server shutdown": "生成已中断：后端服务关闭或重启。",
+  // Older replies stopped by closing the page before generation outlived the connection.
   "Generation cancelled by client disconnect": "生成已停止：连接已断开（点击了停止，或页面被关闭、刷新）。",
   "Generation stream closed before completion": "生成已中断：模型服务的流式响应在完成前关闭。",
   "Generation interrupted by process restart": "生成已中断：后端服务重启。",

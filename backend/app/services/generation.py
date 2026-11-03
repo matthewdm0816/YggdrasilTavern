@@ -6,8 +6,7 @@ import asyncio
 import hashlib
 import json
 import time
-from dataclasses import dataclass
-from typing import Any, AsyncGenerator, Dict, Optional
+from typing import Any, Dict, Optional
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -16,6 +15,7 @@ from .. import models, schemas
 from . import providers
 from .macros import expand_message_content
 from .errors import ApplicationError
+from .live_generations import GenerationEvent, GenerationManager, LiveGeneration
 from .prompt_builder import build_limited_context, prompt_errors
 from .token_counter import (
     cached_tokens_from_usage,
@@ -29,50 +29,8 @@ from .token_counter import (
 from .tree import active_path, ancestor_path, create_message, get_message_or_404, get_session_or_404, serialize_session_writes
 
 
-@dataclass(frozen=True)
-class GenerationEvent:
-    name: str
-    data: Dict[str, Any]
-
-
-@dataclass
-class GenerationHandle:
-    """Own the persisted run until its stream completes or the caller closes it."""
-
-    db: Session
-    run_id: str
-    output_message_id: str
-    events: AsyncGenerator[GenerationEvent, None]
-
-    async def aclose(self) -> None:
-        try:
-            await self.events.aclose()
-        finally:
-            self._interrupt_if_streaming()
-
-    def _interrupt_if_streaming(self) -> None:
-        self.db.rollback()
-        run = self.db.get(models.GenerationRun, self.run_id)
-        if run is None:
-            raise RuntimeError("Generation run disappeared before it could be finalized")
-        if run.status != "streaming":
-            return
-        message = self.db.get(models.Message, self.output_message_id)
-        session = self.db.get(models.ChatSession, run.session_id)
-        if message is None or session is None:
-            raise RuntimeError("Generation state disappeared before it could be finalized")
-        reason = "Generation stream closed before completion"
-        message.status = "interrupted"
-        message.error = reason
-        message.provider_metadata = {
-            **dict(message.provider_metadata or {}),
-            "generation_status": "interrupted",
-        }
-        run.status = "interrupted"
-        run.error = reason
-        run.completed_at = models.utc_now()
-        session.last_activity_at = models.utc_now()
-        self.db.commit()
+def _message_json(message: models.Message) -> Dict[str, Any]:
+    return schemas.MessageOut.model_validate(message).model_dump(mode="json")
 
 
 def _prompt_snapshot(context: schemas.ContextPreviewOut) -> tuple[Dict[str, Any], str]:
@@ -84,7 +42,9 @@ async def start_generation(
     session_id: str,
     payload: schemas.GenerateRequest,
     db: Session,
-) -> GenerationHandle:
+    manager: GenerationManager,
+) -> LiveGeneration:
+    """Create the run and its reply, then stream the provider in a task the manager owns."""
     session = get_session_or_404(db, session_id)
     if not session.character:
         raise ApplicationError(status_code=400, detail="此 Chat session 没有角色，无法生成回复")
@@ -205,10 +165,25 @@ async def start_generation(
     generation_run_id = generation_run.id
     session_id_value = session.id
     model_name = profile.model
+    profile_id = profile.id
+    # Carries the per-account credential policy that providers read from the session.
+    connection_info = dict(db.info)
+    db.expire(assistant_message, ["generation_run"])
+    live = LiveGeneration(
+        engine=db.get_bind(),
+        run_id=generation_run_id,
+        session_id=session_id_value,
+        output_message_id=assistant_message_id,
+        base_message_id=parent_id,
+        message=_message_json(assistant_message),
+    )
 
     COMMIT_INTERVAL = 2.0  # batch-commit every N seconds to reduce SQLite contention
 
-    async def events():
+    async def produce(live: LiveGeneration) -> None:
+        # The request's session closes with its response, so the reply keeps its own.
+        db = Session(bind=live.engine, autoflush=False, expire_on_commit=False)
+        db.info.update(connection_info)
         full_text = ""
         thinking_text = ""
         usage: Dict[str, Any] = {}
@@ -310,8 +285,9 @@ async def start_generation(
             return message_row
 
         try:
-            db.expire(assistant_message, ["generation_run"])
-            yield GenerationEvent("message_created", schemas.MessageOut.model_validate(assistant_message).model_dump(mode="json"))
+            profile = db.get(models.APIProfile, profile_id)
+            if profile is None:
+                raise RuntimeError("API Profile disappeared before generation started")
             async for event in providers.stream_completion(profile, context):
                 if isinstance(event, str):
                     full_text += event
@@ -320,7 +296,7 @@ async def start_generation(
                     if event and first_token_at is None:
                         first_token_at = models.utc_now()
                     dirty = True
-                    yield GenerationEvent("token", {"message_id": assistant_message_id, "delta": event})
+                    live.publish(GenerationEvent("token", {"message_id": assistant_message_id, "delta": event}))
                 elif event.kind == "thinking":
                     thinking_text += event.delta
                     if event.delta:
@@ -329,7 +305,7 @@ async def start_generation(
                     if event.delta and first_token_at is None:
                         first_token_at = models.utc_now()
                     dirty = True
-                    yield GenerationEvent("thinking", {"message_id": assistant_message_id, "delta": event.delta})
+                    live.publish(GenerationEvent("thinking", {"message_id": assistant_message_id, "delta": event.delta}))
                 elif event.kind == "text":
                     full_text += event.delta
                     if event.delta:
@@ -337,7 +313,7 @@ async def start_generation(
                     if event.delta and first_token_at is None:
                         first_token_at = models.utc_now()
                     dirty = True
-                    yield GenerationEvent("token", {"message_id": assistant_message_id, "delta": event.delta})
+                    live.publish(GenerationEvent("token", {"message_id": assistant_message_id, "delta": event.delta}))
                 elif event.kind == "usage":
                     usage = merge_usage(usage, event.usage)
                     if output_tokens_from_usage(event.usage) is not None:
@@ -345,7 +321,7 @@ async def start_generation(
                     if optional_reasoning_tokens_from_usage(event.usage) is not None:
                         reasoning_usage_revision = thinking_revision
                     dirty = True
-                    yield GenerationEvent("usage", {"message_id": assistant_message_id, "usage": usage})
+                    live.publish(GenerationEvent("usage", {"message_id": assistant_message_id, "usage": usage}))
                 # Batch-commit: flush dirty state periodically instead of every token
                 now = time.monotonic()
                 if dirty and now - last_commit >= COMMIT_INTERVAL:
@@ -353,33 +329,31 @@ async def start_generation(
                     dirty = False
                     last_commit = now
             completed_message = persist_state("complete", None, terminal=True)
-            yield GenerationEvent("message_completed", schemas.MessageOut.model_validate(completed_message).model_dump(mode="json"))
+            live.publish(GenerationEvent("message_completed", _message_json(completed_message)))
         except asyncio.CancelledError:
-            persist_state("cancelled", "Generation cancelled by client disconnect", terminal=True)
-            raise
-        except GeneratorExit:
-            persist_state("interrupted", "Generation stream closed before completion", terminal=True)
+            # Closing a browser stream no longer cancels; only a stop request or shutdown does.
+            status, reason = live.stop_reason or ("interrupted", "Generation interrupted")
+            stopped_message = persist_state(status, reason, terminal=True)
+            live.publish(GenerationEvent("message_stopped", _message_json(stopped_message)))
             raise
         except Exception as exc:
             detail = str(getattr(exc, "detail", exc))
             try:
                 failed_message = persist_state("failed", detail, terminal=True)
-                message_data = schemas.MessageOut.model_validate(failed_message).model_dump(mode="json")
+                message_data = _message_json(failed_message)
             except Exception as persistence_exc:
                 db.rollback()
                 message_data = None
                 detail = f"{detail}; additionally failed to persist partial generation: {persistence_exc}"
-            yield GenerationEvent(
+            live.publish(GenerationEvent(
                 "error",
                 {"message_id": assistant_message_id, "detail": detail, "message": message_data},
-            )
+            ))
         except BaseException as exc:
             persist_state("interrupted", str(exc) or "Generation interrupted", terminal=True)
             raise
+        finally:
+            db.close()
 
-    return GenerationHandle(
-        db=db,
-        run_id=generation_run_id,
-        output_message_id=assistant_message_id,
-        events=events(),
-    )
+    manager.start(live, produce)
+    return live

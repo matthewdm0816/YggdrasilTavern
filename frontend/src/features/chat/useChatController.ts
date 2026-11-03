@@ -1,8 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, Message, MessageDeleteScope, SessionTree, streamGenerate } from "../../lib/api";
+import {
+  api, GenerationRequestError, Message, MessageDeleteScope, resumeGeneration, SessionTree, streamGenerate,
+  type StreamHandlers
+} from "../../lib/api";
 import { loadTreeSnapshot, reconcileTreeSnapshot, treeQueryKey, upsertTreeMessage } from "./treeCache";
 import { ActiveGeneration, GenerationRegistry, generationExcerpt } from "./GenerationRegistry";
+import {
+  isConnectionLoss, MAX_RECONNECT_FAILURES, RECONNECT_AFTER_HIDDEN_MS, reconnectDelay, waitUntilReachable
+} from "./reconnect";
 import { SessionSelectionQueue } from "./SessionSelectionQueue";
 import { SessionTreeEpoch } from "./SessionTreeEpoch";
 
@@ -20,6 +26,9 @@ type GenerateOptions = {
   parentMessageId?: string | null;
   sessionId?: string;
 };
+
+/** Opens one HTTP stream of a reply: the first request, or a resume after a lost connection. */
+type OpenGenerationStream = (handlers: StreamHandlers, signal: AbortSignal) => Promise<void>;
 
 /** A reply that finished while it was not on the displayed path. */
 export type UnreadGeneration = {
@@ -158,29 +167,6 @@ export function useChatController({ selectedSessionId, activeProfileId, generati
     queryClient.setQueryData(treeQueryKey(sessionId), fresh);
   }
 
-  async function reloadTreeWhenTerminal(sessionId: string, messageId: string) {
-    for (let attempt = 0; attempt < 30; attempt += 1) {
-      const revision = epochs.current.capture(sessionId);
-      const fresh = await api.tree(sessionId);
-      if (!epochs.current.isCurrent(sessionId, revision)) {
-        await reloadTree(sessionId);
-        return;
-      }
-      const generated = fresh.messages.find((message) => message.id === messageId);
-      if (generated && generated.status !== "streaming") {
-        reconcileTreeSnapshot(queryClient, fresh);
-        return;
-      }
-      await new Promise<void>((resolve) => setTimeout(resolve, 150));
-    }
-    // A later refetch reconciles after cancellation is persisted by the server.
-    setTimeout(() => {
-      void queryClient.invalidateQueries({ queryKey: treeQueryKey(sessionId) }).catch((cause) => {
-        setSessionError(sessionId, errorDetail(cause));
-      });
-    }, 1000);
-  }
-
   async function handleSend(content: string) {
     const sessionId = selectedSessionId;
     if (!sessionId) return;
@@ -235,74 +221,178 @@ export function useChatController({ selectedSessionId, activeProfileId, generati
     const parentId = regenerateMessageId
       ? tree?.messages.find((message) => message.id === regenerateMessageId)?.parent_id ?? null
       : parentMessageId !== undefined ? parentMessageId : pathEndId(tree);
-    const { key, controller } = generations.current.begin({
+    const key = generations.current.begin({
       sessionId,
       parentId,
       label: generationExcerpt(tree?.messages.find((message) => message.id === parentId)?.content)
     });
     publishGenerations();
     setSessionError(sessionId, null);
-    let generatedMessageId: string | undefined;
-    try {
-      await streamGenerate(sessionId, {
-        regenerate_message_id: regenerateMessageId || null,
-        parent_message_id: regenerateMessageId ? null : parentId,
-        api_profile_id: activeProfileId
-      }, {
-        onCreated: (message) => {
-          generatedMessageId = message.id;
-          generations.current.attach(key, message.id);
-          publishGenerations();
-          epochs.current.advance(sessionId);
-          updateTree(sessionId, (current) => upsertTreeMessage(current, message));
-        },
-        onToken: (messageId, delta) => updateTree(sessionId, (current) => current ? {
-          ...current,
-          messages: current.messages.map((message) => message.id === messageId
-            ? { ...message, content: message.content + delta, status: "streaming" }
-            : message)
-        } : current),
-        onThinking: (messageId, delta) => updateTree(sessionId, (current) => current ? {
-          ...current,
-          messages: current.messages.map((message) => message.id === messageId
-            ? { ...message, thinking_content: message.thinking_content + delta, status: "streaming" }
-            : message)
-        } : current),
-        onUsage: (messageId, usage) => updateTree(sessionId, (current) => current ? {
-          ...current,
-          messages: current.messages.map((message) => message.id === messageId ? { ...message, usage } : message)
-        } : current),
-        onComplete: (message) => {
-          epochs.current.advance(sessionId);
-          updateTree(sessionId, (current) => upsertTreeMessage(current, message, false));
-          completedCallback.current?.(message);
-        },
-        onError: (_, detail) => setSessionError(sessionId, detail)
-      }, controller.signal);
-    } catch (cause) {
-      if (!(cause instanceof DOMException && cause.name === "AbortError")) {
-        setSessionError(sessionId, errorDetail(cause));
-      }
-    } finally {
+    await runGeneration(key, sessionId, (handlers, signal) => streamGenerate(sessionId, {
+      regenerate_message_id: regenerateMessageId || null,
+      parent_message_id: regenerateMessageId ? null : parentId,
+      api_profile_id: activeProfileId
+    }, handlers, signal));
+  }
+
+  function generationHandlers(key: string, sessionId: string, activate: boolean, onSnapshot: () => void): StreamHandlers {
+    return {
+      onCreated: (message) => {
+        onSnapshot();
+        const runId = message.generation_run?.id ?? null;
+        if (generations.current.attach(key, message.id, runId) && runId) void cancelRun(sessionId, runId);
+        publishGenerations();
+        epochs.current.advance(sessionId);
+        // A resumed stream restates the reply so far; it must not move the displayed branch.
+        updateTree(sessionId, (current) => upsertTreeMessage(current, message, activate));
+      },
+      onToken: (messageId, delta) => updateTree(sessionId, (current) => current ? {
+        ...current,
+        messages: current.messages.map((message) => message.id === messageId
+          ? { ...message, content: message.content + delta, status: "streaming" }
+          : message)
+      } : current),
+      onThinking: (messageId, delta) => updateTree(sessionId, (current) => current ? {
+        ...current,
+        messages: current.messages.map((message) => message.id === messageId
+          ? { ...message, thinking_content: message.thinking_content + delta, status: "streaming" }
+          : message)
+      } : current),
+      onUsage: (messageId, usage) => updateTree(sessionId, (current) => current ? {
+        ...current,
+        messages: current.messages.map((message) => message.id === messageId ? { ...message, usage } : message)
+      } : current),
+      onComplete: (message) => {
+        epochs.current.advance(sessionId);
+        updateTree(sessionId, (current) => upsertTreeMessage(current, message, false));
+        completedCallback.current?.(message);
+      },
+      onStopped: (message) => {
+        epochs.current.advance(sessionId);
+        updateTree(sessionId, (current) => upsertTreeMessage(current, message, false));
+      },
+      onError: (_, detail) => setSessionError(sessionId, detail)
+    };
+  }
+
+  /** Follow one reply across lost connections until it completes, stops or fails. */
+  async function followGeneration(key: string, sessionId: string, open: OpenGenerationStream) {
+    const registry = generations.current;
+    let follow = open;
+    let activate = true;
+    let failures = 0;
+    while (true) {
+      let caughtUp = false;
       try {
-        if (controller.signal.aborted && generatedMessageId) {
-          await reloadTreeWhenTerminal(sessionId, generatedMessageId);
-        } else {
-          await reloadTree(sessionId);
-        }
+        await follow(generationHandlers(key, sessionId, activate, () => { caughtUp = true; }), registry.connect(key));
+        return;
       } catch (cause) {
-        setSessionError(sessionId, errorDetail(cause));
+        if (registry.isClosed(key)) return;
+        // The run ended while this page was away; the tree reload shows how.
+        if (follow !== open && cause instanceof GenerationRequestError && cause.status === 404) return;
+        if (!isConnectionLoss(cause)) throw cause;
+        const runId = registry.info(key)?.runId;
+        if (!runId) {
+          // The server may have started this reply before the connection broke.
+          void adoptActiveGenerations().catch(reportAdoptionError);
+          throw cause;
+        }
+        // reconnectAll aborts healthy streams on purpose; that is not a failure.
+        const forced = cause instanceof DOMException && cause.name === "AbortError";
+        failures = forced ? failures : caughtUp ? 1 : failures + 1;
+        if (failures > MAX_RECONNECT_FAILURES) {
+          throw new Error("无法重新连接到服务器（" + errorDetail(cause) + "）。回复可能仍在后台生成，刷新页面后会继续显示。");
+        }
+        await waitUntilReachable(forced ? 0 : reconnectDelay(failures));
+        if (registry.isClosed(key)) return;
+        follow = (handlers, signal) => resumeGeneration(runId, handlers, signal);
+        activate = false;
       }
-      generations.current.finish(key);
-      publishGenerations();
+    }
+  }
+
+  async function runGeneration(key: string, sessionId: string, open: OpenGenerationStream) {
+    try {
+      await followGeneration(key, sessionId, open);
+    } catch (cause) {
+      setSessionError(sessionId, errorDetail(cause));
+    } finally {
+      const registry = generations.current;
+      const messageId = registry.info(key)?.messageId;
+      const followed = !registry.isClosed(key);
       // A reply the user stopped is not news; one that finished out of sight is.
-      if (generatedMessageId && !controller.signal.aborted) markUnreadIfHidden(sessionId, generatedMessageId);
+      const unread = followed && Boolean(messageId) && !registry.stopRequested(key);
+      if (followed) {
+        try {
+          await reloadTree(sessionId);
+        } catch (cause) {
+          setSessionError(sessionId, errorDetail(cause));
+        }
+      }
+      registry.finish(key);
+      publishGenerations();
+      if (unread && messageId) markUnreadIfHidden(sessionId, messageId);
+    }
+  }
+
+  async function cancelRun(sessionId: string, runId: string) {
+    try {
+      await api.cancelGeneration(runId);
+    } catch (cause) {
+      setSessionError(sessionId, "停止生成失败：" + errorDetail(cause));
     }
   }
 
   function stopGeneration(key: string) {
-    generations.current.stop(key);
+    const runId = generations.current.requestStop(key);
+    const sessionId = generations.current.info(key)?.sessionId;
+    // Without a run yet, onCreated sends the stop as soon as the server names it.
+    if (runId && sessionId) void cancelRun(sessionId, runId);
   }
+
+  /** Follow replies the server is generating that this page does not know, e.g. after a reload. */
+  async function adoptActiveGenerations() {
+    const registry = generations.current;
+    // A local start without its run yet would look like an unknown run.
+    if (registry.hasPendingStart()) return;
+    const runs = await api.activeGenerations();
+    for (const run of runs) {
+      if (registry.hasRun(run.run_id) || registry.hasPendingStart()) continue;
+      const key = registry.begin({
+        sessionId: run.session_id,
+        parentId: run.base_message_id ?? null,
+        label: generationExcerpt(run.base_content)
+      });
+      registry.attach(key, run.output_message_id, run.run_id);
+      publishGenerations();
+      void runGeneration(key, run.session_id, (handlers, signal) => resumeGeneration(run.run_id, handlers, signal));
+    }
+  }
+
+  function reportAdoptionError(cause: unknown) {
+    const detail = "无法检查后台正在生成的回复：" + errorDetail(cause);
+    if (selectedSessionRef.current) setSessionError(selectedSessionRef.current, detail);
+    else console.error(detail, cause);
+  }
+
+  useEffect(() => {
+    let hiddenAt: number | null = null;
+    const visibilityChanged = () => {
+      if (document.visibilityState === "hidden") {
+        hiddenAt = Date.now();
+        return;
+      }
+      const away = hiddenAt === null ? 0 : Date.now() - hiddenAt;
+      hiddenAt = null;
+      if (away < RECONNECT_AFTER_HIDDEN_MS) return;
+      // A sleeping phone may have lost its streams without any error; reconnect and catch up.
+      generations.current.reconnectAll();
+      void adoptActiveGenerations().catch(reportAdoptionError);
+    };
+    document.addEventListener("visibilitychange", visibilityChanged);
+    void adoptActiveGenerations().catch(reportAdoptionError);
+    return () => document.removeEventListener("visibilitychange", visibilityChanged);
+  }, []);
 
   function dismissUnread(messageId: string) {
     setUnreadGenerations((current) => current.filter((item) => item.messageId !== messageId));

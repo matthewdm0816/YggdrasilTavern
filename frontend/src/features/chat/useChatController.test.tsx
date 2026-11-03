@@ -2,13 +2,17 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { api, streamGenerate, type Message, type MessageTreeMutation, type SessionTree } from "../../lib/api";
+import {
+  api, GenerationRequestError, GenerationStreamDropped, resumeGeneration, streamGenerate,
+  type GenerationRun, type Message, type MessageTreeMutation, type SessionTree
+} from "../../lib/api";
 import { useChatController } from "./useChatController";
 import { treeQueryKey } from "./treeCache";
 
 vi.mock("../../lib/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../lib/api")>()),
-  streamGenerate: vi.fn()
+  streamGenerate: vi.fn(),
+  resumeGeneration: vi.fn()
 }));
 
 function message(overrides: Partial<Message> = {}): Message {
@@ -39,6 +43,7 @@ function controller(initial: SessionTree, generationLimit = 4) {
 afterEach(() => {
   vi.restoreAllMocks();
   vi.mocked(streamGenerate).mockReset();
+  vi.mocked(resumeGeneration).mockReset();
 });
 
 describe("chat tree mutations", () => {
@@ -169,5 +174,77 @@ describe("parallel generation", () => {
     expect(append).toHaveBeenCalledWith("one", expect.objectContaining({ parent_id: "reply", content: "next" }));
     expect(stream).toHaveBeenCalledWith("one", expect.objectContaining({ parent_message_id: "new-prompt" }),
       expect.anything(), expect.anything());
+  });
+});
+
+describe("generation that outlives its connection", () => {
+  const prompt = message({ id: "prompt", role: "user", speaker: "User", content: "Prompt", thinking_content: "" });
+  const run = { id: "run" } as NonNullable<Message["generation_run"]>;
+  const streaming = message({
+    id: "reply", parent_id: "prompt", status: "streaming", content: "", thinking_content: "", generation_run: run
+  });
+
+  it("resumes a dropped reply from the server's copy without moving the displayed branch", async () => {
+    const other = message({ id: "other", parent_id: "prompt", content: "Chosen branch" });
+    const { client, chat } = controller(tree([prompt]));
+    vi.mocked(streamGenerate).mockImplementation(async (_session, _payload, handlers) => {
+      handlers.onCreated?.(streaming);
+      handlers.onToken?.("reply", "Hel");
+      // The user picks another branch while the reply streams.
+      client.setQueryData<SessionTree>(treeQueryKey("one"), (current) => current && {
+        ...current, messages: [...current.messages, other], active_path_ids: ["prompt", "other"]
+      });
+      throw new GenerationStreamDropped("dropped");
+    });
+    let resumedView: SessionTree | undefined;
+    vi.mocked(resumeGeneration).mockImplementation(async (_runId, handlers) => {
+      handlers.onCreated?.({ ...streaming, content: "Hello wor" });
+      resumedView = client.getQueryData<SessionTree>(treeQueryKey("one"));
+      handlers.onComplete?.({ ...streaming, status: "complete", content: "Hello world" });
+    });
+    const finished = { ...streaming, status: "complete" as const, content: "Hello world" };
+    vi.spyOn(api, "tree").mockResolvedValue({ ...tree([prompt, other, finished]), active_path_ids: ["prompt", "other"] });
+    await chat.handleGenerate({ parentMessageId: "prompt" });
+    expect(resumeGeneration).toHaveBeenCalledTimes(1);
+    expect(resumeGeneration).toHaveBeenCalledWith("run", expect.anything(), expect.anything());
+    // The snapshot replaces the partial text instead of appending to it.
+    expect(resumedView?.messages.find((item) => item.id === "reply")?.content).toBe("Hello wor");
+    expect(resumedView?.active_path_ids).toEqual(["prompt", "other"]);
+  });
+
+  it("reloads instead of failing when the dropped reply has already finished", async () => {
+    const { client, chat } = controller(tree([prompt]));
+    vi.mocked(streamGenerate).mockImplementation(async (_session, _payload, handlers) => {
+      handlers.onCreated?.(streaming);
+      throw new GenerationStreamDropped("dropped");
+    });
+    vi.mocked(resumeGeneration).mockRejectedValue(new GenerationRequestError("这条回复已经不在生成中", 404));
+    const finished = { ...streaming, status: "complete" as const, content: "Done" };
+    vi.spyOn(api, "tree").mockResolvedValue(tree([prompt, finished]));
+    await chat.handleGenerate({ parentMessageId: "prompt" });
+    expect(resumeGeneration).toHaveBeenCalledTimes(1);
+    expect(client.getQueryData<SessionTree>(treeQueryKey("one"))?.messages.find((item) => item.id === "reply"))
+      .toMatchObject({ status: "complete", content: "Done" });
+  });
+
+  it("stops a reply by asking the server, even before the server has named its run", async () => {
+    const { chat } = controller(tree([prompt]));
+    const cancel = vi.spyOn(api, "cancelGeneration").mockResolvedValue({} as GenerationRun);
+    let cancelsBeforeCreated = -1;
+    let streamAborted: boolean | undefined;
+    vi.mocked(streamGenerate).mockImplementation(async (_session, _payload, handlers, signal) => {
+      chat.stopGeneration("generation-1");
+      cancelsBeforeCreated = cancel.mock.calls.length;
+      handlers.onCreated?.(streaming);
+      streamAborted = signal?.aborted;
+      handlers.onStopped?.({ ...streaming, status: "cancelled" });
+    });
+    vi.spyOn(api, "tree").mockResolvedValue(tree([prompt]));
+    await chat.handleGenerate({ parentMessageId: "prompt" });
+    expect(cancelsBeforeCreated).toBe(0);
+    expect(cancel).toHaveBeenCalledTimes(1);
+    expect(cancel).toHaveBeenCalledWith("run");
+    // The stream stays open so it can deliver the stopped reply.
+    expect(streamAborted).toBe(false);
   });
 });

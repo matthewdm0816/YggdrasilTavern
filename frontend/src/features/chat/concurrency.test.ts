@@ -45,15 +45,38 @@ describe("session concurrency", () => {
     const right = registry.begin({ sessionId: "one", parentId: "other", label: "Other" });
     registry.begin({ sessionId: "two", parentId: null, label: "" });
     expect(registry.size).toBe(3);
-    registry.attach(left.key, "reply");
-    expect(registry.list().find((info) => info.key === left.key)?.messageId).toBe("reply");
-    registry.stop(left.key);
-    expect(left.controller.signal.aborted).toBe(true);
-    expect(right.controller.signal.aborted).toBe(false);
-    registry.finish(left.key);
-    registry.finish(right.key);
+    const leftStream = registry.connect(left);
+    // A stop asked before the server names the run is sent once attach learns it.
+    expect(registry.requestStop(left)).toBeNull();
+    expect(registry.attach(left, "reply", "run-left")).toBe(true);
+    expect(registry.attach(right, "other-reply", "run-right")).toBe(false);
+    expect(registry.list().find((info) => info.key === left)?.messageId).toBe("reply");
+    expect(registry.requestStop(left)).toBe("run-left");
+    // Stopping asks the server; the stream stays open to receive the stopped reply.
+    expect(leftStream.aborted).toBe(false);
+    expect(registry.stopRequested(right)).toBe(false);
+    registry.finish(left);
+    registry.finish(right);
     expect(registry.isActive("one")).toBe(false);
     expect(registry.isActive("two")).toBe(true);
+  });
+
+  it("reconnects open streams and closes them for good only when the page leaves", () => {
+    const registry = new GenerationRegistry();
+    const key = registry.begin({ sessionId: "one", parentId: null, label: "" });
+    expect(registry.hasPendingStart()).toBe(true);
+    registry.attach(key, "reply", "run");
+    expect(registry.hasPendingStart()).toBe(false);
+    expect(registry.hasRun("run")).toBe(true);
+    const first = registry.connect(key);
+    registry.reconnectAll();
+    expect(first.aborted).toBe(true);
+    expect(registry.isClosed(key)).toBe(false);
+    const second = registry.connect(key);
+    registry.abortAll();
+    expect(second.aborted).toBe(true);
+    expect(registry.isClosed(key)).toBe(true);
+    expect(registry.connect(key).aborted).toBe(true);
   });
 
   it("serializes choices in one session and applies only the newest choice", async () => {

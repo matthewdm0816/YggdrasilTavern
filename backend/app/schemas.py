@@ -558,6 +558,17 @@ class GenerationRunOut(GenerationRunSummaryOut):
     updated_at: datetime
 
 
+class ActiveGenerationOut(BaseModel):
+    """A reply still generating on the server, which a page can watch again."""
+
+    run_id: str
+    session_id: str
+    output_message_id: str
+    base_message_id: Optional[str] = None
+    # Start of the message the reply continues, for status labels.
+    base_content: str
+
+
 class CharacterSummaryOut(ORMModel):
     id: str
     name: str

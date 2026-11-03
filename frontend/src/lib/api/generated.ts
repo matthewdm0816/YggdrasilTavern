@@ -762,6 +762,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/generation-runs/active": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Active Generations */
+        get: operations["list_active_generations_api_generation_runs_active_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/generation-runs/{run_id}": {
         parameters: {
             query?: never;
@@ -790,6 +807,40 @@ export interface paths {
         put?: never;
         /** Generate Stream */
         post: operations["generate_stream_api_sessions__session_id__generate_stream_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/generation-runs/{run_id}/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Resume Generation Stream */
+        get: operations["resume_generation_stream_api_generation_runs__run_id__stream_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/generation-runs/{run_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel Generation */
+        post: operations["cancel_generation_api_generation_runs__run_id__cancel_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1036,6 +1087,22 @@ export interface components {
             recursion_step: number;
             /** Triggered By */
             triggered_by?: components["schemas"]["LoreTrigger"][];
+        };
+        /**
+         * ActiveGenerationOut
+         * @description A reply still generating on the server, which a page can watch again.
+         */
+        ActiveGenerationOut: {
+            /** Run Id */
+            run_id: string;
+            /** Session Id */
+            session_id: string;
+            /** Output Message Id */
+            output_message_id: string;
+            /** Base Message Id */
+            base_message_id?: string | null;
+            /** Base Content */
+            base_content: string;
         };
         /** AuthStatus */
         AuthStatus: {
@@ -4516,6 +4583,26 @@ export interface operations {
             };
         };
     };
+    list_active_generations_api_generation_runs_active_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActiveGenerationOut"][];
+                };
+            };
+        };
+    };
     get_generation_run_api_generation_runs__run_id__get: {
         parameters: {
             query?: never;
@@ -4569,6 +4656,68 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resume_generation_stream_api_generation_runs__run_id__stream_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_generation_api_generation_runs__run_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenerationRunOut"];
                 };
             };
             /** @description Validation Error */

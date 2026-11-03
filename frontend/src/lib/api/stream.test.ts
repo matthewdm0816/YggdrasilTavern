@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { streamGenerate } from "./stream";
+import { GenerationRequestError, GenerationStreamDropped, resumeGeneration, streamGenerate } from "./stream";
 
 const encoder = new TextEncoder();
 const message = {
@@ -60,11 +60,39 @@ describe("streamGenerate", () => {
     ])));
     await expect(streamGenerate("s1", {}, {})).rejects.toThrow("缺少数字字段 token_count");
   });
-  it("reports a connection that ends without a completion or error event", async () => {
+  it("reports a connection that ends without a completion or error event as a drop", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => streamResponse([
       "event: token\ndata: {\"message_id\":\"m1\",\"delta\":\"你\"}\n\n"
     ])));
-    await expect(streamGenerate("s1", {}, {})).rejects.toThrow("生成流已断开，但没有收到完成或错误事件。");
+    const dropped = streamGenerate("s1", {}, {});
+    await expect(dropped).rejects.toBeInstanceOf(GenerationStreamDropped);
+    await expect(dropped).rejects.toThrow("生成流已断开，但没有收到完成或错误事件。");
+  });
+
+  it("ends normally with the stopped reply", async () => {
+    const stopped = vi.fn();
+    vi.stubGlobal("fetch", vi.fn(async () => streamResponse([
+      "event: message_stopped\ndata: " + JSON.stringify({ ...message, status: "cancelled" }) + "\n\n"
+    ])));
+    await streamGenerate("s1", {}, { onStopped: stopped });
+    expect(stopped).toHaveBeenCalledWith(expect.objectContaining({ id: "m1", status: "cancelled" }));
+  });
+
+  it("resumes a run by id and reports a finished run with its status", async () => {
+    const fetch = vi.fn(async () => streamResponse([
+      "event: message_created\ndata: " + JSON.stringify({ ...message, status: "streaming" }) + "\n\n",
+      "event: message_completed\ndata: " + JSON.stringify(message) + "\n\n"
+    ]));
+    vi.stubGlobal("fetch", fetch);
+    const created = vi.fn();
+    await resumeGeneration("run/1", { onCreated: created });
+    expect(fetch).toHaveBeenCalledWith("/api/generation-runs/run%2F1/stream", expect.objectContaining({ credentials: "include" }));
+    expect(created).toHaveBeenCalledWith(expect.objectContaining({ status: "streaming" }));
+
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ detail: "这条回复已经不在生成中" }), { status: 404 })));
+    const gone = resumeGeneration("run", {});
+    await expect(gone).rejects.toBeInstanceOf(GenerationRequestError);
+    await expect(gone).rejects.toMatchObject({ status: 404, message: "这条回复已经不在生成中" });
   });
 
   it("passes provider errors to the callback and rejects with the same detail", async () => {

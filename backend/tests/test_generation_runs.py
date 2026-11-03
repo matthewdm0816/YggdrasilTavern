@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
 
@@ -16,8 +19,17 @@ from app.database import Base, Database, get_db
 from app.main import create_app
 from app.services import generation as generation_service, providers
 from app.services.generation import start_generation
+from app.services.live_generations import GenerationManager, LiveGeneration
 from app.services.token_counter import count_text_tokens
 from app.services.tree import create_message
+
+
+def parse_sse(body: str) -> list[tuple[str, dict]]:
+    events = []
+    for block in body.strip().split("\n\n"):
+        lines = dict(line.split(": ", 1) for line in block.splitlines())
+        events.append((lines["event"], json.loads(lines["data"])))
+    return events
 
 
 def make_client():
@@ -114,12 +126,13 @@ def test_failed_stream_preserves_all_partial_data_and_generation_metadata(monkey
         assert len(run.prompt_hash) == 64
 
 
-def test_cancelled_stream_persists_partial_content_and_cancelled_status(monkeypatch):
+@pytest.mark.asyncio
+async def test_stopped_stream_persists_partial_content_and_cancelled_status(monkeypatch):
     client, testing_session = make_client()
 
-    async def cancelled_stream(profile, context):
+    async def stopped_stream(profile, context):
         # Anthropic-style streams can report a tiny initial usage value before
-        # any deltas. Cancellation means a final cumulative usage never arrives.
+        # any deltas. Stopping means a final cumulative usage never arrives.
         yield providers.ProviderStreamEvent(
             kind="usage",
             usage={
@@ -130,27 +143,30 @@ def test_cancelled_stream_persists_partial_content_and_cancelled_status(monkeypa
         )
         yield providers.ProviderStreamEvent(kind="text", delta="Keep this partial")
         yield providers.ProviderStreamEvent(kind="thinking", delta="Keep this thought")
-        raise asyncio.CancelledError()
+        await asyncio.Event().wait()
 
-    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
-    monkeypatch.setattr(providers, "stream_completion", cancelled_stream)
+    monkeypatch.setattr(providers, "stream_completion", stopped_stream)
     _profile, session = create_profile_and_session(client)
     client.post(
         f"/api/sessions/{session['id']}/messages",
         json={"role": "user", "content": "Start"},
     )
 
-    try:
-        with client.stream("POST", f"/api/sessions/{session['id']}/generate/stream", json={}) as response:
-            "".join(response.iter_text())
-    except BaseException:
-        # The endpoint intentionally re-raises cancellation after durable save.
-        pass
+    manager = GenerationManager()
+    with testing_session() as db:
+        live = await start_generation(session["id"], schemas.GenerateRequest(), db, manager)
+    events = live.watch()
+    async for event in events:
+        if event.name == "thinking":
+            break
+    await manager.stop(live, "cancelled", "Generation stopped by user")
+    assert [event.name async for event in events] == ["message_stopped"]
 
     with testing_session() as db:
         run = db.scalars(select(models.GenerationRun)).one()
         message = db.get(models.Message, run.output_message_id)
         assert run.status == "cancelled"
+        assert run.error == "Generation stopped by user"
         assert run.completed_at is not None
         assert message is not None
         assert message.status == "cancelled"
@@ -418,7 +434,7 @@ def test_parallel_generation_needs_only_a_finished_parent(monkeypatch):
         assert sorted(run.status for run in db.scalars(select(models.GenerationRun))) == ["complete", "streaming"]
 
 
-@pytest.mark.parametrize("terminal_status", ["complete", "failed", "cancelled"])
+@pytest.mark.parametrize("terminal_status", ["complete", "failed", "interrupted"])
 def test_terminal_generation_allows_next_run(monkeypatch, terminal_status):
     client, testing_session = make_client()
     _profile, session = create_profile_and_session(client)
@@ -431,20 +447,17 @@ def test_terminal_generation_allows_next_run(monkeypatch, terminal_status):
         yield providers.ProviderStreamEvent(kind="text", delta="first partial")
         if terminal_status == "failed":
             raise RuntimeError("first provider failed")
-        if terminal_status == "cancelled":
+        if terminal_status == "interrupted":
             raise asyncio.CancelledError()
 
     monkeypatch.setattr(providers, "stream_completion", first_stream)
-    if terminal_status == "cancelled":
-        try:
-            with client.stream("POST", f"/api/sessions/{session['id']}/generate/stream", json={}) as response:
-                "".join(response.iter_text())
-        except asyncio.CancelledError:
-            pass
-    else:
-        with client.stream("POST", f"/api/sessions/{session['id']}/generate/stream", json={}) as response:
-            body = "".join(response.iter_text())
-        assert ("message_completed" if terminal_status == "complete" else "first provider failed") in body
+    with client.stream("POST", f"/api/sessions/{session['id']}/generate/stream", json={}) as response:
+        body = "".join(response.iter_text())
+    assert {
+        "complete": "message_completed",
+        "failed": "first provider failed",
+        "interrupted": "message_stopped",
+    }[terminal_status] in body
 
     with testing_session() as db:
         first_run = db.scalars(select(models.GenerationRun)).one()
@@ -464,44 +477,165 @@ def test_terminal_generation_allows_next_run(monkeypatch, terminal_status):
 
 
 @pytest.mark.asyncio
-async def test_response_cancelled_before_first_event_releases_generation_slot(monkeypatch):
+async def test_closing_the_stream_leaves_the_generation_running(monkeypatch):
     client, testing_session = make_client()
+    release = asyncio.Event()
+
+    async def gated_stream(profile, context):
+        yield providers.ProviderStreamEvent(kind="text", delta="kept ")
+        await release.wait()
+        yield providers.ProviderStreamEvent(kind="text", delta="going")
+
+    monkeypatch.setattr(providers, "stream_completion", gated_stream)
     _profile, session = create_profile_and_session(client)
     client.post(
         f"/api/sessions/{session['id']}/messages",
         json={"role": "user", "content": "start"},
     )
 
+    manager = GenerationManager()
     with testing_session() as db:
-        handle = await start_generation(session["id"], schemas.GenerateRequest(), db)
-        response = GenerationStreamingResponse(handle)
+        live = await start_generation(session["id"], schemas.GenerateRequest(), db, manager)
+    response = GenerationStreamingResponse(live)
 
-        async def receive():
-            return {"type": "http.request", "body": b"", "more_body": False}
+    async def receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
 
-        async def send(message):
-            assert message["type"] == "http.response.start"
-            raise asyncio.CancelledError()
+    async def send(message):
+        # The browser went away before the first event arrived.
+        assert message["type"] == "http.response.start"
+        raise asyncio.CancelledError()
 
-        with pytest.raises(asyncio.CancelledError):
-            await response(
-                {"type": "http", "asgi": {"spec_version": "2.4"}, "method": "POST", "path": "/api/generate"},
-                receive,
-                send,
-            )
+    with pytest.raises(asyncio.CancelledError):
+        await response(
+            {"type": "http", "asgi": {"spec_version": "2.4"}, "method": "POST", "path": "/api/generate"},
+            receive,
+            send,
+        )
 
-        run = db.get(models.GenerationRun, handle.run_id)
-        message = db.get(models.Message, handle.output_message_id)
-        assert run is not None and run.status == "interrupted"
-        assert run.completed_at is not None
-        assert message is not None and message.status == "interrupted"
+    assert not live.task.done()
+    assert not live._watchers
+    with testing_session() as db:
+        assert db.get(models.GenerationRun, live.run_id).status == "streaming"
 
-    async def next_stream(profile, context):
-        yield providers.ProviderStreamEvent(kind="text", delta="next reply")
+    release.set()
+    await asyncio.wait({live.task})
+    with testing_session() as db:
+        run = db.get(models.GenerationRun, live.run_id)
+        message = db.get(models.Message, live.output_message_id)
+        assert run.status == "complete"
+        assert message.status == "complete"
+        assert message.content == "kept going"
+    assert manager.get(live.engine, live.run_id) is None
 
-    monkeypatch.setattr(providers, "stream_completion", next_stream)
-    with client.stream("POST", f"/api/sessions/{session['id']}/generate/stream", json={}) as response:
-        assert "message_completed" in "".join(response.iter_text())
+
+def test_page_can_resume_or_stop_a_running_generation(monkeypatch):
+    client, testing_session = make_client()
+    gate = threading.Event()
+
+    async def gated_stream(profile, context):
+        yield providers.ProviderStreamEvent(kind="text", delta="before ")
+        while not gate.is_set():
+            await asyncio.sleep(0.01)
+        yield providers.ProviderStreamEvent(kind="text", delta="after")
+
+    def wait_until(condition, label):
+        deadline = time.monotonic() + 10
+        while not condition():
+            assert time.monotonic() < deadline, f"Timed out waiting for {label}"
+            time.sleep(0.01)
+
+    with testing_session() as db:
+        engine = db.get_bind()
+    # One event loop serves every request, as in the real server.
+    with client, ThreadPoolExecutor(max_workers=2) as pool:
+        _profile, session = create_profile_and_session(client)
+        prompt = client.post(
+            f"/api/sessions/{session['id']}/messages", json={"role": "user", "content": "start"},
+        ).json()
+        monkeypatch.setattr(providers, "stream_completion", gated_stream)
+        generate_url = f"/api/sessions/{session['id']}/generate/stream"
+        assert client.get("/api/generation-runs/unknown/stream").status_code == 404
+        assert client.post("/api/generation-runs/unknown/cancel").status_code == 404
+
+        # A page that reconnects first sees the reply so far, then the rest.
+        original = pool.submit(lambda: client.post(generate_url, json={}).text)
+        wait_until(lambda: client.get("/api/generation-runs/active").json(), "the active run")
+        [active] = client.get("/api/generation-runs/active").json()
+        assert active["base_message_id"] == prompt["id"]
+        assert active["base_content"] == "start"
+        live = client.app.state.generations.get(engine, active["run_id"])
+        wait_until(lambda: live.message["content"] == "before ", "the first delta")
+        resumed = pool.submit(lambda: client.get(f"/api/generation-runs/{active['run_id']}/stream").text)
+        wait_until(lambda: len(live._watchers) == 2, "the resumed watcher")
+        gate.set()
+        resumed_events = parse_sse(resumed.result(timeout=10))
+        assert [name for name, _data in resumed_events] == ["message_created", "token", "message_completed"]
+        assert resumed_events[0][1]["content"] == "before "
+        assert resumed_events[1][1]["delta"] == "after"
+        assert resumed_events[2][1]["content"] == "before after"
+        assert "message_completed" in original.result(timeout=10)
+        assert client.get("/api/generation-runs/active").json() == []
+
+        # Stopping is an explicit request now that closing a stream is not.
+        gate.clear()
+        original = pool.submit(lambda: client.post(generate_url, json={}).text)
+        wait_until(lambda: client.get("/api/generation-runs/active").json(), "the second run")
+        [active] = client.get("/api/generation-runs/active").json()
+        live = client.app.state.generations.get(engine, active["run_id"])
+        wait_until(lambda: live.message["content"] == "before ", "the second run's first delta")
+        stopped = client.post(f"/api/generation-runs/{active['run_id']}/cancel")
+        assert stopped.status_code == 200, stopped.text
+        assert stopped.json()["status"] == "cancelled"
+        assert parse_sse(original.result(timeout=10))[-1][0] == "message_stopped"
+
+    with testing_session() as db:
+        message = db.get(models.Message, active["output_message_id"])
+        assert message.status == "cancelled"
+        assert message.content == "before "
+
+
+def test_app_shutdown_saves_a_running_generation_as_interrupted(monkeypatch):
+    client, testing_session = make_client()
+
+    async def endless_stream(profile, context):
+        yield providers.ProviderStreamEvent(kind="text", delta="saved before shutdown")
+        await asyncio.Event().wait()
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        with client:
+            _profile, session = create_profile_and_session(client)
+            client.post(f"/api/sessions/{session['id']}/messages", json={"role": "user", "content": "start"})
+            monkeypatch.setattr(providers, "stream_completion", endless_stream)
+            original = pool.submit(lambda: client.post(f"/api/sessions/{session['id']}/generate/stream", json={}).text)
+            deadline = time.monotonic() + 10
+            while not client.get("/api/generation-runs/active").json():
+                assert time.monotonic() < deadline, "Timed out waiting for the run to start"
+                time.sleep(0.01)
+        # Leaving the client runs the app's shutdown, which must save the reply.
+        assert parse_sse(original.result(timeout=10))[-1][0] == "message_stopped"
+
+    with testing_session() as db:
+        run = db.scalars(select(models.GenerationRun)).one()
+        message = db.get(models.Message, run.output_message_id)
+        assert run.status == "interrupted"
+        assert run.error == "Generation interrupted by server shutdown"
+        assert message.status == "interrupted"
+        assert message.content == "saved before shutdown"
+
+
+def test_live_runs_are_scoped_to_their_database():
+    first = create_engine("sqlite:///:memory:")
+    second = create_engine("sqlite:///:memory:")
+    manager = GenerationManager()
+    live = LiveGeneration(
+        engine=first, run_id="run", session_id="session", output_message_id="reply",
+        base_message_id=None, message={"content": "", "thinking_content": "", "usage": {}},
+    )
+    manager._runs[live.run_id] = live
+    assert manager.get(first, "run") is live
+    assert manager.get(second, "run") is None
+    assert manager.active(second) == []
 
 
 def test_simultaneous_starts_from_one_message_create_sibling_replies(tmp_path, monkeypatch):
@@ -540,17 +674,25 @@ def test_simultaneous_starts_from_one_message_create_sibling_replies(tmp_path, m
 
     monkeypatch.setattr(generation_service, "serialize_session_writes", synchronized_start)
 
-    def start_one():
+    async def endless_stream(profile, context):
+        await asyncio.Event().wait()
+        yield ""
+
+    monkeypatch.setattr(providers, "stream_completion", endless_stream)
+
+    async def start_and_shut_down():
+        manager = GenerationManager()
         with database.open_session() as db:
             # The client names the parent; the session path end becomes the first streaming reply.
             request = schemas.GenerateRequest(parent_message_id=prompt_id)
-            handle = asyncio.run(generation_service.start_generation(session_id, request, db))
-            try:
-                # Both runs must stream at the same time before either closes.
-                both_started.wait(timeout=10)
-                return handle.output_message_id
-            finally:
-                asyncio.run(handle.aclose())
+            live = await generation_service.start_generation(session_id, request, db, manager)
+        # Both runs must stream at the same time before either stops.
+        await asyncio.to_thread(both_started.wait, 10)
+        await manager.shutdown()
+        return live.output_message_id
+
+    def start_one():
+        return asyncio.run(start_and_shut_down())
 
     try:
         with ThreadPoolExecutor(max_workers=2) as pool:

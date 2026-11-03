@@ -13,6 +13,7 @@ from app.config import Settings
 from app.database import Base, create_database_engine, get_db
 from app.main import create_app
 from app.services import generation as generation_service, tree as tree_service
+from app.services.live_generations import GenerationManager
 
 
 @pytest.fixture
@@ -347,16 +348,26 @@ def test_generation_reloads_selection_if_deletion_finishes_after_initial_session
         return original_serialize(db, cached_session)
 
     monkeypatch.setattr(generation_service, "serialize_session_writes", finish_deletion_before_lock)
+
+    async def idle_stream(profile, context):
+        await asyncio.Event().wait()
+        yield ""
+
+    monkeypatch.setattr(generation_service.providers, "stream_completion", idle_stream)
+
+    async def start_then_shut_down(db):
+        manager = GenerationManager()
+        live = await generation_service.start_generation(sid, schemas.GenerateRequest(), db, manager)
+        await manager.shutdown()
+        return live
+
     with client.app.state.tree_action_factory() as db:
-        handle = asyncio.run(generation_service.start_generation(sid, schemas.GenerateRequest(), db))
-        try:
-            run = db.get(models.GenerationRun, handle.run_id)
-            assert run.base_message_id == kept
-            contents = [item["content"] for item in run.prompt_snapshot["messages"]]
-            assert "kept branch" in contents
-            assert "deleted branch" not in contents
-        finally:
-            asyncio.run(handle.aclose())
+        live = asyncio.run(start_then_shut_down(db))
+        run = db.get(models.GenerationRun, live.run_id)
+        assert run.base_message_id == kept
+        contents = [item["content"] for item in run.prompt_snapshot["messages"]]
+        assert "kept branch" in contents
+        assert "deleted branch" not in contents
     assert_valid_pointers(client, sid)
 
 

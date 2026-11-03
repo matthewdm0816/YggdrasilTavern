@@ -5,13 +5,26 @@ import { SseParser, type SseEvent } from "./sse";
 import type { Message } from "./types";
 
 export type StreamHandlers = {
+  /** The reply as the server has it so far; a resumed stream starts here too. */
   onCreated?: (message: Message) => void;
   onToken?: (messageId: string, delta: string) => void;
   onThinking?: (messageId: string, delta: string) => void;
   onUsage?: (messageId: string, usage: Record<string, unknown>) => void;
   onComplete?: (message: Message) => void;
+  /** Someone stopped the reply, or the server shut down before it finished. */
+  onStopped?: (message: Message) => void;
   onError?: (messageId: string | undefined, detail: string) => void;
 };
+
+/** The connection ended before the reply did; the server may still be generating it. */
+export class GenerationStreamDropped extends Error {}
+
+/** The server refused to open the stream; status tells a finished run (404) from other failures. */
+export class GenerationRequestError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+  }
+}
 
 function record(value: unknown, event: string): Record<string, unknown> {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
@@ -80,6 +93,12 @@ function dispatchGenerationEvent(
       onTerminal(null);
       return;
     }
+    case "message_stopped": {
+      const message = messageData(data, parsed.event);
+      handlers.onStopped?.(message);
+      onTerminal(null);
+      return;
+    }
     case "error": {
       const messageId = data.message_id;
       if (messageId !== undefined && typeof messageId !== "string") {
@@ -95,23 +114,40 @@ function dispatchGenerationEvent(
   }
 }
 
-export async function streamGenerate(
+/** Start a reply and follow it until it completes, stops or fails. */
+export function streamGenerate(
   sessionId: string,
   payload: GenerateInput,
   handlers: StreamHandlers,
   signal?: AbortSignal
 ): Promise<void> {
-  const path = "/api/sessions/" + sessionId + "/generate/stream";
-  const response = await fetch(API_BASE + path, {
+  return readGenerationStream("/api/sessions/" + sessionId + "/generate/stream", {
     method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  }, handlers, signal);
+}
+
+/** Follow a reply that is already generating, starting from what it has so far. */
+export function resumeGeneration(runId: string, handlers: StreamHandlers, signal?: AbortSignal): Promise<void> {
+  return readGenerationStream("/api/generation-runs/" + encodeURIComponent(runId) + "/stream", {}, handlers, signal);
+}
+
+async function readGenerationStream(
+  path: string,
+  init: RequestInit,
+  handlers: StreamHandlers,
+  signal?: AbortSignal
+): Promise<void> {
+  const response = await fetch(API_BASE + path, {
+    ...init,
     credentials: "include",
-    headers: { "Content-Type": "application/json", ...accountHeaders() },
-    body: JSON.stringify(payload),
+    headers: { ...(init.headers || {}), ...accountHeaders() },
     signal
   });
   if (!response.ok || !response.body) {
     notifyAuthenticationRequired(path, response);
-    throw new Error(await responseError(response));
+    throw new GenerationRequestError(await responseError(response), response.status);
   }
 
   const reader = response.body.getReader();
@@ -134,7 +170,7 @@ export async function streamGenerate(
     parser.push(decoder.decode());
     parser.finish();
     if (signal?.aborted) return;
-    if (!terminalSeen) throw new Error("生成流已断开，但没有收到完成或错误事件。");
+    if (!terminalSeen) throw new GenerationStreamDropped("生成流已断开，但没有收到完成或错误事件。");
     if (terminalError) throw terminalError;
   } finally {
     reader.releaseLock();

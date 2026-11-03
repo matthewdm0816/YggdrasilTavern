@@ -8,7 +8,7 @@ import { download, request, upload } from "./http";
 import type { components } from "./generated";
 import type {
   APIProfile, AuthLogin, AuthStatus, UserProfile, Character, CharacterSummary,
-  ChatSession, ContextPreview, GlobalPromptConfig, GlobalWorldbookRegexConfig, Message,
+  ChatSession, ContextPreview, GenerationRun, GlobalPromptConfig, GlobalWorldbookRegexConfig, Message,
   SessionFolder, SessionTree, MessageDeleteScope, MessageTreeMutation, WorldBook,
   SillyTavernImportReport, ImportedResource, SavedCredential
 } from "./types";
@@ -106,6 +106,9 @@ export const api = {
     request<SessionTree>(`/api/messages/${messageId}/select`, { method: "POST", body: "{}" }),
   createSwipe: (messageId: string, payload: SwipeCreateInput) =>
     request<SessionTree>(`/api/messages/${messageId}/swipes`, { method: "POST", body: JSON.stringify(payload) }),
+  activeGenerations: () => request<components["schemas"]["ActiveGenerationOut"][]>("/api/generation-runs/active"),
+  cancelGeneration: (runId: string) =>
+    request<GenerationRun>(`/api/generation-runs/${encodeURIComponent(runId)}/cancel`, { method: "POST", body: "{}" }),
   contextPreview: (sessionId: string, apiProfileId?: string | null) =>
     request<ContextPreview>(`/api/sessions/${sessionId}/context/preview`, {
       method: "POST",

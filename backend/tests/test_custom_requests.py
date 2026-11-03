@@ -11,6 +11,7 @@ from app import models, schemas
 from app.api.profiles import create_api_profile, discover_api_profile_models, update_api_profile
 from app.database import Base, create_database_engine
 from app.services import providers
+from app.services.live_generations import GenerationManager
 from app.services.provider_protocols.transport import safe_error_text
 
 
@@ -230,14 +231,16 @@ async def test_generation_metadata_stores_header_names_without_values(db, monkey
         yield ProviderStreamEvent(kind="usage", usage={"input_tokens": 12, "output_tokens": 2})
 
     monkeypatch.setattr(providers, "stream_completion", stream)
-    handle = await generation.start_generation(session.id, schemas.GenerateRequest(), db)
-    events = [event async for event in handle.events]
-    run = db.get(models.GenerationRun, handle.run_id)
+    live = await generation.start_generation(session.id, schemas.GenerateRequest(), db, GenerationManager())
+    events = [event async for event in live.watch()]
+    # The reply was saved through the generation's own session.
+    db.expire_all()
+    run = db.get(models.GenerationRun, live.run_id)
     serialized = json.dumps(schemas.GenerationRunOut.model_validate(run).model_dump(mode="json"))
     assert "private-tenant" not in serialized
     assert run.parameters["_yggdrasil_request_settings"]["custom_header_names"] == ["X-Tenant"]
     assert "private-tenant" not in json.dumps([event.data for event in events])
-    assert db.get(models.Message, handle.output_message_id).content == "Partial reply"
+    assert db.get(models.Message, live.output_message_id).content == "Partial reply"
 
 
 @pytest.mark.asyncio

@@ -12,6 +12,7 @@ from .config import Settings, get_settings
 from .database import Database
 from .accounts import Accounts
 from .services.errors import ApplicationError
+from .services.live_generations import GenerationManager
 
 
 def create_app(
@@ -32,6 +33,8 @@ def create_app(
                 accounts.initialize()
             yield
         finally:
+            # Save every live reply before its account database closes.
+            await app.state.generations.shutdown()
             accounts.dispose()
             if owns_database:
                 database.dispose()
@@ -42,6 +45,7 @@ def create_app(
     app.state.accounts = accounts
     app.state.st_import_lock = RLock()
     app.state.st_import_plans = {}
+    app.state.generations = GenerationManager()
 
     @app.exception_handler(ApplicationError)
     async def application_error(_request: Request, exc: ApplicationError) -> JSONResponse:

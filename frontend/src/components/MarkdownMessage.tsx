@@ -12,6 +12,12 @@ type Props = { content: string; previews?: PreviewResolver; showAllReplacements?
 type Controls = { toggled: ReadonlySet<string>; all: boolean; toggle: (id: string) => void };
 const PreviewControls = createContext<Controls | null>(null);
 
+// Roleplay text often uses "~~" as a tone mark, so tildes stay literal text.
+function remarkNoStrikethrough(this: { data(): object }) {
+  const data = this.data() as { micromarkExtensions?: object[] };
+  (data.micromarkExtensions ??= []).push({ disable: { null: ["strikethrough"] } });
+}
+
 // Stable component identities preserve focus when a preview changes its text.
 const components: Components = {
   a: ({ node, ...props }) => <a {...props} target="_blank" rel="noopener noreferrer" />,
@@ -38,7 +44,7 @@ export const MarkdownMessage = memo(function MarkdownMessage({ content, previews
   const plugins = useMemo(() => [previewPlugin(previews ?? (() => []), protectedContent.restore)], [previews, protectedContent]);
   return <PreviewControls.Provider value={{ toggled: selection.ids, all: showAllReplacements, toggle: selection.toggle }}>
     <div className="message-content markdown-body">
-      <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} rehypePlugins={plugins} components={components}>
+      <ReactMarkdown remarkPlugins={[remarkGfm, remarkNoStrikethrough, remarkBreaks]} rehypePlugins={plugins} components={components}>
         {protectedContent.text}
       </ReactMarkdown>
     </div>

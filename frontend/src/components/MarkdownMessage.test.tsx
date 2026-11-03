@@ -24,4 +24,15 @@ describe("MarkdownMessage", () => {
     const html = renderToStaticMarkup(<MarkdownMessage content={"第一段\n\n第二段"} />);
     expect(html.match(/<p>/g)).toHaveLength(2);
   });
+
+  it("shows tildes literally instead of striking text through", () => {
+    const html = renderToStaticMarkup(<MarkdownMessage content={"好的~~那就~~出发吧~啦~"} />);
+    expect(html).not.toContain("<del>");
+    expect(html).toContain("好的~~那就~~出发吧~啦~");
+  });
+
+  it("keeps other GFM syntax such as tables", () => {
+    const html = renderToStaticMarkup(<MarkdownMessage content={"| a | b |\n| - | - |\n| 1 | 2 |"} />);
+    expect(html).toContain("<table>");
+  });
 });

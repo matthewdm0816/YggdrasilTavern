@@ -38,6 +38,7 @@ import type { ActiveGeneration } from "../features/chat/GenerationRegistry";
 import { pathEndGeneration, pathEndId, type UnreadGeneration } from "../features/chat/useChatController";
 import { RegexMessage } from "./RegexMessage";
 import { ActionMenu } from "./ActionMenu";
+import { MessageUsage } from "./MessageUsage";
 import "../styles/chat-message-actions.css";
 
 type Props = {
@@ -587,13 +588,13 @@ export function ChatWorkspace({
                 ) : message.status === "streaming" ? <p className="message-content">…</p> : null}
                 {message.error && <p className="message-error">{messageErrorText(message.error)}</p>}
                 <footer className="message-footer">
-                  {message.role === "assistant" && <small className="message-usage"
-                    title={tokenDisplay.outputEstimated ? "根据已保存的正文和思考内容估算用量" : "模型服务返回的用量"}>
+                  {message.role === "assistant" && <MessageUsage
+                    note={tokenDisplay.outputEstimated ? "根据已保存的正文和思考内容估算用量" : "模型服务返回的用量"}>
                     {inputTokens > 0 && <span>输入 {inputTokens}</span>}
                     <span>输出{tokenDisplay.outputEstimated ? "约 " : " "}{outputTokens || 0} tokens</span>
                     <MessageCacheUsage message={message} />
                     {speed > 0 && <span>{speed.toFixed(1)} tokens/s</span>}
-                  </small>}
+                  </MessageUsage>}
                   <div className="message-branch-actions" aria-label="分支切换">
                     <button className="icon-button" type="button" title="上一个分支" aria-label="上一个分支" disabled={!previous || mutating || Boolean(treeActionLabel)} onClick={() => previous && selectSwipeFromToolbar(previous.id)}><ChevronLeft size={16} /></button>
                     <span className="swipe-counter" aria-label={"第 " + (index + 1) + " 个，共 " + siblings.length + " 个分支"}>{index + 1}/{siblings.length}</span>

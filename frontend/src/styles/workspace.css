@@ -84,7 +84,12 @@
 }
 .message-meta { gap: 8px; font-size: max(0.6875rem, var(--small-text-floor)); }
 .message-footer { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; margin-top: 8px; }
-.message-usage { display: flex; flex: 1 1 180px; flex-wrap: wrap; gap: 2px 9px; color: var(--muted); font-size: max(0.625rem, var(--small-text-floor)); line-height: 1.5; }
+.message-usage { position: relative; display: flex; flex: 1 1 180px; flex-wrap: wrap; gap: 2px 9px; color: var(--muted); font-size: max(0.625rem, var(--small-text-floor)); line-height: 1.5; }
+.message-usage.is-collapsed { overflow: hidden; }
+.message-usage.is-collapsed > span { visibility: hidden; }
+.message-usage .message-usage-toggle { position: absolute; top: 0; left: 0; color: var(--muted); }
+.message-usage-details { display: grid; gap: 4px; font-size: 0.9rem; }
+.message-usage-details > p { margin: 4px 0 0; color: var(--muted); }
 .message-branch-actions { display: flex; align-items: center; gap: 2px; margin-left: auto; }
 .message-branch-actions .icon-button { width: 30px; min-width: 30px; min-height: 30px; height: 30px; }
 .message-branch-actions .swipe-counter { min-width: 30px; text-align: center; color: var(--muted); font-size: max(0.6875rem, var(--small-text-floor)); }

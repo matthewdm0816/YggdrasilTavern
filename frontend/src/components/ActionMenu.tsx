@@ -4,10 +4,10 @@ import { MoreHorizontal } from "lucide-react";
 
 const useBrowserLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
 
-type Props = { label: string; children: ReactNode; className?: string };
+type Props = { label: string; children: ReactNode; className?: string; icon?: ReactNode };
 
 /** A disclosure with normal buttons and form controls; Tab retains its usual behavior. */
-export function ActionMenu({ label, children, className = "" }: Props) {
+export function ActionMenu({ label, children, className = "", icon = <MoreHorizontal size={19} /> }: Props) {
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState({ top: 0, left: 0 });
   const trigger = useRef<HTMLButtonElement>(null);
@@ -54,7 +54,7 @@ export function ActionMenu({ label, children, className = "" }: Props) {
   return <>
     <button ref={trigger} className={`icon-button ${className}`} type="button" title={label} aria-label={label}
       aria-expanded={open} aria-controls={open ? id : undefined} onClick={() => setOpen((value) => !value)}>
-      <MoreHorizontal size={19} />
+      {icon}
     </button>
     {open && createPortal(<div ref={panel} id={id} className="action-menu" aria-label={label} style={position}
       onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget) && event.relatedTarget !== trigger.current) setOpen(false); }}

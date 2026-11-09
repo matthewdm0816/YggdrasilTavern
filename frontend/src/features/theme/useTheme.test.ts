@@ -84,7 +84,7 @@ describe("theme runtime state", () => {
   it("reports storage failures and missing saved skins rather than quietly discarding preferences", async () => {
     saved.set(module.THEME_ID_STORAGE_KEY, "removed-theme");
     await module.initializeTheme();
-    expect(module.useTheme.getState().themeId).toBe("default");
+    expect(module.useTheme.getState().themeId).toBe("claude");
     expect(module.useTheme.getState().error).toContain("removed-theme");
     window.localStorage.setItem = () => { throw new Error("storage denied"); };
     module.useTheme.getState().setMode("dark");

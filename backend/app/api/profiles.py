@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from .. import models, schemas
 from ..database import get_db
 from ..services import providers
+from ..services.copy_names import copy_name
 from ..services.errors import ApplicationError
 from ..services.provider_protocols.request_settings import has_custom_auth, headers_need_replacement, patch_custom_headers
 from ._shared import api_profile_write_data as _api_profile_write_data
@@ -70,6 +71,28 @@ def create_api_profile(payload: schemas.APIProfileCreate, db: Session = Depends(
     db.commit()
     db.refresh(profile)
     return profile
+
+
+@router.post("/api-profiles/{profile_id}/copy", response_model=schemas.APIProfileOut)
+def copy_api_profile(profile_id: str, db: Session = Depends(get_db)) -> models.APIProfile:
+    source = db.get(models.APIProfile, profile_id)
+    if not source:
+        raise HTTPException(status_code=404, detail="API profile not found")
+    if source.api_key_env and not db.info.get("allow_server_credentials", True):
+        raise HTTPException(403, "普通用户请填写自己的 API Key，不能读取服务器环境变量")
+    data = {
+        column.key: getattr(source, column.key)
+        for column in models.APIProfile.__table__.columns
+        if column.key not in {"id", "name", "created_at", "updated_at"}
+    }
+    copied = models.APIProfile(
+        name=copy_name(source.name, db.scalars(select(models.APIProfile.name)), max_length=120),
+        **data,
+    )
+    db.add(copied)
+    db.commit()
+    db.refresh(copied)
+    return copied
 
 
 @router.patch("/api-profiles/{profile_id}", response_model=schemas.APIProfileOut)

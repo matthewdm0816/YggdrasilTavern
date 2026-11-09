@@ -39,6 +39,8 @@ export const api = {
   profiles: () => request<APIProfile[]>("/api/api-profiles"),
   createProfile: (payload: ProfileCreateInput) =>
     request<APIProfile>("/api/api-profiles", { method: "POST", body: JSON.stringify(payload) }),
+  copyProfile: (profileId: string) =>
+    request<APIProfile>(`/api/api-profiles/${profileId}/copy`, { method: "POST" }),
   updateProfile: (profileId: string, payload: ProfileUpdateInput) =>
     request<APIProfile>(`/api/api-profiles/${profileId}`, { method: "PATCH", body: JSON.stringify(payload) }),
   deleteProfile: (profileId: string) =>
@@ -91,6 +93,8 @@ export const api = {
   },
   createSession: (payload: SessionCreateInput) =>
     request<ChatSession>("/api/sessions", { method: "POST", body: JSON.stringify(payload) }),
+  copySession: (sessionId: string) =>
+    request<ChatSession>(`/api/sessions/${sessionId}/copy`, { method: "POST" }),
   updateSession: (sessionId: string, payload: SessionUpdateInput) =>
     request<ChatSession>(`/api/sessions/${sessionId}`, { method: "PATCH", body: JSON.stringify(payload) }),
   tree: (sessionId: string, signal?: AbortSignal) => request<SessionTree>(`/api/sessions/${sessionId}/tree`, { signal }),

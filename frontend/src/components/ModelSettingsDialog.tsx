@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { AlertCircle, CloudDownload, Eye, EyeOff, LoaderCircle, Pencil, Plus, Trash2, X } from "lucide-react";
+import { AlertCircle, CloudDownload, CopyPlus, Eye, EyeOff, LoaderCircle, Pencil, Plus, Trash2, X } from "lucide-react";
 import { api, APIProfile, ProviderType, RemoteModelInfo } from "../lib/api";
 import { sortByName } from "../lib/order";
 import {
@@ -389,6 +389,21 @@ export function ModelSettingsDialog({
     }
   }
 
+  async function copyProfile(item: APIProfile) {
+    setProfileError(null);
+    setProfileNotice(null);
+    setBusy(true);
+    try {
+      const copied = await api.copyProfile(item.id);
+      setProfileNotice(`已创建 API 配置“${copied.name}”。`);
+      await onRefresh();
+    } catch (exc) {
+      reportProfileError(`复制 API 配置失败：${exc instanceof Error ? exc.message : String(exc)}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function deleteProfile(item: APIProfile) {
     if (!window.confirm(`删除连接配置“${item.name}”？`)) return;
     setProfileError(null);
@@ -494,6 +509,7 @@ export function ModelSettingsDialog({
               <>
                 <button className="icon-button" type="button" disabled={busy || refreshingProfileId !== null} title={`编辑 ${activeProfile.name}`} aria-label={`编辑 ${activeProfile.name}`} onClick={() => editProfile(activeProfile)}><Pencil size={15} /></button>
                 <button className="icon-button" type="button" disabled={busy || refreshingProfileId !== null} title="从远端刷新模型列表" aria-label={`刷新 ${activeProfile.name} 的模型列表`} onClick={() => refreshProfileModels(activeProfile.id)}>{refreshingProfileId === activeProfile.id && !switchingModel ? <LoaderCircle size={15} className="model-loading-spinner" aria-hidden="true" /> : <CloudDownload size={15} />}</button>
+                <button className="icon-button" type="button" disabled={busy || refreshingProfileId !== null} title={`复制 API 配置：${activeProfile.name}`} aria-label={`复制 API 配置：${activeProfile.name}`} onClick={() => void copyProfile(activeProfile)}><CopyPlus size={15} /></button>
                 <button className="icon-button danger-button" type="button" disabled={busy || refreshingProfileId !== null} title={`删除 ${activeProfile.name}`} aria-label={`删除 ${activeProfile.name}`} onClick={() => deleteProfile(activeProfile)}><Trash2 size={15} /></button>
               </>
             )}

@@ -601,7 +601,7 @@ export function ChatWorkspace({
                     <button className="icon-button" type="button" title="下一个分支" aria-label="下一个分支" disabled={!next || mutating || Boolean(treeActionLabel)} onClick={() => next && selectSwipeFromToolbar(next.id)}><ChevronRight size={16} /></button>
                     <button className="icon-button message-quick-action" type="button" title="编辑消息" aria-label="编辑消息" disabled={editBusy || message.status === "streaming"} onClick={() => startEdit(message)}><Edit3 size={15} /></button>
                     {message.role === "assistant" && (
-                      <button className="icon-button message-quick-action" type="button" title="重新生成此回复" aria-label="重新生成此回复" disabled={editBusy || !canGenerate || message.status === "streaming"} onClick={() => onRegenerate(message.id)}><RefreshCcw size={15} /></button>
+                      <button className="icon-button message-quick-action" type="button" title="重新生成此回复" aria-label="重新生成此回复" disabled={editBusy || !canGenerate} onClick={() => onRegenerate(message.id)}><RefreshCcw size={15} /></button>
                     )}
                     <ActionMenu label="消息操作">
                       {(hasHoverRules || (macroDisplay.mode === "hover" && (containsMacros(message.content) || containsMacros(message.thinking_content)))) && <button type="button" data-close-menu onClick={() => setPreviewReplacements((current) => ({ ...current, [message.id]: !current[message.id] }))}>{previewReplacements[message.id] ? "恢复原文" : "整条显示替换后"}</button>}
@@ -609,7 +609,7 @@ export function ChatWorkspace({
                       {message.role === "assistant" && onReadMessage && <button type="button" data-close-menu disabled={editBusy || message.status !== "complete"} onClick={() => onReadMessage(message)}><Volume2 size={16} />朗读消息…</button>}
                       <button type="button" data-close-menu disabled={editBusy || message.status === "streaming"} onClick={() => void duplicateMessage(message)}><CopyPlus size={16} />复制为新分支</button>
                       <button type="button" data-close-menu disabled={editBusy || message.status === "streaming"} onClick={() => startEdit(message)}><Edit3 size={16} />编辑消息</button>
-                      {message.role === "assistant" && <button type="button" data-close-menu disabled={editBusy || !canGenerate || message.status === "streaming"} onClick={() => onRegenerate(message.id)}><RefreshCcw size={16} />重新生成此回复</button>}
+                      {message.role === "assistant" && <button type="button" data-close-menu disabled={editBusy || !canGenerate} onClick={() => onRegenerate(message.id)}><RefreshCcw size={16} />重新生成此回复</button>}
                       <div className="message-menu-divider" role="separator" />
                       {(["assistant", "user", "system"] as const).filter((role) => role !== message.role).map((role) => (
                         <button key={role} type="button" data-close-menu disabled={messageActionsBusy} onClick={() => changeMessageRole(message, role)}><UserRound size={16} />改为{role === "assistant" ? "角色" : role === "user" ? "用户" : "系统"}消息</button>

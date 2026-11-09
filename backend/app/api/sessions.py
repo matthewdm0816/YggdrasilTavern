@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from .. import models, schemas
 from ..database import get_db
+from ..services.copy_names import copy_name
 from ..services.prompt_builder import apply_context_token_limit, build_context, build_limited_context
 from ..services.macros import expand_message_content
 from ..services.token_counter import cached_tokens_from_usage, count_text_tokens
@@ -25,6 +26,7 @@ from ..services.tree import (
     prepare_tree_mutation,
     prune_empty_branches,
     select_message,
+    serialize_session_writes,
 )
 from ._shared import (
     normalize_session_preset_or_422 as _normalize_session_preset_or_422,
@@ -109,6 +111,47 @@ def create_session(payload: schemas.SessionCreate, db: Session = Depends(get_db)
         db.rollback()
         raise
     return session
+
+
+@router.post("/sessions/{session_id}/copy", response_model=schemas.SessionOut)
+def copy_session(session_id: str, db: Session = Depends(get_db)) -> models.ChatSession:
+    source = get_session_or_404(db, session_id)
+    serialize_session_writes(db, source)
+    copied = models.ChatSession(
+        title=copy_name(source.title, db.scalars(select(models.ChatSession.title))),
+        character_id=source.character_id, api_profile_id=source.api_profile_id,
+        worldbook_id=source.worldbook_id, folder_id=source.folder_id, preset=source.preset,
+        archived=source.archived, pinned=source.pinned,
+    )
+    db.add(copied)
+    db.flush()
+
+    originals = list_messages(db, source.id)
+    messages = {}
+    for original in originals:
+        data = {
+            column.key: getattr(original, column.key)
+            for column in models.Message.__table__.columns
+            if column.key not in {"id", "session_id", "parent_id", "selected_child_id"}
+        }
+        if original.status == "streaming":
+            data.update(status="interrupted", error="复制时原回复仍在生成，已保留当时的内容。")
+        messages[original.id] = models.Message(session_id=copied.id, **data)
+    db.add_all(messages.values())
+    db.flush()
+
+    # Insert first so every foreign key can point at a message in the copy.
+    def copied_id(original_id: str | None) -> str | None:
+        return messages[original_id].id if original_id is not None else None
+
+    for original in originals:
+        message = messages[original.id]
+        message.parent_id = copied_id(original.parent_id)
+        message.selected_child_id = copied_id(original.selected_child_id)
+    copied.active_root_child_id = copied_id(source.active_root_child_id)
+    db.commit()
+    db.refresh(copied)
+    return copied
 
 
 @router.patch("/sessions/{session_id}", response_model=schemas.SessionOut)

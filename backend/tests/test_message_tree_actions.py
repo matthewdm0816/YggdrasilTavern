@@ -76,6 +76,55 @@ def assert_valid_pointers(client, session_id):
         assert db.execute(text("PRAGMA foreign_key_check")).all() == []
 
 
+def test_copy_session_keeps_all_branches_and_freezes_partial_output(client):
+    sid = session(client)
+    root = message(client, sid, "root")
+    alternate = message(client, sid, "alternate", root)
+    partial = message(client, sid, "partial", root, thinking="thinking", status="streaming")
+    source = tree(client, sid)
+
+    response = client.post(f"/api/sessions/{sid}/copy")
+    assert response.status_code == 200, response.text
+    copied = response.json()
+    assert copied["title"] == source["session"]["title"] + "（副本）"
+    assert copied["preset"] == source["session"]["preset"]
+    result = tree(client, copied["id"])
+    by_content = {item["content"]: item for item in result["messages"]}
+    assert set(by_content) == {"root", "alternate", "partial"}
+    assert ids(result).isdisjoint({root, alternate, partial})
+    assert by_content["alternate"]["parent_id"] == by_content["root"]["id"]
+    assert result["active_path_ids"] == [by_content["root"]["id"], by_content["partial"]["id"]]
+    assert by_content["partial"]["thinking_content"] == "thinking"
+    assert by_content["partial"]["status"] == "interrupted"
+    assert tree(client, sid) == source
+    assert_valid_pointers(client, copied["id"])
+
+
+def test_copy_api_profile_preserves_secrets_without_returning_them(client):
+    with client.app.state.tree_action_factory() as db:
+        profile = models.APIProfile(
+            name="Original", provider_type="openai_chat_completions", model="test",
+            base_url="https://example.invalid", api_key="test-only-key",
+            custom_headers={"X-Token": "test-only-header"}, default_params={"temperature": 0.5},
+        )
+        db.add(profile)
+        db.commit()
+        profile_id = profile.id
+
+    first = client.post(f"/api/api-profiles/{profile_id}/copy")
+    second = client.post(f"/api/api-profiles/{profile_id}/copy")
+    assert first.status_code == second.status_code == 200
+    assert first.json()["name"] == "Original（副本）"
+    assert second.json()["name"] == "Original（副本 2）"
+    assert "test-only" not in first.text + second.text
+    with client.app.state.tree_action_factory() as db:
+        copied = db.get(models.APIProfile, first.json()["id"])
+        assert copied.id != profile_id
+        assert copied.api_key == "test-only-key"
+        assert copied.custom_headers == {"X-Token": "test-only-header"}
+        assert copied.default_params == {"temperature": 0.5}
+
+
 def test_delete_selected_swipe_removes_only_its_descendants_and_selects_previous(client):
     sid = session(client)
     root = message(client, sid, "root")

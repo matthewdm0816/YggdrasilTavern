@@ -42,5 +42,8 @@ describe("editing while a reply streams", () => {
     const editButton = (messageId: string) => messageHtml(html, messageId).match(/<button[^>]*aria-label="编辑消息"[^>]*>/)?.[0];
     expect(editButton("prompt")).not.toContain("disabled");
     expect(editButton("reply")).toContain("disabled");
+    const regenerate = messageHtml(html, "reply").match(/<button[^>]*aria-label="重新生成此回复"[^>]*>/)?.[0];
+    expect(regenerate).toBeDefined();
+    expect(regenerate).not.toContain("disabled");
   });
 });

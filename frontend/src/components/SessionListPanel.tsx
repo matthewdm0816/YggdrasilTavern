@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Archive, ArchiveRestore, ChevronDown, ChevronRight, Folder, FolderPlus, MessageSquarePlus, Pin, PinOff, Plus, Search, Star, X } from "lucide-react";
+import { Archive, ArchiveRestore, ChevronDown, ChevronRight, CopyPlus, Folder, FolderPlus, MessageSquarePlus, Pin, PinOff, Plus, Search, Star, X } from "lucide-react";
 import { api, CharacterSummary, ChatSession, SessionFolder } from "../lib/api";
 import { sortByName } from "../lib/order";
 import { ActionMenu } from "./ActionMenu";
@@ -43,6 +43,7 @@ export function SessionListPanel({
   const [selectedFolderId, setSelectedFolderId] = useState("");
   const [sessionEditorOpen, setSessionEditorOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [copyingSession, setCopyingSession] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [folders, setFolders] = useState<SessionFolder[]>([]);
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
@@ -100,6 +101,22 @@ export function SessionListPanel({
       else next.add(folderId);
       return next;
     });
+  }
+
+  async function copySession(session: ChatSession) {
+    setCopyingSession(true);
+    try {
+      const copied = await api.copySession(session.id);
+      await onRefresh();
+      const folderId = copied.folder_id;
+      if (folderId) setExpandedFolders((current) => new Set([...current, folderId]));
+      setSearchQuery("");
+      onSelectSession(copied.id);
+    } catch (exc) {
+      onError?.(`复制会话失败：${exc instanceof Error ? exc.message : String(exc)}`);
+    } finally {
+      setCopyingSession(false);
+    }
   }
 
   async function togglePin(session: ChatSession) {
@@ -222,6 +239,9 @@ export function SessionListPanel({
         </button>
         <div className="session-actions">
           <ActionMenu label={`会话“${session.title}”操作`} className="session-actions-menu">
+            <button type="button" data-close-menu disabled={copyingSession} onClick={() => void copySession(session)}>
+              <CopyPlus size={15} />复制会话
+            </button>
             <button type="button" data-close-menu onClick={() => void togglePin(session)}>
               {session.pinned ? <PinOff size={15} /> : <Pin size={15} />}
               {session.pinned ? "取消置顶" : "置顶会话"}

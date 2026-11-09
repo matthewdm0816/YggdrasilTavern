@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "defaultThemeId": "default",
+  "defaultThemeId": "claude",
   "themes": [
     {
       "id": "default",

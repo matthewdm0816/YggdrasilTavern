@@ -6,7 +6,7 @@ describe("runtime theme file loading", () => {
   it("requests the replaceable file without using the browser cache", async () => {
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify(source), { status: 200 }));
     const config = await loadThemeConfig("/themes.json", fetcher);
-    expect(config.defaultThemeId).toBe("default");
+    expect(config.defaultThemeId).toBe("claude");
     expect(fetcher).toHaveBeenCalledWith("/themes.json", expect.objectContaining({ cache: "no-store", credentials: "same-origin", signal: expect.any(AbortSignal) }));
   });
 

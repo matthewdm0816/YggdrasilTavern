@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text, event, inspect
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, event, inspect
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
@@ -215,7 +215,7 @@ class WorldBookEntry(TimestampMixin, Base):
     __tablename__ = "worldbook_entries"
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=uuid_str)
-    worldbook_id: Mapped[str] = mapped_column(ForeignKey("worldbooks.id", ondelete="CASCADE"), nullable=False)
+    worldbook_id: Mapped[str] = mapped_column(ForeignKey("worldbooks.id", ondelete="CASCADE"), nullable=False, index=True)
     uid: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
     keys: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
     secondary_keys: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
@@ -255,10 +255,15 @@ class SessionFolder(TimestampMixin, Base):
 
 class ChatSession(TimestampMixin, Base):
     __tablename__ = "sessions"
+    __table_args__ = (
+        Index("ix_sessions_archived_pinned_last_activity_at", "archived", "pinned", "last_activity_at"),
+    )
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=uuid_str)
     title: Mapped[str] = mapped_column(String(200), nullable=False)
-    character_id: Mapped[Optional[str]] = mapped_column(ForeignKey("characters.id", ondelete="SET NULL"), nullable=True)
+    character_id: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("characters.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     api_profile_id: Mapped[Optional[str]] = mapped_column(ForeignKey("api_profiles.id", ondelete="SET NULL"), nullable=True)
     worldbook_id: Mapped[Optional[str]] = mapped_column(ForeignKey("worldbooks.id", ondelete="SET NULL"), nullable=True)
     folder_id: Mapped[Optional[str]] = mapped_column(ForeignKey("session_folders.id", ondelete="SET NULL"), nullable=True)
@@ -273,6 +278,7 @@ class ChatSession(TimestampMixin, Base):
             name="fk_sessions_active_root_child_id_messages",
         ),
         nullable=True,
+        index=True,
     )
     last_activity_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
 
@@ -294,13 +300,17 @@ class ChatSession(TimestampMixin, Base):
 
 class Message(TimestampMixin, Base):
     __tablename__ = "messages"
+    __table_args__ = (
+        Index("ix_messages_session_id_parent_id_sort_order", "session_id", "parent_id", "sort_order"),
+    )
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=uuid_str)
     session_id: Mapped[str] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False)
-    parent_id: Mapped[Optional[str]] = mapped_column(ForeignKey("messages.id"), nullable=True)
+    parent_id: Mapped[Optional[str]] = mapped_column(ForeignKey("messages.id"), nullable=True, index=True)
     selected_child_id: Mapped[Optional[str]] = mapped_column(
         ForeignKey("messages.id", ondelete="SET NULL", name="fk_messages_selected_child_id_messages"),
         nullable=True,
+        index=True,
     )
     role: Mapped[str] = mapped_column(String(40), nullable=False)
     speaker: Mapped[str] = mapped_column(String(200), default="", nullable=False)
@@ -337,7 +347,9 @@ class GenerationRun(TimestampMixin, Base):
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=uuid_str)
     session_id: Mapped[str] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False, index=True)
-    base_message_id: Mapped[Optional[str]] = mapped_column(ForeignKey("messages.id", ondelete="SET NULL"), nullable=True)
+    base_message_id: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("messages.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     output_message_id: Mapped[Optional[str]] = mapped_column(
         ForeignKey("messages.id", ondelete="SET NULL"), nullable=True, unique=True
     )

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from collections import defaultdict, deque
+from collections.abc import Sequence
 from typing import List, Literal, Optional
 
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, func, inspect as sa_inspect, select, update
 from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.sql.base import ExecutableOption
 
 from .. import models
 from .errors import ApplicationError
@@ -66,34 +68,102 @@ def selected_child(db: Session, parent: models.Message) -> Optional[models.Messa
     if not parent.selected_child_id:
         return None
     child = db.get(models.Message, parent.selected_child_id)
-    if not child or child.parent_id != parent.id:
+    if not child or child.session_id != parent.session_id or child.parent_id != parent.id:
         return None
     return child
 
 
-def active_path(db: Session, session: models.ChatSession) -> List[models.Message]:
-    path: List[models.Message] = []
+def _cached_identity_message(db: Session, message_id: str) -> Optional[models.Message]:
+    cached = db.identity_map.get(db.identity_key(models.Message, message_id))
+    if cached is None:
+        return None
+    state = sa_inspect(cached)
+    if state.expired or state.deleted:
+        return None
+    return cached
+
+
+def _walk_active_path(
+    session: models.ChatSession,
+    messages: Sequence[models.Message],
+) -> List[models.Message]:
+    by_id = {message.id: message for message in messages if message.session_id == session.id}
     current: Optional[models.Message] = None
     if session.active_root_child_id:
-        root = db.get(models.Message, session.active_root_child_id)
-        if root and root.session_id == session.id and root.parent_id is None:
+        root = by_id.get(session.active_root_child_id)
+        if root is not None and root.parent_id is None:
             current = root
 
     if current is None:
-        current = db.scalars(
-            select(models.Message)
-            .where(models.Message.session_id == session.id, models.Message.parent_id.is_(None))
-            .order_by(models.Message.sort_order, models.Message.created_at)
-        ).first()
+        current = next(
+            (message for message in messages if message.session_id == session.id and message.parent_id is None),
+            None,
+        )
 
-    while current:
+    path: List[models.Message] = []
+    seen: set[str] = set()
+    while current is not None and current.id not in seen:
+        seen.add(current.id)
         path.append(current)
-        current = selected_child(db, current)
+        if not current.selected_child_id:
+            break
+        child = by_id.get(current.selected_child_id)
+        if child is None or child.parent_id != current.id:
+            break
+        current = child
     return path
 
 
-def active_path_ids(db: Session, session: models.ChatSession) -> List[str]:
-    return [message.id for message in active_path(db, session)]
+def active_path(
+    db: Session,
+    session: models.ChatSession,
+    *,
+    messages: Optional[Sequence[models.Message]] = None,
+    options: Sequence[ExecutableOption] = (),
+) -> List[models.Message]:
+    if messages is not None:
+        return _walk_active_path(session, messages)
+
+    if not options and session.active_root_child_id:
+        root = _cached_identity_message(db, session.active_root_child_id)
+        if root is not None and root.session_id == session.id and root.parent_id is None:
+            cached_path: List[models.Message] = []
+            seen: set[str] = set()
+            current: Optional[models.Message] = root
+            complete = True
+            while current is not None and current.id not in seen:
+                seen.add(current.id)
+                cached_path.append(current)
+                if not current.selected_child_id:
+                    break
+                child = _cached_identity_message(db, current.selected_child_id)
+                if child is None:
+                    complete = False
+                    break
+                if child.session_id != session.id or child.parent_id != current.id:
+                    break
+                current = child
+            if complete:
+                return cached_path
+
+    stmt = (
+        select(models.Message)
+        .where(models.Message.session_id == session.id)
+        .order_by(models.Message.sort_order, models.Message.created_at)
+    )
+    if options:
+        stmt = stmt.options(*options)
+    loaded = list(db.scalars(stmt))
+    return _walk_active_path(session, loaded)
+
+
+def active_path_ids(
+    db: Session,
+    session: models.ChatSession,
+    *,
+    messages: Optional[Sequence[models.Message]] = None,
+) -> List[str]:
+    return [message.id for message in active_path(db, session, messages=messages)]
 
 
 def ancestor_path(
@@ -109,10 +179,36 @@ def ancestor_path(
     of silently compiling the wrong conversation history.
     """
 
+    if not include_self and not message.parent_id:
+        return []
+    if include_self and not message.parent_id:
+        return [message]
+
+    by_id: Optional[dict[str, models.Message]] = None
+
+    def resolve_message(message_id: Optional[str]) -> Optional[models.Message]:
+        nonlocal by_id
+        if not message_id:
+            return None
+        if by_id is None:
+            cached = _cached_identity_message(db, message_id)
+            if cached is not None:
+                return cached
+            by_id = {
+                row.id: row
+                for row in db.scalars(
+                    select(models.Message).where(models.Message.session_id == message.session_id)
+                )
+            }
+            by_id.setdefault(message.id, message)
+        found = by_id.get(message_id)
+        if found is not None:
+            return found
+        # Fall back to primary-key lookup only for dangling or cross-session links.
+        return db.get(models.Message, message_id)
+
     reverse_path: List[models.Message] = []
-    current: Optional[models.Message] = message
-    if not include_self:
-        current = db.get(models.Message, message.parent_id) if message.parent_id else None
+    current: Optional[models.Message] = message if include_self else resolve_message(message.parent_id)
     seen: set[str] = set()
     while current is not None:
         if current.id in seen:
@@ -121,7 +217,7 @@ def ancestor_path(
             raise ApplicationError(status_code=409, detail="Message parent belongs to another session")
         seen.add(current.id)
         reverse_path.append(current)
-        current = db.get(models.Message, current.parent_id) if current.parent_id else None
+        current = resolve_message(current.parent_id)
     reverse_path.reverse()
     return reverse_path
 
@@ -140,12 +236,21 @@ def _select_path(db: Session, session: models.ChatSession, path: List[models.Mes
 
 
 def select_message(db: Session, message: models.Message) -> models.ChatSession:
+    message_id = message.id
     session = get_session_or_404(db, message.session_id)
-    _select_path(db, session, ancestor_path(db, message))
-    session.last_activity_at = models.utc_now()
-    db.commit()
-    db.refresh(session)
-    return session
+    try:
+        serialize_session_writes(db, session)
+        refreshed_message = db.get(models.Message, message_id, populate_existing=True)
+        if refreshed_message is None:
+            raise ApplicationError(status_code=404, detail="Message not found")
+        _select_path(db, session, ancestor_path(db, refreshed_message))
+        session.last_activity_at = models.utc_now()
+        db.commit()
+        db.refresh(session)
+        return session
+    except Exception:
+        db.rollback()
+        raise
 
 
 def create_message(
@@ -203,19 +308,28 @@ def create_swipe(
     status: str = "complete",
     model: str | None = None,
 ) -> models.Message:
+    base_message_id = base_message.id
     session = get_session_or_404(db, base_message.session_id)
-    return create_message(
-        db,
-        session,
-        parent_id=base_message.parent_id,
-        role=role or base_message.role,
-        content=content,
-        thinking_content=thinking_content,
-        speaker=base_message.speaker if speaker is None else speaker,
-        model=model,
-        status=status,
-        select_new=True,
-    )
+    try:
+        serialize_session_writes(db, session)
+        refreshed_base = db.get(models.Message, base_message_id, populate_existing=True)
+        if refreshed_base is None:
+            raise ApplicationError(status_code=404, detail="Message not found")
+        return create_message(
+            db,
+            session,
+            parent_id=refreshed_base.parent_id,
+            role=role or refreshed_base.role,
+            content=content,
+            thinking_content=thinking_content,
+            speaker=refreshed_base.speaker if speaker is None else speaker,
+            model=model,
+            status=status,
+            select_new=True,
+        )
+    except Exception:
+        db.rollback()
+        raise
 
 
 def last_active_message(db: Session, session: models.ChatSession) -> Optional[models.Message]:

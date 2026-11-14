@@ -5,7 +5,7 @@ from typing import Any, Dict, List
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from .. import models, schemas
 from ..database import get_db
@@ -23,7 +23,13 @@ def _create_worldbook_model(payload: schemas.WorldBookCreate) -> models.WorldBoo
 
 @router.get("/worldbooks", response_model=List[schemas.WorldBookOut])
 def list_worldbooks(db: Session = Depends(get_db)) -> List[models.WorldBook]:
-    return list(db.scalars(select(models.WorldBook).order_by(models.WorldBook.updated_at.desc())))
+    return list(
+        db.scalars(
+            select(models.WorldBook)
+            .options(selectinload(models.WorldBook.entries))
+            .order_by(models.WorldBook.updated_at.desc())
+        )
+    )
 
 
 @router.post("/worldbooks", response_model=schemas.WorldBookOut)
@@ -151,7 +157,6 @@ def delete_worldbook(worldbook_id: str, db: Session = Depends(get_db)) -> Dict[s
         if remaining != configured_ids:
             preset["worldbook_ids"] = remaining
             session.preset = preset
-            session.last_activity_at = models.utc_now()
         if session.worldbook_id == worldbook.id:
             session.worldbook_id = None
     global_config = db.get(models.GlobalWorldbookRegexConfig, "default")

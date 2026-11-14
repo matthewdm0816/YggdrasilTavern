@@ -26,6 +26,8 @@ type GenerateOptions = {
   /** Reply below this message; defaults to the end of the displayed path. */
   parentMessageId?: string | null;
   sessionId?: string;
+  /** Resolve as soon as the server creates the reply node instead of waiting for the full stream. */
+  resolveOnStart?: boolean;
 };
 
 /** Opens one HTTP stream of a reply: the first request, or a resume after a lost connection. */
@@ -204,7 +206,12 @@ export function useChatController({ selectedSessionId, activeProfileId, generati
     }
   }
 
-  async function handleGenerate({ regenerateMessageId, parentMessageId, sessionId: sessionIdOverride }: GenerateOptions = {}): Promise<boolean> {
+  async function handleGenerate({
+    regenerateMessageId,
+    parentMessageId,
+    sessionId: sessionIdOverride,
+    resolveOnStart
+  }: GenerateOptions = {}): Promise<boolean> {
     const sessionId = sessionIdOverride || selectedSessionId;
     if (!sessionId) return false;
     if (pendingMutations.current.has(sessionId)) {
@@ -231,23 +238,48 @@ export function useChatController({ selectedSessionId, activeProfileId, generati
     });
     publishGenerations();
     setSessionError(sessionId, null);
-    return runGeneration(key, sessionId, (handlers, signal) => streamGenerate(sessionId, {
+    const open: OpenGenerationStream = (handlers, signal) => streamGenerate(sessionId, {
       regenerate_message_id: regenerateMessageId || null,
       parent_message_id: regenerateMessageId ? null : parentId,
       api_profile_id: activeProfileId
-    }, handlers, signal));
+    }, handlers, signal);
+    if (!resolveOnStart) {
+      return runGeneration(key, sessionId, open);
+    }
+    return new Promise<boolean>((resolve) => {
+      let settled = false;
+      const finish = (started: boolean) => {
+        if (settled) return;
+        settled = true;
+        resolve(started);
+      };
+      void runGeneration(key, sessionId, open, () => finish(true)).then(
+        () => finish(false),
+        () => finish(false)
+      );
+    });
   }
 
-  function generationHandlers(key: string, sessionId: string, activate: boolean, onSnapshot: () => void): StreamHandlers {
+  function generationHandlers(
+    key: string,
+    sessionId: string,
+    activate: boolean,
+    onSnapshot: () => void,
+    onStarted?: () => void
+  ): StreamHandlers {
     return {
       onCreated: (message) => {
         onSnapshot();
         const runId = message.generation_run?.id ?? null;
-        if (generations.current.attach(key, message.id, runId) && runId) void cancelRun(sessionId, runId);
+        const stopBeforeCreate = generations.current.attach(key, message.id, runId);
+        if (stopBeforeCreate && runId) void cancelRun(sessionId, runId);
         publishGenerations();
         epochs.current.advance(sessionId);
         // A resumed stream restates the reply so far; it must not move the displayed branch.
         updateTree(sessionId, (current) => upsertTreeMessage(current, message, activate));
+        if (!stopBeforeCreate && !generations.current.isClosed(key)) {
+          onStarted?.();
+        }
       },
       onToken: (messageId, delta) => updateTree(sessionId, (current) => current ? {
         ...current,
@@ -279,15 +311,29 @@ export function useChatController({ selectedSessionId, activeProfileId, generati
   }
 
   /** Follow one reply across lost connections until it completes, stops or fails. */
-  async function followGeneration(key: string, sessionId: string, open: OpenGenerationStream) {
+  async function followGeneration(
+    key: string,
+    sessionId: string,
+    open: OpenGenerationStream,
+    onStarted?: () => void
+  ) {
     const registry = generations.current;
     let follow = open;
     let activate = true;
     let failures = 0;
+    let notifiedStart = false;
+    const notifyStartedOnce = () => {
+      if (notifiedStart) return;
+      notifiedStart = true;
+      onStarted?.();
+    };
     while (true) {
       let caughtUp = false;
       try {
-        await follow(generationHandlers(key, sessionId, activate, () => { caughtUp = true; }), registry.connect(key));
+        await follow(
+          generationHandlers(key, sessionId, activate, () => { caughtUp = true; }, notifyStartedOnce),
+          registry.connect(key)
+        );
         return;
       } catch (cause) {
         if (registry.isClosed(key)) return;
@@ -314,10 +360,16 @@ export function useChatController({ selectedSessionId, activeProfileId, generati
     }
   }
 
-  async function runGeneration(key: string, sessionId: string, open: OpenGenerationStream): Promise<boolean> {
+  async function runGeneration(
+    key: string,
+    sessionId: string,
+    open: OpenGenerationStream,
+    onStarted?: () => void
+  ): Promise<boolean> {
     let succeeded = false;
+    let cancelledBeforeCreate = false;
     try {
-      await followGeneration(key, sessionId, open);
+      await followGeneration(key, sessionId, open, onStarted);
       succeeded = true;
     } catch (cause) {
       const detail = errorDetail(cause);
@@ -330,6 +382,7 @@ export function useChatController({ selectedSessionId, activeProfileId, generati
     } finally {
       const registry = generations.current;
       const messageId = registry.info(key)?.messageId;
+      cancelledBeforeCreate = !messageId && (registry.stopRequested(key) || registry.isClosed(key));
       const followed = !registry.isClosed(key);
       // A reply the user stopped is not news; one that finished out of sight is.
       const unread = followed && Boolean(messageId) && !registry.stopRequested(key);
@@ -344,7 +397,7 @@ export function useChatController({ selectedSessionId, activeProfileId, generati
       publishGenerations();
       if (unread && messageId) markUnreadIfHidden(sessionId, messageId);
     }
-    return succeeded;
+    return succeeded && !cancelledBeforeCreate;
   }
 
   async function cancelRun(sessionId: string, runId: string) {

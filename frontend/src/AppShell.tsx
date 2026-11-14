@@ -286,7 +286,7 @@ export default function AppShell() {
         ttsControls={<TtsPlaybackBar playback={tts} />}
         onSend={chat.handleSend}
         onGenerate={() => void chat.handleGenerate()}
-        onGenerateFrom={(messageId) => chat.handleGenerate({ parentMessageId: messageId })}
+        onGenerateFrom={(messageId) => chat.handleGenerate({ parentMessageId: messageId, resolveOnStart: true })}
         onRegenerate={(messageId) => void chat.handleGenerate({ regenerateMessageId: messageId })}
         generation={{
           active: chat.activeGenerations, unread: chat.unreadGenerations, sessionTitles,

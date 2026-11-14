@@ -530,6 +530,72 @@ describe("Stream abort propagation, background error surfacing, and GenerationSt
     expect(onError).toHaveBeenCalledWith(expect.stringContaining("上游配额耗尽"));
   });
 
+  it("resolves resolveOnStart immediately upon message_created while keeping the stream running, and returns false on pre-create failure", async () => {
+    const encoder = new TextEncoder();
+    let controllerRef!: ReadableStreamDefaultController<Uint8Array>;
+    let streamFinished = false;
+    const createdReply = sampleMessage({
+      id: "msg-created",
+      session_id: "sess-1",
+      parent_id: "msg-prompt",
+      status: "streaming",
+      content: ""
+    });
+    const completedReply = { ...createdReply, status: "complete" as const, content: "Full reply" };
+
+    const fetchMock = vi.fn().mockImplementationOnce(async () => new Response(new ReadableStream<Uint8Array>({
+      start(streamController) {
+        controllerRef = streamController;
+        const sse = `event: message_created\ndata: ${JSON.stringify(createdReply)}\n\n`;
+        streamController.enqueue(encoder.encode(sse));
+      }
+    }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.spyOn(api, "activeGenerations").mockResolvedValue([]);
+    vi.spyOn(api, "tree").mockResolvedValue({
+      session: sampleSession({ id: "sess-1" }),
+      messages: [sampleMessage({ id: "msg-prompt", role: "user" }), completedReply],
+      active_path_ids: ["msg-prompt", "msg-created"]
+    });
+
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const prompt = sampleMessage({ id: "msg-prompt", role: "user", content: "Continue" });
+    client.setQueryData(treeQueryKey("sess-1"), {
+      session: sampleSession({ id: "sess-1" }),
+      messages: [prompt],
+      active_path_ids: ["msg-prompt"]
+    });
+
+    let chat!: ReturnType<typeof useChatController>;
+    function Capture() {
+      chat = useChatController({
+        selectedSessionId: "sess-1",
+        activeProfileId: "profile-1",
+        generationLimit: 4
+      });
+      return null;
+    }
+    renderMarkup(createElement(QueryClientProvider, { client }, createElement(Capture)));
+
+    const started = await chat.handleGenerate({ parentMessageId: "msg-prompt", resolveOnStart: true });
+    expect(started).toBe(true);
+    expect(streamFinished).toBe(false);
+    expect(client.getQueryData<SessionTree>(treeQueryKey("sess-1"))?.messages.some((m) => m.id === "msg-created")).toBe(true);
+
+    // Finish the open background stream cleanly.
+    controllerRef.enqueue(encoder.encode(`event: message_completed\ndata: ${JSON.stringify(completedReply)}\n\n`));
+    controllerRef.close();
+    streamFinished = true;
+
+    // Pre-create 429 failure resolves false when resolveOnStart is true.
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ detail: "请求过于频繁" }), {
+      status: 429,
+      headers: { "Content-Type": "application/json" }
+    }));
+    const failedStart = await chat.handleGenerate({ parentMessageId: "msg-prompt", resolveOnStart: true });
+    expect(failedStart).toBe(false);
+  });
+
   it("renders Chinese '生成中' status label in GenerationStatus", () => {
     expect(generationStatusLabel("streaming")).toBe("生成中");
 

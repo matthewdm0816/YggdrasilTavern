@@ -133,18 +133,31 @@ export function resumeGeneration(runId: string, handlers: StreamHandlers, signal
   return readGenerationStream("/api/generation-runs/" + encodeURIComponent(runId) + "/stream", {}, handlers, signal);
 }
 
+function abortError(): DOMException {
+  return new DOMException("The operation was aborted.", "AbortError");
+}
+
 async function readGenerationStream(
   path: string,
   init: RequestInit,
   handlers: StreamHandlers,
   signal?: AbortSignal
 ): Promise<void> {
-  const response = await fetch(API_BASE + path, {
-    ...init,
-    credentials: "include",
-    headers: { ...(init.headers || {}), ...accountHeaders() },
-    signal
-  });
+  if (signal?.aborted) throw abortError();
+  let response: Response;
+  try {
+    response = await fetch(API_BASE + path, {
+      ...init,
+      credentials: "include",
+      headers: { ...(init.headers || {}), ...accountHeaders() },
+      signal
+    });
+  } catch (cause) {
+    if (signal?.aborted) {
+      throw cause instanceof DOMException && cause.name === "AbortError" ? cause : abortError();
+    }
+    throw cause;
+  }
   if (!response.ok || !response.body) {
     notifyAuthenticationRequired(path, response);
     throw new GenerationRequestError(await responseError(response), response.status);
@@ -161,18 +174,42 @@ async function readGenerationStream(
       terminalError = error;
     });
   });
+  let removeAbortListener: (() => void) | undefined;
+  const aborted = signal
+    ? new Promise<never>((_, reject) => {
+        if (signal.aborted) {
+          reject(abortError());
+          return;
+        }
+        const onAbort = () => {
+          void reader.cancel().catch(() => undefined);
+          reject(abortError());
+        };
+        signal.addEventListener("abort", onAbort, { once: true });
+        removeAbortListener = () => signal.removeEventListener("abort", onAbort);
+      })
+    : null;
+  // Prevent unhandled rejection when stream ends before abort is raced.
+  aborted?.catch(() => undefined);
   try {
     while (true) {
-      const { value, done } = await reader.read();
+      if (signal?.aborted) throw abortError();
+      const { value, done } = await (aborted ? Promise.race([reader.read(), aborted]) : reader.read());
       if (done) break;
       parser.push(decoder.decode(value, { stream: true }));
     }
     parser.push(decoder.decode());
     parser.finish();
-    if (signal?.aborted) return;
-    if (!terminalSeen) throw new GenerationStreamDropped("生成流已断开，但没有收到完成或错误事件。");
     if (terminalError) throw terminalError;
+    if (!terminalSeen && signal?.aborted) throw abortError();
+    if (!terminalSeen) throw new GenerationStreamDropped("生成流已断开，但没有收到完成或错误事件。");
+  } catch (cause) {
+    if (!terminalSeen && signal?.aborted) {
+      throw cause instanceof DOMException && cause.name === "AbortError" ? cause : abortError();
+    }
+    throw cause;
   } finally {
+    removeAbortListener?.();
     reader.releaseLock();
   }
 }

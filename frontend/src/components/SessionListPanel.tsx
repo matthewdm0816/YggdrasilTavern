@@ -1,12 +1,172 @@
 import { useEffect, useState } from "react";
-import { Archive, ArchiveRestore, ChevronDown, ChevronRight, CopyPlus, Folder, FolderPlus, MessageSquarePlus, Pin, PinOff, Plus, Search, Star, X } from "lucide-react";
+import { Archive, ArchiveRestore, ChevronDown, ChevronRight, CopyPlus, Folder, FolderPlus, MessageSquarePlus, Pencil, Pin, PinOff, Plus, Search, Star, Trash2, X } from "lucide-react";
 import { api, CharacterSummary, ChatSession, SessionFolder } from "../lib/api";
 import { sortByName } from "../lib/order";
+import { useAppStore } from "../state/useAppStore";
 import { ActionMenu } from "./ActionMenu";
 import { CollapsibleSection } from "./CollapsibleSection";
 
 export function titleForSelectedCharacter(currentTitle: string, currentCharacterName: string, nextCharacterName: string) {
   return !currentTitle.trim() || currentTitle === currentCharacterName ? nextCharacterName : currentTitle;
+}
+
+export function fallbackSessionIdAfterDelete<T extends { id: string }>(sessions: T[], deletedSessionId: string): string | null {
+  return sessions.find((item) => item.id !== deletedSessionId)?.id ?? null;
+}
+
+export async function performRenameSession(
+  sessionId: string,
+  nextTitle: string,
+  onRefresh: () => Promise<void>,
+  onError?: (message: string) => void
+): Promise<boolean> {
+  const trimmed = nextTitle.trim();
+  if (!trimmed) return false;
+  try {
+    await api.updateSession(sessionId, { title: trimmed });
+    await onRefresh();
+    return true;
+  } catch (exc) {
+    onError?.(`重命名会话失败：${exc instanceof Error ? exc.message : String(exc)}`);
+    return false;
+  }
+}
+
+export async function performDeleteSession({
+  session,
+  sessions,
+  selectedSessionId,
+  confirm = (message) => window.confirm(message),
+  onSessionDeleted,
+  onSelectSession,
+  onRefresh,
+  onError
+}: {
+  session: Pick<ChatSession, "id" | "title">;
+  sessions: Array<Pick<ChatSession, "id">>;
+  selectedSessionId: string | null;
+  confirm?: (message: string) => boolean;
+  onSessionDeleted?: (deletedSessionId: string, nextSessionId: string | null) => void;
+  onSelectSession?: (id: string) => void;
+  onRefresh: () => Promise<void>;
+  onError?: (message: string) => void;
+}): Promise<boolean> {
+  if (!confirm(`删除会话“${session.title}”？会话内的所有消息与分支将被永久删除，此操作无法撤销。`)) {
+    return false;
+  }
+  try {
+    await api.deleteSession(session.id);
+    const nextSessionId = session.id === selectedSessionId
+      ? fallbackSessionIdAfterDelete(sessions, session.id)
+      : selectedSessionId;
+    if (onSessionDeleted) {
+      onSessionDeleted(session.id, nextSessionId);
+    } else if (session.id === selectedSessionId) {
+      useAppStore.getState().setSelectedSessionId(nextSessionId);
+      if (nextSessionId) onSelectSession?.(nextSessionId);
+    }
+    await onRefresh();
+    return true;
+  } catch (exc) {
+    onError?.(`删除会话失败：${exc instanceof Error ? exc.message : String(exc)}`);
+    return false;
+  }
+}
+
+export async function performRenameFolder(
+  folderId: string,
+  nextName: string,
+  reloadFolders: () => Promise<void>,
+  onRefresh: () => Promise<void>,
+  onError?: (message: string) => void
+): Promise<boolean> {
+  const trimmed = nextName.trim();
+  if (!trimmed) return false;
+  try {
+    await api.updateFolder(folderId, { name: trimmed });
+    await reloadFolders();
+    await onRefresh();
+    return true;
+  } catch (exc) {
+    onError?.(`重命名文件夹失败：${exc instanceof Error ? exc.message : String(exc)}`);
+    return false;
+  }
+}
+
+export function SessionActionItems({
+  session,
+  orderedCharacters,
+  folders,
+  busy,
+  copyingSession,
+  onStartRename,
+  onCopy,
+  onTogglePin,
+  onToggleArchive,
+  onRebindCharacter,
+  onMoveToFolder,
+  onDelete
+}: {
+  session: ChatSession;
+  orderedCharacters: CharacterSummary[];
+  folders: SessionFolder[];
+  busy: boolean;
+  copyingSession: boolean;
+  onStartRename: () => void;
+  onCopy: () => void;
+  onTogglePin: () => void;
+  onToggleArchive: () => void;
+  onRebindCharacter: (characterId: string) => void;
+  onMoveToFolder: (folderId: string | null) => void;
+  onDelete: () => void;
+}) {
+  return (
+    <>
+      <button type="button" data-close-menu disabled={busy} onClick={onStartRename}>
+        <Pencil size={15} />重命名会话
+      </button>
+      <button type="button" data-close-menu disabled={copyingSession || busy} onClick={onCopy}>
+        <CopyPlus size={15} />复制会话
+      </button>
+      <button type="button" data-close-menu disabled={busy} onClick={onTogglePin}>
+        {session.pinned ? <PinOff size={15} /> : <Pin size={15} />}
+        {session.pinned ? "取消置顶" : "置顶会话"}
+      </button>
+      <button type="button" data-close-menu disabled={busy} onClick={onToggleArchive}>
+        {session.archived ? <ArchiveRestore size={15} /> : <Archive size={15} />}
+        {session.archived ? "取消归档" : "归档会话"}
+      </button>
+      {orderedCharacters.length > 0 && (
+        <label className="form-field session-folder-menu">
+          <span>绑定角色</span>
+          <select
+            aria-label={`修改会话“${session.title}”的角色`}
+            value={session.character_id || ""}
+            disabled={busy}
+            onChange={(event) => onRebindCharacter(event.target.value)}
+          >
+            <option value="" disabled>选择角色…</option>
+            {orderedCharacters.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+          </select>
+        </label>
+      )}
+      <label className="form-field session-folder-menu">
+        <span>移动到文件夹</span>
+        <select
+          aria-label={`移动会话“${session.title}”到文件夹`}
+          value={session.folder_id || ""}
+          disabled={busy}
+          onChange={(event) => onMoveToFolder(event.target.value || null)}
+        >
+          <option value="">无文件夹</option>
+          {folders.map((folder) => <option key={folder.id} value={folder.id}>{folder.name}</option>)}
+        </select>
+      </label>
+      <button className="message-menu-delete" type="button" data-close-menu disabled={busy} onClick={onDelete}>
+        <Trash2 size={15} />删除会话…
+      </button>
+    </>
+  );
 }
 
 type Props = {
@@ -20,8 +180,10 @@ type Props = {
   onCreateSession: (payload: Parameters<typeof api.createSession>[0]) => Promise<ChatSession>;
   onRefresh: () => Promise<void>;
   onToggleArchived: () => void;
+  onSessionDeleted?: (deletedSessionId: string, nextSessionId: string | null) => void;
   onError?: (message: string) => void;
   defaultCollapsible?: boolean;
+  initialFolders?: SessionFolder[];
 };
 
 export function SessionListPanel({
@@ -35,8 +197,10 @@ export function SessionListPanel({
   onCreateSession,
   onRefresh,
   onToggleArchived,
+  onSessionDeleted,
   onError,
-  defaultCollapsible = true
+  defaultCollapsible = true,
+  initialFolders = []
 }: Props) {
   const [sessionTitle, setSessionTitle] = useState("");
   const [selectedCharacter, setSelectedCharacter] = useState("");
@@ -45,10 +209,14 @@ export function SessionListPanel({
   const [busy, setBusy] = useState(false);
   const [copyingSession, setCopyingSession] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [folders, setFolders] = useState<SessionFolder[]>([]);
+  const [folders, setFolders] = useState<SessionFolder[]>(initialFolders);
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [newFolderName, setNewFolderName] = useState("");
   const [showFolderInput, setShowFolderInput] = useState(false);
+  const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
+  const [renamingSessionTitle, setRenamingSessionTitle] = useState("");
+  const [renamingFolderId, setRenamingFolderId] = useState<string | null>(null);
+  const [renamingFolderName, setRenamingFolderName] = useState("");
   const orderedCharacters = sortByName(characters);
 
   useEffect(() => {
@@ -221,61 +389,135 @@ export function SessionListPanel({
     setSessionTitle((current) => titleForSelectedCharacter(current, currentCharacterName, nextCharacterName));
   }
 
+  function startRenameFolder(folder: SessionFolder) {
+    setRenamingFolderId(folder.id);
+    setRenamingFolderName(folder.name);
+  }
+
+  function cancelRenameFolder() {
+    setRenamingFolderId(null);
+    setRenamingFolderName("");
+  }
+
+  async function submitRenameFolder(folder: SessionFolder) {
+    const trimmed = renamingFolderName.trim();
+    if (!trimmed) return;
+    if (trimmed === folder.name) {
+      cancelRenameFolder();
+      return;
+    }
+    setBusy(true);
+    try {
+      const ok = await performRenameFolder(folder.id, trimmed, loadFolders, onRefresh, onError);
+      if (ok) cancelRenameFolder();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function startRenameSession(session: ChatSession) {
+    setRenamingSessionId(session.id);
+    setRenamingSessionTitle(session.title);
+  }
+
+  function cancelRenameSession() {
+    setRenamingSessionId(null);
+    setRenamingSessionTitle("");
+  }
+
+  async function submitRenameSession(session: ChatSession) {
+    const trimmed = renamingSessionTitle.trim();
+    if (!trimmed) return;
+    if (trimmed === session.title) {
+      cancelRenameSession();
+      return;
+    }
+    setBusy(true);
+    try {
+      const ok = await performRenameSession(session.id, trimmed, onRefresh, onError);
+      if (ok) cancelRenameSession();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleDeleteSession(session: ChatSession) {
+    setBusy(true);
+    try {
+      const ok = await performDeleteSession({
+        session,
+        sessions,
+        selectedSessionId,
+        onSessionDeleted,
+        onSelectSession,
+        onRefresh,
+        onError
+      });
+      if (ok && renamingSessionId === session.id) cancelRenameSession();
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function renderSessionRow(session: ChatSession) {
     const character = characters.find((item) => item.id === session.character_id);
+    const isRenaming = renamingSessionId === session.id;
     return (
       <div key={session.id} className={session.id === selectedSessionId ? "session-row selected" : "session-row"}>
-        <button className="session-title-btn" type="button" title={session.title} onClick={() => onSelectSession(session.id)}>
-          <span className="session-character-avatar" aria-hidden="true">
-            {character?.avatar_data_url
-              ? <img src={character.avatar_data_url} alt="" />
-              : <span>{(character?.name || session.title || "?").slice(0, 1)}</span>}
-          </span>
-          <span className="session-title-copy">
-            <span className="session-title-text">{session.title}</span>
-            {character?.name !== session.title && <span className="session-character-name">{character?.name || (!session.character_id ? "未绑定角色" : "角色不可用")}</span>}
-          </span>
-          {session.pinned && <Star size={13} className="pin-icon" aria-label="已置顶" />}
-        </button>
-        <div className="session-actions">
-          <ActionMenu label={`会话“${session.title}”操作`} className="session-actions-menu">
-            <button type="button" data-close-menu disabled={copyingSession} onClick={() => void copySession(session)}>
-              <CopyPlus size={15} />复制会话
+        {isRenaming ? (
+          <div className="inline-folder-input session-rename-form">
+            <input
+              aria-label={`重命名会话“${session.title}”`}
+              value={renamingSessionTitle}
+              onChange={(event) => setRenamingSessionTitle(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  void submitRenameSession(session);
+                } else if (event.key === "Escape") {
+                  event.preventDefault();
+                  cancelRenameSession();
+                }
+              }}
+              autoFocus
+            />
+            <button className="primary-button" type="button" disabled={!renamingSessionTitle.trim() || busy} onClick={() => void submitRenameSession(session)}>OK</button>
+            <button className="icon-button" type="button" title="取消重命名会话" aria-label="取消重命名会话" onClick={cancelRenameSession}><X size={14} /></button>
+          </div>
+        ) : (
+          <>
+            <button className="session-title-btn" type="button" title={session.title} onClick={() => onSelectSession(session.id)}>
+              <span className="session-character-avatar" aria-hidden="true">
+                {character?.avatar_data_url
+                  ? <img src={character.avatar_data_url} alt="" />
+                  : <span>{(character?.name || session.title || "?").slice(0, 1)}</span>}
+              </span>
+              <span className="session-title-copy">
+                <span className="session-title-text">{session.title}</span>
+                {character?.name !== session.title && <span className="session-character-name">{character?.name || (!session.character_id ? "未绑定角色" : "角色不可用")}</span>}
+              </span>
+              {session.pinned && <Star size={13} className="pin-icon" aria-label="已置顶" />}
             </button>
-            <button type="button" data-close-menu onClick={() => void togglePin(session)}>
-              {session.pinned ? <PinOff size={15} /> : <Pin size={15} />}
-              {session.pinned ? "取消置顶" : "置顶会话"}
-            </button>
-            <button type="button" data-close-menu onClick={() => void toggleArchive(session)}>
-              {session.archived ? <ArchiveRestore size={15} /> : <Archive size={15} />}
-              {session.archived ? "取消归档" : "归档会话"}
-            </button>
-            {characters.length > 0 && (
-              <label className="form-field session-folder-menu">
-                <span>绑定角色</span>
-                <select
-                  aria-label={`修改会话“${session.title}”的角色`}
-                  value={session.character_id || ""}
-                  onChange={(event) => void rebindSessionCharacter(session.id, event.target.value)}
-                >
-                  <option value="" disabled>选择角色…</option>
-                  {orderedCharacters.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-                </select>
-              </label>
-            )}
-            <label className="form-field session-folder-menu">
-              <span>移动到文件夹</span>
-              <select
-                aria-label={`移动会话“${session.title}”到文件夹`}
-                value={session.folder_id || ""}
-                onChange={(event) => void moveSessionToFolder(session.id, event.target.value || null)}
-              >
-                <option value="">无文件夹</option>
-                {folders.map((folder) => <option key={folder.id} value={folder.id}>{folder.name}</option>)}
-              </select>
-            </label>
-          </ActionMenu>
-        </div>
+            <div className="session-actions">
+              <ActionMenu label={`会话“${session.title}”操作`} className="session-actions-menu">
+                <SessionActionItems
+                  session={session}
+                  orderedCharacters={orderedCharacters}
+                  folders={folders}
+                  busy={busy}
+                  copyingSession={copyingSession}
+                  onStartRename={() => startRenameSession(session)}
+                  onCopy={() => void copySession(session)}
+                  onTogglePin={() => void togglePin(session)}
+                  onToggleArchive={() => void toggleArchive(session)}
+                  onRebindCharacter={(characterId) => void rebindSessionCharacter(session.id, characterId)}
+                  onMoveToFolder={(folderId) => void moveSessionToFolder(session.id, folderId)}
+                  onDelete={() => void handleDeleteSession(session)}
+                />
+              </ActionMenu>
+            </div>
+          </>
+        )}
       </div>
     );
   }
@@ -283,19 +525,45 @@ export function SessionListPanel({
   function renderFolder(folder: SessionFolder) {
     const expanded = expandedFolders.has(folder.id);
     const folderSessions = sessionsInFolder(folder.id);
+    const isRenaming = renamingFolderId === folder.id;
     return (
       <div key={folder.id} className="folder-group">
-        <div className="folder-header">
-          <button className="folder-toggle" type="button" onClick={() => toggleFolder(folder.id)}>
-            {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-            <Folder size={14} />
-            <span>{folder.name}</span>
-            <span className="folder-count">{folderSessions.length}</span>
-          </button>
-          <button className="icon-button-sm" type="button" title="删除文件夹" aria-label={`删除文件夹“${folder.name}”`} disabled={busy} onClick={() => void deleteFolder(folder)}>
-            <X size={12} />
-          </button>
-        </div>
+        {isRenaming ? (
+          <div className="inline-folder-input">
+            <input
+              aria-label={`重命名文件夹“${folder.name}”`}
+              value={renamingFolderName}
+              onChange={(event) => setRenamingFolderName(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  void submitRenameFolder(folder);
+                } else if (event.key === "Escape") {
+                  event.preventDefault();
+                  cancelRenameFolder();
+                }
+              }}
+              autoFocus
+            />
+            <button className="primary-button" type="button" disabled={!renamingFolderName.trim() || busy} onClick={() => void submitRenameFolder(folder)}>OK</button>
+            <button className="icon-button" type="button" title="取消重命名文件夹" aria-label="取消重命名文件夹" onClick={cancelRenameFolder}><X size={14} /></button>
+          </div>
+        ) : (
+          <div className="folder-header">
+            <button className="folder-toggle" type="button" onClick={() => toggleFolder(folder.id)}>
+              {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+              <Folder size={14} />
+              <span>{folder.name}</span>
+              <span className="folder-count">{folderSessions.length}</span>
+            </button>
+            <button className="icon-button-sm" type="button" title="重命名文件夹" aria-label={`重命名文件夹“${folder.name}”`} disabled={busy} onClick={() => startRenameFolder(folder)}>
+              <Pencil size={12} />
+            </button>
+            <button className="icon-button-sm" type="button" title="删除文件夹" aria-label={`删除文件夹“${folder.name}”`} disabled={busy} onClick={() => void deleteFolder(folder)}>
+              <X size={12} />
+            </button>
+          </div>
+        )}
         {expanded && (
           <div className="folder-children">
             {folderSessions.map(renderSessionRow)}

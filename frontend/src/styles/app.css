@@ -627,6 +627,11 @@ textarea:focus {
   font-size: 0.75rem;
 }
 
+.session-rename-form {
+  width: 100%;
+  padding: 6px 8px;
+}
+
 .session-list {
   display: grid;
   gap: 6px;
@@ -1305,7 +1310,7 @@ textarea:focus {
 
 .toast {
   position: fixed;
-  z-index: 100;
+  z-index: 300;
   right: 18px;
   bottom: 18px;
   display: flex;
@@ -1974,6 +1979,21 @@ textarea:focus {
   background: var(--surface);
 }
 
+.resource-row.resource-row-character {
+  grid-template-columns: 32px minmax(0, 1fr) repeat(4, 36px);
+}
+
+.left-pane .resource-row.resource-row-character {
+  min-width: 0;
+  grid-template-columns: 32px minmax(0, 1fr) repeat(4, 30px);
+}
+
+@media (max-width: 920px) {
+  .left-pane .resource-row.resource-row-character {
+    grid-template-columns: 32px minmax(0, 1fr) repeat(4, var(--mobile-control-size));
+  }
+}
+
 .resource-row > img,
 .avatar-placeholder,
 .book-badge {
@@ -2042,6 +2062,27 @@ textarea:focus {
   min-height: 0;
   padding: 16px;
   overflow: auto;
+}
+
+.resource-modal-error {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--danger-bg);
+  border: 1px solid color-mix(in srgb, var(--red) 35%, transparent);
+  color: var(--red);
+  font-size: 0.8125rem;
+}
+
+.resource-modal-error > span {
+  flex: 1;
+  min-width: 0;
+  word-break: break-word;
 }
 
 .resource-modal-body > label,

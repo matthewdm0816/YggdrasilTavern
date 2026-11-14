@@ -97,6 +97,8 @@ export const api = {
     request<ChatSession>(`/api/sessions/${sessionId}/copy`, { method: "POST" }),
   updateSession: (sessionId: string, payload: SessionUpdateInput) =>
     request<ChatSession>(`/api/sessions/${sessionId}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  deleteSession: (sessionId: string) =>
+    request<{ ok: boolean }>(`/api/sessions/${encodeURIComponent(sessionId)}`, { method: "DELETE" }),
   tree: (sessionId: string, signal?: AbortSignal) => request<SessionTree>(`/api/sessions/${sessionId}/tree`, { signal }),
   appendMessage: (sessionId: string, payload: MessageCreateInput) =>
     request<Message>(`/api/sessions/${sessionId}/messages`, { method: "POST", body: JSON.stringify(payload) }),

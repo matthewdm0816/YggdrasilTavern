@@ -1,7 +1,8 @@
 import { TextPreviewCompactContext } from "./components/TextPreviewSpan";
 import { MessageMacroProvider } from "./components/MessageMacroProvider";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { createPortal } from "react-dom";
+import { type QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, X } from "lucide-react";
 import { api, APIProfile, ChatSession, RegexRule, SessionTree } from "./lib/api";
 import { useAppStore } from "./state/useAppStore";
@@ -22,6 +23,25 @@ import { userStorageKey } from "./lib/userStorage";
 
 const ACTIVE_PROFILE_STORAGE_KEY = "yggdrasil-tavern.active-api-profile";
 const NO_REGEX_RULES: RegexRule[] = [];
+
+export function reconcileDeletedSessionCache(
+  queryClient: QueryClient,
+  deletedSessionId: string,
+  nextSessionId: string | null,
+  onClearTreeView?: () => void
+): void {
+  queryClient.setQueriesData<ChatSession[]>({ queryKey: ["sessions"] }, (current) =>
+    current ? current.filter((item) => item.id !== deletedSessionId) : current
+  );
+  void queryClient.cancelQueries({ queryKey: ["tree", deletedSessionId] });
+  queryClient.removeQueries({ queryKey: ["tree", deletedSessionId] });
+  void queryClient.cancelQueries({ queryKey: ["context-preview", deletedSessionId] });
+  queryClient.removeQueries({ queryKey: ["context-preview", deletedSessionId] });
+  if (useAppStore.getState().selectedSessionId === deletedSessionId) {
+    useAppStore.getState().setSelectedSessionId(nextSessionId);
+    if (!nextSessionId) onClearTreeView?.();
+  }
+}
 
 function loadActiveProfileId(): string {
   try {
@@ -66,10 +86,16 @@ export default function AppShell() {
   });
   const tts = useTtsPlayback(selectedSessionId);
   const [generationLimit, setGenerationLimit] = useState(loadGenerationLimit);
-  const chat = useChatController({ selectedSessionId, activeProfileId, generationLimit, onMessageCompleted: (message) => {
-    const latest = queryClient.getQueryData<SessionTree>(["tree", message.session_id]);
-    if (latest?.active_path_ids.includes(message.id)) tts.onGenerated(message);
-  } });
+  const chat = useChatController({
+    selectedSessionId,
+    activeProfileId,
+    generationLimit,
+    onError: setError,
+    onMessageCompleted: (message) => {
+      const latest = queryClient.getQueryData<SessionTree>(["tree", message.session_id]);
+      if (latest?.active_path_ids.includes(message.id)) tts.onGenerated(message);
+    }
+  });
   const tree = chat.tree;
   const ttsPreviewMessage = tree?.messages.find(message => message.id === ttsPreviewId && message.role === "assistant" && message.status === "complete");
   const spokenVersion = useRef<{ id: string; content: string } | null>(null);
@@ -223,7 +249,11 @@ export default function AppShell() {
         createSessionError={createSession.error instanceof Error ? createSession.error.message : null}
         onSelectSession={(id) => { setSelectedSessionId(id); setMobilePanel(null); }}
         onCreateSession={(payload) => createSession.mutateAsync(payload)}
+        onSessionDeleted={(deletedId, nextSessionId) => {
+          reconcileDeletedSessionCache(queryClient, deletedId, nextSessionId, () => setTreeViewOpen(false));
+        }}
         onRefresh={async () => {
+          const currentSessionId = useAppStore.getState().selectedSessionId;
           await Promise.all([
             queryClient.invalidateQueries({ queryKey: ["profiles"] }),
             queryClient.invalidateQueries({ queryKey: ["characters"] }),
@@ -231,6 +261,7 @@ export default function AppShell() {
             // Deleting a worldbook also removes it from the global selection.
             queryClient.invalidateQueries({ queryKey: globalWorldbookRegexQuery.queryKey }),
             queryClient.invalidateQueries({ queryKey: ["sessions"] }),
+            ...(currentSessionId ? [queryClient.invalidateQueries({ queryKey: ["tree", currentSessionId] })] : []),
             queryClient.invalidateQueries({ queryKey: ["context-preview"] })
           ]);
         }}
@@ -255,7 +286,7 @@ export default function AppShell() {
         ttsControls={<TtsPlaybackBar playback={tts} />}
         onSend={chat.handleSend}
         onGenerate={() => void chat.handleGenerate()}
-        onGenerateFrom={(messageId) => void chat.handleGenerate({ parentMessageId: messageId })}
+        onGenerateFrom={(messageId) => chat.handleGenerate({ parentMessageId: messageId, resolveOnStart: true })}
         onRegenerate={(messageId) => void chat.handleGenerate({ regenerateMessageId: messageId })}
         generation={{
           active: chat.activeGenerations, unread: chat.unreadGenerations, sessionTitles,
@@ -296,13 +327,16 @@ export default function AppShell() {
       <TtsSettingsDialog open={ttsSettingsOpen} onClose={() => setTtsSettingsOpen(false)} />
       {ttsPreviewMessage && <TtsMessageDialog message={ttsPreviewMessage} settings={tts.settingsQuery.data} playback={tts}
         onClose={() => setTtsPreviewId(null)} onSettings={openTtsSettings} />}
-      {displayedError && displayedError !== dismissedError && (
-        <div className="toast" role="alert">
-          <AlertCircle size={16} />
-          <span>{displayedError}</span>
-          <button className="icon-button" aria-label="关闭错误" onClick={() => { setDismissedError(displayedError); setError(null); chat.clearError(); }}><X size={15} /></button>
-        </div>
-      )}
+      {displayedError && displayedError !== dismissedError && (() => {
+        const toast = (
+          <div className="toast" role="alert">
+            <AlertCircle size={16} />
+            <span>{displayedError}</span>
+            <button className="icon-button" type="button" aria-label="关闭错误" onClick={() => { setDismissedError(displayedError); setError(null); chat.clearError(); }}><X size={15} /></button>
+          </div>
+        );
+        return typeof document !== "undefined" ? createPortal(toast, document.body) : toast;
+      })()}
     </main></TextPreviewCompactContext.Provider></MessageMacroProvider>
   );
 }

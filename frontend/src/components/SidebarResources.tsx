@@ -1,6 +1,6 @@
 import { ChangeEvent, useState } from "react";
 import { BookOpen, Link, Plus, Upload, UserRound } from "lucide-react";
-import { api, APIProfile, CharacterSummary, WorldBook } from "../lib/api";
+import { api, APIProfile, CharacterSummary, ChatSession, WorldBook } from "../lib/api";
 import { CollapsibleSection } from "./CollapsibleSection";
 import { CharacterManager, WorldbookManager } from "./ResourceEditors";
 import { SillyTavernImportPanel } from "./SillyTavernImportPanel";
@@ -12,17 +12,20 @@ type Props = {
   worldbooks: WorldBook[];
   onChanged: () => Promise<void>;
   onError?: (message: string) => void;
+  onCreateSession?: (payload: Parameters<typeof api.createSession>[0]) => Promise<ChatSession>;
+  creatingSession?: boolean;
 };
 
 function errorDetail(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
 }
 
-export function SidebarResources({ profiles, characters, worldbooks, onChanged, onError }: Props) {
+export function SidebarResources({ profiles, characters, worldbooks, onChanged, onError, onCreateSession, creatingSession }: Props) {
   const account = useAccount();
   const [chubPath, setChubPath] = useState("");
   const [busy, setBusy] = useState(false);
   const [newCharacterId, setNewCharacterId] = useState<string | null>(null);
+  const [newWorldbook, setNewWorldbook] = useState<WorldBook | null>(null);
   const [importWarnings, setImportWarnings] = useState<string[]>([]);
 
   async function importFile(event: ChangeEvent<HTMLInputElement>, kind: "character" | "worldbook") {
@@ -65,8 +68,9 @@ export function SidebarResources({ profiles, characters, worldbooks, onChanged, 
   async function createBlankWorldbook() {
     setBusy(true);
     try {
-      await api.createWorldbook({ name: "新世界书", description: "关键词触发的世界设定。", entries: [] });
+      const created = await api.createWorldbook({ name: "新世界书", description: "关键词触发的世界设定。", entries: [] });
       await onChanged();
+      setNewWorldbook(created);
     } catch (cause) {
       onError?.(errorDetail(cause));
     } finally {
@@ -112,7 +116,14 @@ export function SidebarResources({ profiles, characters, worldbooks, onChanged, 
               <input type="file" disabled={busy} accept=".json,.png,application/json,image/png" onChange={(event) => void importFile(event, "character")} />
             </label>
           </div>
-          <CharacterManager characters={characters} onChanged={onChanged} onError={onError} openRequestId={newCharacterId} />
+          <CharacterManager
+            characters={characters}
+            onChanged={onChanged}
+            onError={onError}
+            openRequestId={newCharacterId}
+            onCreateSession={onCreateSession}
+            creatingSession={creatingSession}
+          />
         </div>
       </CollapsibleSection>
 
@@ -135,7 +146,7 @@ export function SidebarResources({ profiles, characters, worldbooks, onChanged, 
               <input type="file" disabled={busy} accept=".json,application/json" onChange={(event) => void importFile(event, "worldbook")} />
             </label>
           </div>
-          <WorldbookManager worldbooks={worldbooks} onChanged={onChanged} onError={onError} />
+          <WorldbookManager worldbooks={worldbooks} onChanged={onChanged} onError={onError} openBook={newWorldbook} />
         </div>
       </CollapsibleSection>
 

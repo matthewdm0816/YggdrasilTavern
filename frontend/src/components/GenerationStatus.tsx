@@ -12,13 +12,24 @@ type Props = {
   onStop: (key: string) => void;
   onOpen: (sessionId: string, messageId: string) => void;
   onDismiss: (messageId: string) => void;
+  defaultExpanded?: boolean;
 };
 
-const finishedLabels: Record<string, string> = { complete: "已完成", failed: "失败", interrupted: "已中断", cancelled: "已取消" };
+const finishedLabels: Record<string, string> = {
+  streaming: "生成中",
+  complete: "已完成",
+  failed: "失败",
+  interrupted: "已中断",
+  cancelled: "已取消"
+};
+
+export function generationStatusLabel(status: string): string {
+  return finishedLabels[status] || status;
+}
 
 /** Header tag for replies that are streaming or finished out of sight; tapping it lists them. */
-export function GenerationStatus({ active, unread, sessionTitles, currentSessionId, onStop, onOpen, onDismiss }: Props) {
-  const [expanded, setExpanded] = useState(false);
+export function GenerationStatus({ active, unread, sessionTitles, currentSessionId, onStop, onOpen, onDismiss, defaultExpanded = false }: Props) {
+  const [expanded, setExpanded] = useState(defaultExpanded);
   const rootRef = useRef<HTMLDivElement>(null);
   const empty = active.length === 0 && unread.length === 0;
 
@@ -77,7 +88,7 @@ export function GenerationStatus({ active, unread, sessionTitles, currentSession
                 <button type="button" className="generation-status-open" onClick={() => open(item.sessionId, item.messageId)}>
                   {item.status === "complete" ? <span className="generation-status-dot" /> : <AlertCircle size={14} className="generation-status-alert" />}
                   <span className="generation-status-text">
-                    <strong>{finishedLabels[item.status] || item.status} · {where(item.sessionId)}</strong>
+                    <strong>{generationStatusLabel(item.status)} · {where(item.sessionId)}</strong>
                     <span>{item.label ? `“${item.label}”` : "（空回复）"}</span>
                   </span>
                 </button>

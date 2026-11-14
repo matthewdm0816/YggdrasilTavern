@@ -18,6 +18,7 @@ type ChatControllerOptions = {
   /** Most generations this page may run at once, across all sessions. */
   generationLimit: number;
   onMessageCompleted?: (message: Message) => void;
+  onError?: (message: string) => void;
 };
 
 type GenerateOptions = {
@@ -60,10 +61,12 @@ export function pathEndGeneration(tree: SessionTree | undefined, active: ActiveG
     && (leafId !== null && item.messageId === leafId || item.messageId === null && item.parentId === leafId));
 }
 
-export function useChatController({ selectedSessionId, activeProfileId, generationLimit, onMessageCompleted }: ChatControllerOptions) {
+export function useChatController({ selectedSessionId, activeProfileId, generationLimit, onMessageCompleted, onError }: ChatControllerOptions) {
   const queryClient = useQueryClient();
   const completedCallback = useRef(onMessageCompleted);
   completedCallback.current = onMessageCompleted;
+  const errorCallback = useRef(onError);
+  errorCallback.current = onError;
   const [errorsBySession, setErrorsBySession] = useState<Record<string, string | null>>({});
   const [mutatingBySession, setMutatingBySession] = useState<Record<string, boolean>>({});
   const [activeGenerations, setActiveGenerations] = useState<ActiveGeneration[]>([]);
@@ -201,20 +204,20 @@ export function useChatController({ selectedSessionId, activeProfileId, generati
     }
   }
 
-  async function handleGenerate({ regenerateMessageId, parentMessageId, sessionId: sessionIdOverride }: GenerateOptions = {}) {
+  async function handleGenerate({ regenerateMessageId, parentMessageId, sessionId: sessionIdOverride }: GenerateOptions = {}): Promise<boolean> {
     const sessionId = sessionIdOverride || selectedSessionId;
-    if (!sessionId) return;
+    if (!sessionId) return false;
     if (pendingMutations.current.has(sessionId)) {
       setSessionError(sessionId, "正在更新会话，请稍后生成。");
-      return;
+      return false;
     }
     if (!activeProfileId) {
       setSessionError(sessionId, "请先在 API Profiles 中选择或新建一个当前 Profile");
-      return;
+      return false;
     }
     if (generations.current.size >= generationLimit) {
       setSessionError(sessionId, generationLimitMessage(generationLimit));
-      return;
+      return false;
     }
     const tree = cachedTree(sessionId);
     // Name the parent explicitly so a branch switch elsewhere cannot move where this reply lands.
@@ -228,7 +231,7 @@ export function useChatController({ selectedSessionId, activeProfileId, generati
     });
     publishGenerations();
     setSessionError(sessionId, null);
-    await runGeneration(key, sessionId, (handlers, signal) => streamGenerate(sessionId, {
+    return runGeneration(key, sessionId, (handlers, signal) => streamGenerate(sessionId, {
       regenerate_message_id: regenerateMessageId || null,
       parent_message_id: regenerateMessageId ? null : parentId,
       api_profile_id: activeProfileId
@@ -311,11 +314,19 @@ export function useChatController({ selectedSessionId, activeProfileId, generati
     }
   }
 
-  async function runGeneration(key: string, sessionId: string, open: OpenGenerationStream) {
+  async function runGeneration(key: string, sessionId: string, open: OpenGenerationStream): Promise<boolean> {
+    let succeeded = false;
     try {
       await followGeneration(key, sessionId, open);
+      succeeded = true;
     } catch (cause) {
-      setSessionError(sessionId, errorDetail(cause));
+      const detail = errorDetail(cause);
+      setSessionError(sessionId, detail);
+      const registry = generations.current;
+      // Surface background failures that never created an unread reply node.
+      if (!registry.isClosed(key) && !registry.info(key)?.messageId && selectedSessionRef.current !== sessionId) {
+        errorCallback.current?.(detail);
+      }
     } finally {
       const registry = generations.current;
       const messageId = registry.info(key)?.messageId;
@@ -333,6 +344,7 @@ export function useChatController({ selectedSessionId, activeProfileId, generati
       publishGenerations();
       if (unread && messageId) markUnreadIfHidden(sessionId, messageId);
     }
+    return succeeded;
   }
 
   async function cancelRun(sessionId: string, runId: string) {

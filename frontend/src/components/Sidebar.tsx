@@ -11,12 +11,13 @@ import {
   profileDraftHasChanges,
   type ProfileDraft
 } from "./ModelSettingsDialog";
-import { SessionListPanel, titleForSelectedCharacter } from "./SessionListPanel";
+import { fallbackSessionIdAfterDelete, SessionListPanel, titleForSelectedCharacter } from "./SessionListPanel";
 import { SidebarResources } from "./SidebarResources";
 import "../styles/model-settings.css";
 
 export {
   fallbackProfileIdAfterDelete,
+  fallbackSessionIdAfterDelete,
   formatTokenLimit,
   profileDraftHasChanges,
   titleForSelectedCharacter,
@@ -40,6 +41,7 @@ type Props = {
   onCreateSession: (payload: Parameters<typeof api.createSession>[0]) => Promise<ChatSession>;
   onRefresh: () => Promise<void>;
   onToggleArchived: () => void;
+  onSessionDeleted?: (deletedSessionId: string, nextSessionId: string | null) => void;
   onCloseMobile?: () => void;
   onError?: (message: string) => void;
   settingsOpen: boolean;
@@ -71,6 +73,7 @@ export function Sidebar({
   onCreateSession,
   onRefresh,
   onToggleArchived,
+  onSessionDeleted,
   onCloseMobile,
   onError,
   settingsOpen,
@@ -170,6 +173,7 @@ export function Sidebar({
                 onCreateSession={onCreateSession}
                 onRefresh={onRefresh}
                 onToggleArchived={onToggleArchived}
+                onSessionDeleted={onSessionDeleted}
                 onError={onError}
                 defaultCollapsible={false}
               />
@@ -184,6 +188,12 @@ export function Sidebar({
                 worldbooks={worldbooks}
                 onChanged={onRefresh}
                 onError={onError}
+                creatingSession={creatingSession}
+                onCreateSession={async (payload) => {
+                  const created = await onCreateSession(payload);
+                  selectTab("sessions");
+                  return created;
+                }}
               />
             </div>
           )}

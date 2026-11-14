@@ -53,7 +53,7 @@ type Props = {
   onSend: (content: string) => Promise<void>;
   onGenerate: () => void;
   /** Start a new reply below any message, e.g. from the full chat tree. */
-  onGenerateFrom: (messageId: string) => void;
+  onGenerateFrom: (messageId: string) => Promise<boolean> | void;
   onRegenerate: (messageId: string) => void;
   generation: ChatGenerationState;
   onSelectMessage: (messageId: string) => Promise<void>;
@@ -180,6 +180,36 @@ export function messageEditHasChanges(
   message: Pick<Message, "content" | "thinking_content"> | undefined
 ) {
   return !message || edit.value !== message.content || edit.thinkingValue !== message.thinking_content;
+}
+
+export function handleMessageEditKeyDown(
+  event: Pick<KeyboardEvent<HTMLElement>, "key" | "ctrlKey" | "metaKey" | "preventDefault" | "stopPropagation"> & {
+    nativeEvent?: { isComposing?: boolean };
+  },
+  {
+    canSave,
+    canCancelClean,
+    onSave,
+    onCancel
+  }: {
+    canSave: boolean;
+    canCancelClean: boolean;
+    onSave: () => void;
+    onCancel: () => void;
+  }
+): void {
+  if (event.nativeEvent?.isComposing) return;
+  if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+    event.preventDefault();
+    event.stopPropagation();
+    if (canSave) onSave();
+    return;
+  }
+  if (event.key === "Escape" && canCancelClean) {
+    event.preventDefault();
+    event.stopPropagation();
+    onCancel();
+  }
 }
 
 export function ChatWorkspace({
@@ -558,6 +588,7 @@ export function ChatWorkspace({
           const outputTokens = tokenDisplay.outputTokens;
           const speed = tokenDisplay.tokensPerSecond;
           const presentation = getMessagePresentation(message);
+          const regenerateTitle = presentation.isStreaming ? "并行再生成一条回复" : "重新生成此回复";
           return (
             <div key={message.id} className={`message-line ${message.role}`} data-message-id={message.id}>
               {message.role === "assistant" && character?.avatar_data_url && (
@@ -572,7 +603,15 @@ export function ChatWorkspace({
                   </details>
                 )}
                 {isEditing ? (
-                  <div className="editor-box">
+                  <div
+                    className="editor-box"
+                    onKeyDown={(event) => handleMessageEditKeyDown(event, {
+                      canSave: !editBusy && messageEditHasChanges(edit, message),
+                      canCancelClean: !savingEdit && !messageEditHasChanges(edit, message),
+                      onSave: () => { void saveEdit(message); },
+                      onCancel: () => setEdit(sessionId, undefined)
+                    })}
+                  >
                     <label className="form-field"><span>正文</span><AutoSizeTextarea disabled={editBusy} value={edit.value} onChange={(event) => setEdit(sessionId, { ...edit, value: event.target.value })} /></label>
                     {(message.role === "assistant" || message.thinking_content) && (
                       <label className="form-field"><span>Thinking</span><AutoSizeTextarea disabled={editBusy} value={edit.thinkingValue} onChange={(event) => setEdit(sessionId, { ...edit, thinkingValue: event.target.value })} /></label>
@@ -601,7 +640,7 @@ export function ChatWorkspace({
                     <button className="icon-button" type="button" title="下一个分支" aria-label="下一个分支" disabled={!next || mutating || Boolean(treeActionLabel)} onClick={() => next && selectSwipeFromToolbar(next.id)}><ChevronRight size={16} /></button>
                     <button className="icon-button message-quick-action" type="button" title="编辑消息" aria-label="编辑消息" disabled={editBusy || message.status === "streaming"} onClick={() => startEdit(message)}><Edit3 size={15} /></button>
                     {message.role === "assistant" && (
-                      <button className="icon-button message-quick-action" type="button" title="重新生成此回复" aria-label="重新生成此回复" disabled={editBusy || !canGenerate} onClick={() => onRegenerate(message.id)}><RefreshCcw size={15} /></button>
+                      <button className="icon-button message-quick-action" type="button" title={regenerateTitle} aria-label="重新生成此回复" disabled={editBusy || !canGenerate} onClick={() => onRegenerate(message.id)}><RefreshCcw size={15} /></button>
                     )}
                     <ActionMenu label="消息操作">
                       {(hasHoverRules || (macroDisplay.mode === "hover" && (containsMacros(message.content) || containsMacros(message.thinking_content)))) && <button type="button" data-close-menu onClick={() => setPreviewReplacements((current) => ({ ...current, [message.id]: !current[message.id] }))}>{previewReplacements[message.id] ? "恢复原文" : "整条显示替换后"}</button>}
@@ -609,7 +648,7 @@ export function ChatWorkspace({
                       {message.role === "assistant" && onReadMessage && <button type="button" data-close-menu disabled={editBusy || message.status !== "complete"} onClick={() => onReadMessage(message)}><Volume2 size={16} />朗读消息…</button>}
                       <button type="button" data-close-menu disabled={editBusy || message.status === "streaming"} onClick={() => void duplicateMessage(message)}><CopyPlus size={16} />复制为新分支</button>
                       <button type="button" data-close-menu disabled={editBusy || message.status === "streaming"} onClick={() => startEdit(message)}><Edit3 size={16} />编辑消息</button>
-                      {message.role === "assistant" && <button type="button" data-close-menu disabled={editBusy || !canGenerate} onClick={() => onRegenerate(message.id)}><RefreshCcw size={16} />重新生成此回复</button>}
+                      {message.role === "assistant" && <button type="button" data-close-menu title={regenerateTitle} disabled={editBusy || !canGenerate} onClick={() => onRegenerate(message.id)}><RefreshCcw size={16} />{regenerateTitle}</button>}
                       <div className="message-menu-divider" role="separator" />
                       {(["assistant", "user", "system"] as const).filter((role) => role !== message.role).map((role) => (
                         <button key={role} type="button" data-close-menu disabled={messageActionsBusy} onClick={() => changeMessageRole(message, role)}><UserRound size={16} />改为{role === "assistant" ? "角色" : role === "user" ? "用户" : "系统"}消息</button>

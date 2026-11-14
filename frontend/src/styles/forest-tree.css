@@ -1,0 +1,1189 @@
+/* Dedicated styles for ForestTreeView (Canvas Topology + Metro Track List + Bottom Sheet) */
+
+.ftv-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: var(--overlay-bg);
+  backdrop-filter: blur(4px);
+}
+
+.forest-tree-dialog.ftv-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(1480px, 96vw);
+  height: min(920px, 94dvh);
+  min-height: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg, 12px);
+  background: var(--pane);
+  color: var(--text);
+  box-shadow: var(--modal-shadow);
+  overflow: hidden;
+}
+
+/* Header & Mode Switcher */
+.ftv-dialog .ftv-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--pane-strong);
+  flex-shrink: 0;
+}
+
+.ftv-dialog .ftv-header-copy {
+  min-width: 0;
+}
+
+.ftv-dialog .ftv-title-row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+.ftv-dialog .ftv-header h2 {
+  margin: 0;
+  font-size: 1.15rem;
+  line-height: 1.2;
+}
+
+.ftv-dialog .ftv-stats {
+  margin: 0;
+  color: var(--accent-text);
+  font-size: max(0.72rem, var(--small-text-floor, 0.75rem));
+  font-weight: 650;
+}
+
+.ftv-dialog .ftv-instructions {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: max(0.72rem, var(--small-text-floor, 0.75rem));
+  line-height: 1.4;
+}
+
+.ftv-dialog .ftv-header-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.ftv-dialog .ftv-mode-switch {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px;
+  gap: 2px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface-soft);
+}
+
+.ftv-dialog .ftv-mode-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 31px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  font-size: max(0.75rem, var(--small-text-floor, 0.75rem));
+  font-weight: 650;
+  white-space: nowrap;
+  transition: background-color 0.14s, color 0.14s, box-shadow 0.14s;
+}
+
+.ftv-dialog .ftv-mode-btn:hover {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+
+.ftv-dialog .ftv-mode-btn.active {
+  background: var(--surface);
+  color: var(--accent-text);
+  box-shadow: var(--shadow);
+}
+
+.ftv-dialog .ftv-mode-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--blue) 35%, transparent);
+}
+
+/* Toolbar */
+.ftv-dialog .ftv-toolbar {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto;
+  align-items: center;
+  gap: 6px 12px;
+  padding: 9px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--pane);
+  flex-shrink: 0;
+}
+
+.ftv-dialog .ftv-search {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm, 7px);
+  background: var(--surface);
+  color: var(--muted);
+}
+
+.ftv-dialog .ftv-search:focus-within {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 18%, transparent);
+}
+
+.ftv-dialog .ftv-search input {
+  min-width: 0;
+  min-height: 34px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  padding: 5px 0;
+  outline: 0;
+}
+
+.ftv-dialog .ftv-search-clear {
+  display: inline-grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+}
+
+.ftv-dialog .ftv-search-clear:hover {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+
+.ftv-dialog .ftv-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ftv-dialog .ftv-toolbar-actions .secondary-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 34px;
+  padding: 5px 10px;
+  font-size: max(0.75rem, var(--small-text-floor, 0.75rem));
+  white-space: nowrap;
+}
+
+.ftv-dialog .ftv-toolbar-actions .secondary-button.ftv-toggle-active {
+  border-color: color-mix(in srgb, var(--green) 58%, var(--line));
+  background: var(--surface-selected);
+  color: var(--accent-text);
+  font-weight: 650;
+}
+
+.ftv-dialog .ftv-result-count {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--muted);
+  font-size: max(0.7rem, var(--small-text-floor, 0.75rem));
+}
+
+/* Alerts */
+.ftv-dialog .ftv-warning,
+.ftv-dialog .ftv-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 9px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--warning-bg);
+  color: var(--warning-text);
+  font-size: max(0.75rem, var(--small-text-floor, 0.75rem));
+  line-height: 1.45;
+  flex-shrink: 0;
+}
+
+.ftv-dialog .ftv-warning p {
+  margin: 0 0 2px;
+}
+
+.ftv-dialog .ftv-error {
+  background: var(--danger-bg);
+  color: var(--red);
+  font-weight: 600;
+}
+
+/* Main Split Workspace */
+.ftv-dialog .ftv-body {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(340px, 410px);
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--chat-bg);
+}
+
+.ftv-dialog .ftv-main-area {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--chat-bg);
+}
+
+/* Search Highlight Mark */
+.ftv-dialog mark.ftv-highlight {
+  padding: 0 2px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--amber) 34%, var(--warning-bg));
+  color: var(--text);
+  font-weight: 650;
+}
+
+/* =========================================================
+   MODE 1: Canvas Topology Mode (Improved Chub Vertical Graph)
+   ========================================================= */
+.ftv-dialog .ftv-canvas-viewport {
+  position: relative;
+  flex: 1 1 auto;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  background-color: var(--chat-bg);
+  background-image: radial-gradient(
+    color-mix(in srgb, var(--muted) 22%, transparent) 1px,
+    transparent 1px
+  );
+  background-size: 22px 22px;
+}
+
+.ftv-dialog .ftv-canvas-viewport.panning {
+  cursor: grabbing;
+}
+
+.ftv-dialog .ftv-canvas-stage {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
+.ftv-dialog .ftv-canvas-stage.smooth {
+  transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.ftv-dialog .ftv-canvas-edges {
+  position: absolute;
+  top: 0;
+  left: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.ftv-dialog .ftv-edge-side {
+  fill: none;
+  stroke: color-mix(in srgb, var(--muted) 45%, var(--line));
+  stroke-width: 1.85;
+}
+
+.ftv-dialog .ftv-edge-search {
+  fill: none;
+  stroke: color-mix(in srgb, var(--amber) 82%, var(--line));
+  stroke-width: 2.25;
+}
+
+.ftv-dialog .ftv-edge-glow {
+  fill: none;
+  stroke: var(--green);
+  stroke-opacity: 0.22;
+  stroke-width: 7.5;
+  stroke-linecap: round;
+}
+
+.ftv-dialog .ftv-edge-active {
+  fill: none;
+  stroke: var(--green);
+  stroke-width: 2.65;
+  stroke-linecap: round;
+}
+
+.ftv-dialog .ftv-canvas-node-slot {
+  position: absolute;
+}
+
+/* Canvas Node Card */
+.ftv-dialog .ftv-canvas-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 5px;
+  width: 100%;
+  height: 100%;
+  padding: 8px 10px 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--surface);
+  color: var(--text);
+  text-align: left;
+  box-shadow: var(--shadow);
+  cursor: pointer;
+  overflow: hidden;
+  transition: border-color 0.14s, background-color 0.14s, box-shadow 0.14s, transform 0.12s;
+}
+
+.ftv-dialog .ftv-canvas-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: var(--muted);
+  opacity: 0.75;
+}
+
+.ftv-dialog .ftv-canvas-card.role-assistant::before {
+  background: var(--color-assistant-border, var(--green));
+  opacity: 1;
+}
+
+.ftv-dialog .ftv-canvas-card.role-user::before {
+  background: var(--color-user-border, var(--blue));
+  opacity: 1;
+}
+
+.ftv-dialog .ftv-canvas-card.role-system::before {
+  background: var(--amber);
+}
+
+.ftv-dialog .ftv-canvas-card:hover,
+.ftv-dialog .ftv-canvas-card:focus-visible {
+  border-color: var(--blue);
+  background: var(--surface-hover);
+}
+
+.ftv-dialog .ftv-canvas-card:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow), 0 0 0 3px color-mix(in srgb, var(--blue) 26%, transparent);
+}
+
+.ftv-dialog .ftv-canvas-card.active-path {
+  border-color: color-mix(in srgb, var(--green) 66%, var(--line));
+  background: var(--surface-selected);
+}
+
+.ftv-dialog .ftv-canvas-card.current-node {
+  border-color: var(--green);
+  box-shadow: var(--shadow), 0 0 0 2.5px color-mix(in srgb, var(--green) 26%, transparent);
+}
+
+.ftv-dialog .ftv-canvas-card.search-match {
+  border-color: color-mix(in srgb, var(--amber) 80%, var(--line));
+  background: color-mix(in srgb, var(--warning-bg) 74%, var(--surface));
+}
+
+.ftv-dialog .ftv-canvas-card.pinned-preview {
+  border-color: var(--blue);
+  box-shadow: var(--shadow), 0 0 0 3px color-mix(in srgb, var(--blue) 24%, transparent);
+}
+
+.ftv-dialog .ftv-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-width: 0;
+}
+
+.ftv-dialog .ftv-card-identity {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.ftv-dialog .ftv-role-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1px 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--chip-bg);
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.ftv-dialog .ftv-role-pill.role-assistant {
+  color: var(--accent-text);
+  border-color: color-mix(in srgb, var(--green) 38%, var(--line));
+}
+
+.ftv-dialog .ftv-role-pill.role-user {
+  color: var(--blue);
+  border-color: color-mix(in srgb, var(--blue) 38%, var(--line));
+}
+
+.ftv-dialog .ftv-speaker {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.ftv-dialog .ftv-card-badges {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.ftv-dialog .ftv-mini-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--chip-bg);
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.ftv-dialog .ftv-mini-badge.badge-current {
+  border-color: color-mix(in srgb, var(--green) 58%, var(--line));
+  background: color-mix(in srgb, var(--green) 15%, var(--surface));
+  color: var(--accent-text);
+}
+
+.ftv-dialog .ftv-mini-badge.badge-branch {
+  color: var(--text);
+}
+
+.ftv-dialog .ftv-mini-badge.badge-thinking {
+  border-color: color-mix(in srgb, var(--blue) 42%, var(--line));
+  color: var(--blue);
+}
+
+.ftv-dialog .ftv-mini-badge.status-streaming {
+  border-color: color-mix(in srgb, var(--amber) 55%, var(--line));
+  color: var(--amber);
+}
+
+.ftv-dialog .ftv-mini-badge.status-failed,
+.ftv-dialog .ftv-mini-badge.status-interrupted {
+  border-color: color-mix(in srgb, var(--red) 48%, var(--line));
+  color: var(--red);
+}
+
+.ftv-dialog .ftv-card-summary {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.74rem;
+  line-height: 1.38;
+  word-break: break-word;
+}
+
+/* Floating auxiliary pills on Canvas node slots */
+.ftv-dialog .ftv-canvas-subtree-btn {
+  position: absolute;
+  left: 50%;
+  bottom: -11px;
+  transform: translateX(-50%);
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 24px;
+  height: 20px;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--pane-strong);
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-weight: 700;
+  box-shadow: var(--shadow);
+}
+
+.ftv-dialog .ftv-canvas-subtree-btn:hover:not(:disabled) {
+  border-color: var(--blue);
+  color: var(--blue);
+}
+
+.ftv-dialog .ftv-canvas-recollapse-btn {
+  position: absolute;
+  right: 6px;
+  top: -11px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 20px;
+  padding: 0 7px;
+  border: 1px solid color-mix(in srgb, var(--blue) 42%, var(--line));
+  border-radius: 999px;
+  background: var(--pane-strong);
+  color: var(--accent-text);
+  font-size: 0.66rem;
+  font-weight: 700;
+  box-shadow: var(--shadow);
+}
+
+.ftv-dialog .ftv-canvas-recollapse-btn:hover {
+  border-color: var(--blue);
+  background: var(--surface-hover);
+}
+
+/* Chain Compression Capsule (Shared visual language across Canvas & Metro) */
+.ftv-dialog .ftv-chain-capsule {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  width: 100%;
+  height: 100%;
+  padding: 6px 12px;
+  border: 1.5px dashed color-mix(in srgb, var(--muted) 56%, var(--line));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface-soft) 88%, var(--pane));
+  color: var(--text);
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.14s, background-color 0.14s, box-shadow 0.14s;
+}
+
+.ftv-dialog .ftv-chain-capsule.active-path {
+  border-color: color-mix(in srgb, var(--green) 66%, var(--line));
+  background: color-mix(in srgb, var(--surface-selected) 82%, var(--surface));
+}
+
+.ftv-dialog .ftv-chain-capsule:hover,
+.ftv-dialog .ftv-chain-capsule:focus-visible {
+  border-style: solid;
+  border-color: var(--blue);
+  background: var(--surface-hover);
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 20%, transparent);
+}
+
+.ftv-dialog .ftv-chain-title {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: var(--accent-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ftv-dialog .ftv-chain-sub {
+  font-size: 0.68rem;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Canvas Floating Zoom Dock */
+.ftv-dialog .ftv-zoom-dock {
+  position: absolute;
+  left: 14px;
+  bottom: 14px;
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--glass-bg);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(10px);
+}
+
+.ftv-dialog .ftv-zoom-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 30px;
+  height: 30px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text);
+  font-size: 0.74rem;
+  font-weight: 650;
+}
+
+.ftv-dialog .ftv-zoom-btn:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--accent-text);
+}
+
+.ftv-dialog .ftv-zoom-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--blue) 30%, transparent);
+}
+
+/* =========================================================
+   MODE 2: Metro / Git Branch Track List (Zero Horizontal Drift!)
+   ========================================================= */
+.ftv-dialog .ftv-metro-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 10px 14px 18px;
+  overscroll-behavior: contain;
+}
+
+.ftv-dialog .ftv-metro-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ftv-dialog .ftv-metro-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: stretch;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 0 !important;
+  padding-inline-start: 0 !important;
+}
+
+.ftv-dialog .ftv-metro-row.root-separator {
+  margin-top: 8px;
+  padding-top: 8px !important;
+  border-top: 1px dashed var(--line);
+}
+
+.ftv-dialog .ftv-metro-gutter {
+  position: relative;
+  flex-shrink: 0;
+  min-height: 54px;
+  user-select: none;
+}
+
+.ftv-dialog .ftv-metro-row.is-chain-row .ftv-metro-gutter {
+  min-height: 44px;
+}
+
+.ftv-dialog .ftv-metro-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  overflow: visible;
+}
+
+.ftv-dialog .ftv-metro-rail {
+  fill: none;
+  stroke-width: 2.15;
+  stroke-linecap: round;
+}
+
+.ftv-dialog .ftv-metro-rail.lane-color-0 {
+  stroke: var(--green);
+  stroke-width: 2.75;
+}
+
+.ftv-dialog .ftv-metro-rail.lane-glow {
+  stroke: var(--green);
+  stroke-opacity: 0.2;
+  stroke-width: 6.5;
+}
+
+.ftv-dialog .ftv-metro-rail.lane-color-1 {
+  stroke: var(--blue);
+}
+
+.ftv-dialog .ftv-metro-rail.lane-color-2 {
+  stroke: var(--amber);
+}
+
+.ftv-dialog .ftv-metro-rail.lane-color-3 {
+  stroke: color-mix(in srgb, var(--blue) 55%, var(--red));
+}
+
+.ftv-dialog .ftv-metro-rail.lane-color-4 {
+  stroke: color-mix(in srgb, var(--green) 52%, var(--blue));
+}
+
+.ftv-dialog .ftv-metro-rail.lane-color-5 {
+  stroke: color-mix(in srgb, var(--red) 66%, var(--amber));
+}
+
+.ftv-dialog .ftv-metro-dot {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2.2px solid var(--blue);
+  background: var(--surface);
+  z-index: 1;
+}
+
+.ftv-dialog .ftv-metro-dot.lane-color-0,
+.ftv-dialog .ftv-metro-dot.active-dot {
+  border-color: var(--green);
+  background: var(--green);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 22%, transparent);
+}
+
+.ftv-dialog .ftv-metro-dot.current-dot {
+  width: 12px;
+  height: 12px;
+  border-color: var(--surface);
+  background: var(--green);
+  box-shadow: 0 0 0 2px var(--green), 0 0 10px color-mix(in srgb, var(--green) 55%, transparent);
+}
+
+.ftv-dialog .ftv-metro-dot.lane-color-1 { border-color: var(--blue); }
+.ftv-dialog .ftv-metro-dot.lane-color-2 { border-color: var(--amber); }
+.ftv-dialog .ftv-metro-dot.lane-color-3 { border-color: color-mix(in srgb, var(--blue) 55%, var(--red)); }
+.ftv-dialog .ftv-metro-dot.lane-color-4 { border-color: color-mix(in srgb, var(--green) 52%, var(--blue)); }
+.ftv-dialog .ftv-metro-dot.lane-color-5 { border-color: color-mix(in srgb, var(--red) 66%, var(--amber)); }
+
+.ftv-dialog .ftv-metro-dot.chain-dot {
+  width: 8px;
+  height: 14px;
+  border-radius: 999px;
+  border-style: dashed;
+}
+
+.ftv-dialog .ftv-metro-card-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 3px 0;
+}
+
+.ftv-dialog .ftv-metro-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 48px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--text);
+  text-align: left;
+  box-shadow: var(--shadow);
+  transition: border-color 0.14s, background-color 0.14s, box-shadow 0.14s;
+}
+
+.ftv-dialog .ftv-metro-card:hover,
+.ftv-dialog .ftv-metro-card:focus-visible {
+  border-color: var(--blue);
+  background: var(--surface-hover);
+}
+
+.ftv-dialog .ftv-metro-card:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 22%, transparent);
+}
+
+.ftv-dialog .ftv-metro-card.active-path {
+  border-color: color-mix(in srgb, var(--green) 64%, var(--line));
+  background: var(--surface-selected);
+}
+
+.ftv-dialog .ftv-metro-card.current-node {
+  border-color: var(--green);
+  box-shadow: var(--shadow), 0 0 0 2px color-mix(in srgb, var(--green) 22%, transparent);
+}
+
+.ftv-dialog .ftv-metro-card.search-match {
+  border-color: color-mix(in srgb, var(--amber) 76%, var(--line));
+  background: color-mix(in srgb, var(--warning-bg) 72%, var(--surface));
+}
+
+.ftv-dialog .ftv-metro-card.pinned-preview {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 22%, transparent);
+}
+
+.ftv-dialog .ftv-metro-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ftv-dialog .ftv-metro-summary {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: max(0.74rem, var(--small-text-floor, 0.75rem));
+}
+
+.ftv-dialog .ftv-metro-side-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.ftv-dialog .ftv-inline-pill-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-height: 30px;
+  padding: 0 7px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.ftv-dialog .ftv-inline-pill-btn:hover:not(:disabled) {
+  border-color: var(--blue);
+  color: var(--blue);
+}
+
+.ftv-dialog .ftv-metro-chain-capsule {
+  flex-direction: row;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 38px;
+  padding: 6px 14px;
+  text-align: left;
+}
+
+/* Empty State */
+.ftv-dialog .ftv-empty {
+  display: grid;
+  flex: 1 1 auto;
+  min-height: 260px;
+  place-items: center;
+  align-content: center;
+  gap: 9px;
+  padding: 24px;
+  color: var(--muted);
+  text-align: center;
+}
+
+/* =========================================================
+   Preview Panel (Desktop Side Column & Mobile Bottom Sheet)
+   ========================================================= */
+.ftv-dialog .ftv-preview-panel {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-width: 0;
+  width: 100%;
+  height: 100%;
+  padding: 16px;
+  overflow: hidden;
+  border-left: 1px solid var(--line);
+  background: var(--pane-strong);
+}
+
+.ftv-dialog .ftv-preview-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.ftv-dialog .ftv-preview-header h3 {
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.25;
+}
+
+.ftv-dialog .ftv-preview-header-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ftv-dialog .ftv-preview-badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 5px;
+}
+
+.ftv-dialog .ftv-preview-scroll {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overscroll-behavior: contain;
+}
+
+.ftv-dialog .ftv-thinking-box {
+  border: 1px solid color-mix(in srgb, var(--blue) 35%, var(--line));
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--surface-soft) 84%, var(--surface));
+  overflow: hidden;
+}
+
+.ftv-dialog .ftv-thinking-box > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 11px;
+  cursor: pointer;
+  color: var(--accent-text);
+  font-size: max(0.75rem, var(--small-text-floor, 0.75rem));
+  font-weight: 650;
+  user-select: none;
+}
+
+.ftv-dialog .ftv-thinking-box > summary:hover {
+  background: var(--surface-hover);
+}
+
+.ftv-dialog .ftv-thinking-content {
+  margin: 0;
+  padding: 10px 12px;
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 0.82rem;
+  line-height: 1.58;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.ftv-dialog .ftv-preview-content {
+  margin: 0;
+  min-height: 120px;
+  padding: 12px 13px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--text);
+  font-family: inherit;
+  font-size: inherit;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.ftv-dialog .ftv-message-error {
+  margin: 0;
+  padding: 9px 11px;
+  border: 1px solid color-mix(in srgb, var(--red) 38%, var(--line));
+  border-radius: 8px;
+  background: var(--danger-bg);
+  color: var(--red);
+  font-size: max(0.75rem, var(--small-text-floor, 0.75rem));
+  line-height: 1.45;
+}
+
+.ftv-dialog .ftv-preview-footer {
+  display: grid;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.ftv-dialog .ftv-preview-footer p {
+  margin: 0;
+  color: var(--muted);
+  font-size: max(0.74rem, var(--small-text-floor, 0.75rem));
+  line-height: 1.45;
+}
+
+.ftv-dialog .ftv-preview-footer p.ftv-continue-status {
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+.ftv-dialog .ftv-preview-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* Mobile Bottom Sheet Drawer */
+.ftv-dialog .ftv-sheet-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 15;
+  border: 0;
+  padding: 0;
+  background: color-mix(in srgb, var(--overlay-bg) 55%, transparent);
+  cursor: pointer;
+}
+
+.ftv-dialog .ftv-bottom-sheet {
+  position: absolute;
+  inset: auto 0 0 0;
+  z-index: 16;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  max-height: min(68dvh, 520px);
+  padding: 8px 14px calc(12px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--line);
+  border-radius: 16px 16px 0 0;
+  background: var(--pane-strong);
+  box-shadow: var(--drawer-shadow);
+  overflow: hidden;
+}
+
+.ftv-dialog .ftv-sheet-grabber {
+  width: 38px;
+  height: 4px;
+  margin: 0 auto 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 42%, var(--line));
+}
+
+/* =========================================================
+   Responsive Mobile Adaptation (<= 920px)
+   ========================================================= */
+@media (max-width: 920px) {
+  .ftv-backdrop {
+    padding: 0;
+  }
+
+  .forest-tree-dialog.ftv-dialog {
+    width: 100%;
+    height: 100dvh;
+    border-radius: 0;
+    border: 0;
+  }
+
+  .ftv-dialog .ftv-header {
+    padding: calc(10px + env(safe-area-inset-top)) 12px 10px;
+    gap: 8px;
+  }
+
+  .ftv-dialog .ftv-instructions {
+    display: none;
+  }
+
+  .ftv-dialog .ftv-mode-btn {
+    min-height: 32px;
+    padding: 4px 8px;
+    font-size: 0.8rem;
+  }
+
+  .ftv-dialog .ftv-mode-btn svg,
+  .ftv-dialog .ftv-zoom-btn svg,
+  .ftv-dialog .ftv-inline-pill-btn svg,
+  .ftv-dialog .ftv-canvas-subtree-btn svg,
+  .ftv-dialog .ftv-canvas-recollapse-btn svg {
+    width: 15px;
+    height: 15px;
+  }
+
+  .ftv-dialog .ftv-toolbar {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 8px 10px;
+    gap: 6px;
+  }
+
+  .ftv-dialog .ftv-toolbar-actions {
+    width: 100%;
+    overflow-x: auto;
+    padding-bottom: 2px;
+    scrollbar-width: none;
+  }
+
+  .ftv-dialog .ftv-toolbar-actions::-webkit-scrollbar {
+    display: none;
+  }
+
+  .ftv-dialog .ftv-toolbar-actions .secondary-button {
+    flex: 0 0 auto;
+    min-height: 32px;
+    padding: 4px 8px;
+    font-size: 0.82rem;
+  }
+
+  /* Full height dedicated to tree view on mobile; preview lives in Bottom Sheet! */
+  .ftv-dialog .ftv-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ftv-dialog .ftv-metro-scroll {
+    padding: 8px 10px calc(18px + env(safe-area-inset-bottom));
+  }
+
+  .ftv-dialog .ftv-metro-chain-capsule {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ftv-dialog .ftv-canvas-stage.smooth,
+  .ftv-dialog .ftv-canvas-card,
+  .ftv-dialog .ftv-metro-card,
+  .ftv-dialog .ftv-chain-capsule {
+    transition: none;
+  }
+}

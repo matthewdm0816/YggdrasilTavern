@@ -94,14 +94,14 @@ def _candidates_from_character_book(character: Optional[models.Character | Promp
     return candidates
 
 
+_WORLDBOOK_REGEX_KEY = re.compile(r"/(.+)/([gims]*)")
+
+
 def _regex_parts(key: str) -> Optional[tuple[str, int]]:
-    if len(key) < 2 or not key.startswith("/"):
+    match = _WORLDBOOK_REGEX_KEY.fullmatch(key)
+    if not match:
         return None
-    last = key.rfind("/")
-    if last <= 0:
-        return None
-    pattern = key[1:last]
-    flags_text = key[last + 1 :]
+    pattern, flags_text = match.groups()
     flags = 0
     if "i" in flags_text:
         flags |= re.IGNORECASE
@@ -120,20 +120,86 @@ def _match_key(key: str, text: str, *, case_sensitive: bool, whole_words: bool) 
         pattern, flags = regex
         if not case_sensitive:
             flags |= re.IGNORECASE
-        try:
-            return re.search(pattern, text, flags) is not None
-        except re.error:
-            return False
+        return re.search(pattern, text, flags) is not None
 
     if whole_words:
         flags = 0 if case_sensitive else re.IGNORECASE
-        try:
-            return re.search(rf"\b{re.escape(key)}\b", text, flags) is not None
-        except re.error:
-            return False
+        return re.search(rf"\b{re.escape(key)}\b", text, flags) is not None
     if case_sensitive:
         return key in text
     return key.lower() in text.lower()
+
+
+def _validate_candidate_regex_keys(
+    keys: List[str],
+    *,
+    worldbook_id: str,
+    entry_id: str,
+    case_sensitive: bool,
+    diagnostics: Optional[List[schemas.PromptDiagnostic]],
+) -> List[str]:
+    valid_keys: List[str] = []
+    for key in keys:
+        regex = _regex_parts(key)
+        if regex is not None:
+            pattern, flags = regex
+            if not case_sensitive:
+                flags |= re.IGNORECASE
+            try:
+                re.compile(pattern, flags)
+            except re.error as exc:
+                if diagnostics is None:
+                    raise
+                diagnostics.append(
+                    schemas.PromptDiagnostic(
+                        level="error",
+                        code="invalid_worldbook_regex",
+                        message=(
+                            f"Worldbook '{worldbook_id}' entry '{entry_id}' has invalid regex key "
+                            f"{key!r}: {exc}"
+                        ),
+                        rule_id=f"{worldbook_id}:{entry_id}",
+                    )
+                )
+                continue
+        valid_keys.append(key)
+    return valid_keys
+
+
+def _prepare_worldbooks_for_scan(
+    worldbooks: Sequence[LoadedWorldBook],
+    diagnostics: Optional[List[schemas.PromptDiagnostic]],
+) -> List[LoadedWorldBook]:
+    prepared: List[LoadedWorldBook] = []
+    for book in worldbooks:
+        candidates: List[LoreCandidate] = []
+        for candidate in book.candidates:
+            if not candidate.enabled or candidate.constant:
+                candidates.append(candidate)
+                continue
+            valid_keys = _validate_candidate_regex_keys(
+                candidate.keys,
+                worldbook_id=candidate.worldbook_id,
+                entry_id=candidate.id,
+                case_sensitive=candidate.case_sensitive,
+                diagnostics=diagnostics,
+            )
+            valid_secondary = (
+                _validate_candidate_regex_keys(
+                    candidate.secondary_keys,
+                    worldbook_id=candidate.worldbook_id,
+                    entry_id=candidate.id,
+                    case_sensitive=candidate.case_sensitive,
+                    diagnostics=diagnostics,
+                )
+                if candidate.selective
+                else candidate.secondary_keys
+            )
+            if valid_keys != candidate.keys or valid_secondary != candidate.secondary_keys:
+                candidate = replace(candidate, keys=valid_keys, secondary_keys=valid_secondary)
+            candidates.append(candidate)
+        prepared.append(replace(book, candidates=tuple(candidates)))
+    return prepared
 
 
 def _matches_any(keys: Iterable[str], text: str, candidate: LoreCandidate) -> bool:
@@ -156,11 +222,12 @@ def activate_lore(
     budget: int,
     recursive_scanning: bool = False,
     max_recursion_steps: int = 0,
+    diagnostics: Optional[List[schemas.PromptDiagnostic]] = None,
 ) -> List[LoreCandidate]:
     return activate_lore_books((LoadedWorldBook(
         id="single-book", scan_depth=scan_depth, token_budget=budget, candidates=tuple(candidates),
         recursive_scanning=recursive_scanning, max_recursion_steps=max_recursion_steps,
-    ),), messages)
+    ),), messages, diagnostics=diagnostics)
 
 
 def _lore_matches(candidate: LoreCandidate, text: str) -> bool:
@@ -201,8 +268,14 @@ def _lore_triggers(candidate: LoreCandidate, chat_text: str, sources: List[LoreC
     return tuple((source.worldbook_id, source.id) for source in sources if (source.worldbook_id, source.id) in matched)
 
 
-def activate_lore_books(worldbooks: Sequence[LoadedWorldBook], messages: List[models.Message | PromptMessage]) -> List[LoreCandidate]:
+def activate_lore_books(
+    worldbooks: Sequence[LoadedWorldBook],
+    messages: List[models.Message | PromptMessage],
+    *,
+    diagnostics: Optional[List[schemas.PromptDiagnostic]] = None,
+) -> List[LoreCandidate]:
     """Scan a shared recursion pool while retaining each book's limits and budget."""
+    worldbooks = _prepare_worldbooks_for_scan(worldbooks, diagnostics)
     activated: List[LoreCandidate] = []
     accepted: set[tuple[str, str]] = set()
     used = {book.id: 0 for book in worldbooks}
@@ -438,7 +511,7 @@ def compile_context(inputs: PromptInputs) -> schemas.ContextPreviewOut:
         keys=[expand_macros(key, character, user_name) for key in item.keys],
         secondary_keys=[expand_macros(key, character, user_name) for key in item.secondary_keys],
     ) for item in book.candidates)) for book in scan_books]
-    activated_lore = activate_lore_books(scan_books, scan_path)
+    activated_lore = activate_lore_books(scan_books, scan_path, diagnostics=diagnostics)
     activated_lore.sort(key=lambda item: (item.order, item.worldbook_id, item.id))
 
     lore_before = [item.content for item in activated_lore if item.position in {"before_char", "before_char_defs", "0"}]

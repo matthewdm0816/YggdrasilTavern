@@ -1,25 +1,57 @@
 from __future__ import annotations
 
+import functools
+import logging
 import math
 import re
 from typing import Any, Dict
+
+logger = logging.getLogger(__name__)
+
+
+def _heuristic_token_count(text: str) -> int:
+    cjk = len(re.findall(r"[\u3400-\u9fff]", text))
+    rest = len(text) - cjk
+    return cjk + math.ceil(rest / 4)
+
+
+@functools.lru_cache(maxsize=32)
+def _get_encoding(model: str) -> Any:
+    try:
+        import tiktoken  # type: ignore
+    except Exception as exc:
+        logger.warning("Failed to import tiktoken; falling back to heuristic token counter: %s", exc)
+        return None
+
+    if model:
+        try:
+            return tiktoken.encoding_for_model(model)
+        except KeyError:
+            pass
+        except Exception as exc:
+            logger.warning(
+                "Unexpected error resolving tiktoken encoding for model %r; falling back to cl100k_base: %s",
+                model,
+                exc,
+            )
+    try:
+        return tiktoken.get_encoding("cl100k_base")
+    except Exception as exc:
+        logger.warning("Failed to initialize cl100k_base tiktoken encoding; falling back to heuristic counter: %s", exc)
+        return None
 
 
 def count_text_tokens(text: str, model: str | None = None) -> int:
     if not text:
         return 0
+    encoding = _get_encoding(model or "")
+    if encoding is None:
+        return _heuristic_token_count(text)
     try:
-        import tiktoken  # type: ignore
-
-        try:
-            encoding = tiktoken.encoding_for_model(model or "")
-        except Exception:
-            encoding = tiktoken.get_encoding("cl100k_base")
-        return len(encoding.encode(text))
-    except Exception:
-        cjk = len(re.findall(r"[\u3400-\u9fff]", text))
-        rest = len(text) - cjk
-        return cjk + math.ceil(rest / 4)
+        return len(encoding.encode(text, disallowed_special=()))
+    except Exception as exc:
+        logger.warning("Unexpected error encoding text with tiktoken; falling back to heuristic counter: %s", exc)
+        return _heuristic_token_count(text)
 
 
 def merge_usage(current: Dict[str, Any], update: Dict[str, Any]) -> Dict[str, Any]:

@@ -78,6 +78,8 @@ def convert_custom_request_settings(raw: dict) -> tuple[dict, dict[str, str], li
                     headers = normalize_custom_headers(parsed)
                 else:
                     body = parsed
-        except (ValueError, TypeError):
-            warnings.append(f"{option} 格式尚未支持；仅转换 JSON 或简单 key: value 行，数字必须有限，复杂 YAML 和宏未应用")
+        except (ValueError, TypeError) as exc:
+            reason = str(exc).strip()
+            detail = f"（原因：{reason}）" if reason else ""
+            warnings.append(f"{option} 格式尚未支持{detail}；仅转换 JSON 或简单 key: value 行，数字必须有限，复杂 YAML 和宏未应用")
     return body, headers, excluded, warnings

@@ -31,7 +31,7 @@ def _decode_card_payload(value: str) -> Dict[str, Any]:
         if not candidate:
             continue
         try:
-            decoded = base64.b64decode(candidate, validate=True).decode("utf-8")
+            decoded = base64.b64decode(candidate, validate=True).decode("utf-8-sig")
             parsed = json.loads(decoded)
             if not isinstance(parsed, dict):
                 raise ValueError("decoded JSON root is not an object")
@@ -39,7 +39,7 @@ def _decode_card_payload(value: str) -> Dict[str, Any]:
         except (binascii.Error, UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
             errors.append(f"base64 JSON: {exc}")
     try:
-        parsed = json.loads(value)
+        parsed = json.loads(value.lstrip("\ufeff"))
         if not isinstance(parsed, dict):
             raise ValueError("JSON root is not an object")
         return parsed
@@ -60,7 +60,7 @@ def read_png_character_card(content: bytes) -> Dict[str, Any]:
         # so Image.open() alone leaves image.info empty for valid ST exports.
         image.load()
     except Exception as exc:
-        raise HTTPException(status_code=400, detail="Could not read PNG character card") from exc
+        raise HTTPException(status_code=400, detail=f"Could not read PNG character card: {exc}") from exc
 
     payloads = [(key, image.info.get(key)) for key in ("ccv3", "chara") if image.info.get(key)]
     if not payloads:
@@ -69,7 +69,7 @@ def read_png_character_card(content: bytes) -> Dict[str, Any]:
     for key, payload in payloads:
         if isinstance(payload, bytes):
             try:
-                payload = payload.decode("utf-8")
+                payload = payload.decode("utf-8-sig")
             except UnicodeDecodeError as exc:
                 failures.append(f"{key}: metadata is not UTF-8 ({exc})")
                 continue
@@ -84,6 +84,8 @@ def read_png_character_card(content: bytes) -> Dict[str, Any]:
 
 
 def normalize_character(raw: Dict[str, Any], avatar_data_url: str | None = None) -> schemas.CharacterCreate:
+    if not isinstance(raw, dict):
+        raise HTTPException(status_code=400, detail="Character JSON root must be an object")
     data = raw.get("data") if raw.get("spec") in {"chara_card_v2", "chara_card_v3"} else raw
     if not isinstance(data, dict):
         raise HTTPException(status_code=400, detail="Character card data is invalid")
@@ -117,9 +119,13 @@ def load_character_upload(filename: str, content: bytes) -> schemas.CharacterCre
         avatar_data_url = "data:image/png;base64," + base64.b64encode(content).decode("ascii")
     else:
         try:
-            raw = json.loads(content.decode("utf-8"))
-        except Exception as exc:
-            raise HTTPException(status_code=400, detail="Character JSON is invalid") from exc
+            text = content.decode("utf-8-sig")
+        except UnicodeDecodeError as exc:
+            raise HTTPException(status_code=400, detail=f"Character JSON is not valid UTF-8: {exc}") from exc
+        try:
+            raw = json.loads(text)
+        except json.JSONDecodeError as exc:
+            raise HTTPException(status_code=400, detail=f"Character JSON is invalid: {exc}") from exc
     return normalize_character(raw, avatar_data_url=avatar_data_url)
 
 
@@ -174,9 +180,13 @@ def normalize_worldbook(
 
 def load_worldbook_upload(content: bytes, filename: str | None = None) -> schemas.WorldBookCreate:
     try:
-        raw = json.loads(content.decode("utf-8"))
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail="Worldbook JSON is invalid") from exc
+        text = content.decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise HTTPException(status_code=400, detail=f"Worldbook JSON is not valid UTF-8: {exc}") from exc
+    try:
+        raw = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail=f"Worldbook JSON is invalid: {exc}") from exc
     uploaded_name = filename.replace("\\", "/").rsplit("/", 1)[-1] if filename else ""
     filename_stem = Path(uploaded_name).stem.strip() if uploaded_name else ""
     return normalize_worldbook(raw, fallback_name=filename_stem or "Imported Worldbook")

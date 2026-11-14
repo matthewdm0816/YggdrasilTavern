@@ -1,21 +1,36 @@
 """SillyTavern SSH preview/apply and read-only imported configuration."""
 
 from pathlib import Path
+import logging
 import secrets
 import time
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
-from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from .. import models, schemas
 from ..database import get_db
 from ..auth import require_admin
+from ..services.provider_protocols.transport import safe_error_text
 from ..services.st_directory_import import apply_plan, backup_sqlite, build_plan, plan_report
 from ..services.st_directory_source import read_source
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+def _plan_secret_headers(plan: Any) -> dict[str, str]:
+    secrets_map: dict[str, str] = {}
+    for index, item in enumerate(getattr(plan, "items", ())):
+        payload = getattr(item, "payload", None) or {}
+        if isinstance(payload.get("api_key"), str) and payload["api_key"]:
+            secrets_map[f"key_{index}"] = payload["api_key"]
+        for name, value in (payload.get("custom_headers") or {}).items():
+            if isinstance(value, str) and value:
+                secrets_map[f"hdr_{index}_{name}"] = value
+    return secrets_map
 
 
 @router.post("/imports/sillytavern/preview", response_model=schemas.SillyTavernImportReport)
@@ -62,8 +77,17 @@ def commit_import(payload: schemas.SillyTavernApplyRequest, request: Request, db
             report = apply_plan(db, plan, activate=payload.activate, expected_prompt_revision=revision if payload.activate else None)
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
-        except (OSError, SQLAlchemyError) as exc:
-            raise HTTPException(status_code=500, detail=f"导入或数据库备份失败（{type(exc).__name__}），未完成导入，请重新预览") from exc
+        except HTTPException:
+            raise
+        except Exception as exc:
+            logger.exception("SillyTavern import apply failed for source %s", getattr(plan, "source", "<unknown>"))
+            raw_reason = str(getattr(exc, "orig", None) or exc).strip()
+            reason = safe_error_text(raw_reason, _plan_secret_headers(plan))
+            detail_suffix = f"：{reason}" if reason else ""
+            raise HTTPException(
+                status_code=500,
+                detail=f"导入或数据库备份失败（{type(exc).__name__}{detail_suffix}），未完成导入，请重新预览",
+            ) from exc
     report["backup_path"] = str(backup) if backup else None
     return report
 

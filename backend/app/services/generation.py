@@ -5,10 +5,11 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 import time
 from typing import Any, Dict, Optional
 
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from .. import models, schemas
@@ -27,6 +28,10 @@ from .token_counter import (
     reasoning_tokens_from_usage,
 )
 from .tree import active_path, ancestor_path, create_message, get_message_or_404, get_session_or_404, serialize_session_writes
+
+logger = logging.getLogger(__name__)
+
+COMMIT_INTERVAL = 2.0  # batch-commit every N seconds to reduce SQLite contention
 
 
 def _message_json(message: models.Message) -> Dict[str, Any]:
@@ -178,8 +183,6 @@ async def start_generation(
         message=_message_json(assistant_message),
     )
 
-    COMMIT_INTERVAL = 2.0  # batch-commit every N seconds to reduce SQLite contention
-
     async def produce(live: LiveGeneration) -> None:
         # The request's session closes with its response, so the reply keeps its own.
         db = Session(bind=live.engine, autoflush=False, expire_on_commit=False)
@@ -325,9 +328,18 @@ async def start_generation(
                 # Batch-commit: flush dirty state periodically instead of every token
                 now = time.monotonic()
                 if dirty and now - last_commit >= COMMIT_INTERVAL:
-                    persist_state("streaming", None, terminal=False)
-                    dirty = False
-                    last_commit = now
+                    try:
+                        persist_state("streaming", None, terminal=False)
+                        dirty = False
+                        last_commit = now
+                    except SQLAlchemyError as exc:
+                        db.rollback()
+                        last_commit = now
+                        logger.warning(
+                            "Transient database error during intermediate commit for generation run %s: %s",
+                            generation_run_id,
+                            exc,
+                        )
             completed_message = persist_state("complete", None, terminal=True)
             live.publish(GenerationEvent("message_completed", _message_json(completed_message)))
         except asyncio.CancelledError:
@@ -337,11 +349,14 @@ async def start_generation(
             live.publish(GenerationEvent("message_stopped", _message_json(stopped_message)))
             raise
         except Exception as exc:
-            detail = str(getattr(exc, "detail", exc))
+            if not isinstance(exc, ApplicationError):
+                logger.exception("Generation run %s failed with unexpected error", generation_run_id)
+            detail = str(exc.detail) if isinstance(exc, ApplicationError) else str(getattr(exc, "detail", None) or exc)
             try:
                 failed_message = persist_state("failed", detail, terminal=True)
                 message_data = _message_json(failed_message)
             except Exception as persistence_exc:
+                logger.exception("Failed to persist failed state for generation run %s", generation_run_id)
                 db.rollback()
                 message_data = None
                 detail = f"{detail}; additionally failed to persist partial generation: {persistence_exc}"

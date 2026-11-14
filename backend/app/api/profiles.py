@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Dict, List
 
 import httpx
@@ -14,21 +15,36 @@ from ..services import providers
 from ..services.copy_names import copy_name
 from ..services.errors import ApplicationError
 from ..services.provider_protocols.request_settings import has_custom_auth, headers_need_replacement, patch_custom_headers
+from ..services.provider_protocols.transport import safe_error_text
 from ._shared import api_profile_write_data as _api_profile_write_data
 
 router = APIRouter()
 
 
 async def discover_profile_models(profile: models.APIProfile) -> schemas.ModelsRefreshOut:
+    redaction_headers = dict(profile.custom_headers or {})
+    if profile.api_key and profile.api_key.strip():
+        redaction_headers["_api_key"] = profile.api_key.strip()
+    elif profile.api_key_env:
+        env_key = (os.getenv(profile.api_key_env) or "").strip()
+        if env_key:
+            redaction_headers["_api_key_env"] = env_key
     try:
         discovered = await providers.refresh_models(profile)
     except ApplicationError as exc:
+        detail = safe_error_text(exc.detail, redaction_headers)
         return schemas.ModelsRefreshOut(
             models=[], available=False,
-            message=f"无法获取模型列表：{exc.detail}。仍可手动填写模型名称。",
+            message=f"无法获取模型列表：{detail}。仍可手动填写模型名称。",
         )
-    except (httpx.InvalidURL, ValueError):
-        return schemas.ModelsRefreshOut(models=[], available=False, message="无法获取模型列表：服务地址或返回的模型信息格式无效；请检查 Base URL，也可手动填写模型名称。")
+    except (httpx.InvalidURL, ValueError) as exc:
+        detail = safe_error_text(exc, redaction_headers).strip()
+        reason = f"（{type(exc).__name__}: {detail}）" if detail else f"（{type(exc).__name__}）"
+        return schemas.ModelsRefreshOut(
+            models=[],
+            available=False,
+            message=f"无法获取模型列表：服务地址或返回的模型信息格式无效{reason}；请检查 Base URL，也可手动填写模型名称。",
+        )
     return schemas.ModelsRefreshOut(models=discovered, refreshed_at=models.utc_now())
 
 

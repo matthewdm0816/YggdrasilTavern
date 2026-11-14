@@ -79,6 +79,7 @@ class Accounts:
         self._lock = RLock()
         self._dummy_hash: str | None = None
         self._attempts: dict[str, list[float]] = {}
+        self._has_users_cached = False
 
     def initialize(self) -> None:
         with self._lock:
@@ -98,6 +99,7 @@ class Accounts:
                         self.settings.auth_password.get_secret_value(),
                         self.settings.auth_username, is_admin=True, is_owner=True,
                     )))
+            self._has_users_cached = True
 
     def _open_registry(self) -> None:
         if not self.supported:
@@ -121,11 +123,18 @@ class Accounts:
 
     @property
     def enabled(self) -> bool:
+        if self._has_users_cached and self._engine is not None:
+            return True
         self.initialize()
         if self._engine is None:
             return False
+        if self._has_users_cached:
+            return True
         with self._engine.connect() as connection:
-            return connection.scalar(select(users.c.id).limit(1)) is not None
+            has_users = connection.scalar(select(users.c.id).limit(1)) is not None
+        if has_users:
+            self._has_users_cached = True
+        return has_users
 
     def _new_user(self, username: str, password: str, display_name: str, *, is_admin=False, is_owner=False) -> dict:
         return dict(id=str(uuid4()), username=username.strip(), username_key=username_key(username),
@@ -138,12 +147,14 @@ class Accounts:
             with self._engine.begin() as connection:
                 connection.exec_driver_sql("BEGIN IMMEDIATE")
                 if connection.scalar(select(users.c.id).limit(1)) is not None:
+                    self._has_users_cached = True
                     raise HTTPException(409, "多用户登录已经启用，请登录现有账号")
                 user = self._new_user(username, password, display_name, is_admin=True, is_owner=True)
                 try:
                     connection.execute(insert(users).values(**user))
                 except IntegrityError as exc:
                     raise HTTPException(409, "账号已存在") from exc
+            self._has_users_cached = True
             return user
 
     def list_users(self) -> list[dict]:
@@ -256,6 +267,7 @@ class Accounts:
         for database in self._workspaces.values():
             database.dispose()
         self._workspaces.clear()
+        self._has_users_cached = False
         if self._engine is not None:
             self._engine.dispose()
             self._engine = None

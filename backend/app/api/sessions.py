@@ -1,14 +1,16 @@
 from __future__ import annotations
 
+import asyncio
 from typing import Dict, List, Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Depends, HTTPException, Request
+from sqlalchemy import delete, select, update
+from sqlalchemy.orm import Session, selectinload
 
 from .. import models, schemas
 from ..database import get_db
 from ..services.copy_names import copy_name
+from ..services.live_generations import GenerationManager
 from ..services.prompt_builder import apply_context_token_limit, build_context, build_limited_context
 from ..services.macros import expand_message_content
 from ..services.token_counter import cached_tokens_from_usage, count_text_tokens
@@ -179,45 +181,112 @@ def update_session(session_id: str, payload: schemas.SessionUpdate, db: Session 
     return session
 
 
+def _get_generation_manager(request: Request) -> Optional[GenerationManager]:
+    return getattr(request.app.state, "generations", None)
+
+
 @router.delete("/sessions/{session_id}")
-def delete_session(session_id: str, db: Session = Depends(get_db)) -> Dict[str, bool]:
-    session = get_session_or_404(db, session_id)
-    db.delete(session)
-    db.commit()
+async def delete_session(
+    session_id: str,
+    db: Session = Depends(get_db),
+    manager: Optional[GenerationManager] = Depends(_get_generation_manager),
+) -> Dict[str, bool]:
+    get_session_or_404(db, session_id)
+    if isinstance(manager, GenerationManager):
+        db.rollback()
+        engine = db.get_bind()
+        while True:
+            active_runs = [live for live in manager.active(engine) if live.session_id == session_id]
+            if not active_runs:
+                break
+            await asyncio.gather(*(
+                manager.stop(live, "cancelled", "Session deleted")
+                for live in active_runs
+            ))
+    try:
+        session = get_session_or_404(db, session_id)
+        serialize_session_writes(db, session)
+        # Clear self-referencing and root pointers before bulk-deleting session rows.
+        db.execute(
+            update(models.ChatSession)
+            .where(models.ChatSession.id == session_id)
+            .values(active_root_child_id=None)
+            .execution_options(synchronize_session=False)
+        )
+        db.execute(
+            update(models.Message)
+            .where(models.Message.session_id == session_id)
+            .values(selected_child_id=None, parent_id=None)
+            .execution_options(synchronize_session=False)
+        )
+        db.execute(
+            delete(models.GenerationRun)
+            .where(models.GenerationRun.session_id == session_id)
+            .execution_options(synchronize_session=False)
+        )
+        db.execute(
+            delete(models.Message)
+            .where(models.Message.session_id == session_id)
+            .execution_options(synchronize_session=False)
+        )
+        db.execute(
+            delete(models.ChatSession)
+            .where(models.ChatSession.id == session_id)
+            .execution_options(synchronize_session=False)
+        )
+        db.commit()
+        db.expunge_all()
+    except Exception:
+        db.rollback()
+        raise
     return {"ok": True}
 
 
 @router.get("/sessions/{session_id}/tree", response_model=schemas.SessionTreeOut)
 def get_session_tree(session_id: str, db: Session = Depends(get_db)) -> schemas.SessionTreeOut:
     session = get_session_or_404(db, session_id)
-    return schemas.SessionTreeOut(session=session, messages=list_messages(db, session.id), active_path_ids=active_path_ids(db, session))
+    messages = list_messages(db, session.id)
+    return schemas.SessionTreeOut(
+        session=session,
+        messages=messages,
+        active_path_ids=active_path_ids(db, session, messages=messages),
+    )
 
 
 @router.get("/sessions/{session_id}/active-path", response_model=List[schemas.MessageOut])
 def get_active_path(session_id: str, db: Session = Depends(get_db)) -> List[models.Message]:
     session = get_session_or_404(db, session_id)
-    return active_path(db, session)
+    return active_path(
+        db,
+        session,
+        options=(selectinload(models.Message.generation_run).defer(models.GenerationRun.prompt_snapshot),),
+    )
 
 
 @router.post("/sessions/{session_id}/messages", response_model=schemas.MessageOut)
 def append_message(session_id: str, payload: schemas.MessageCreate, db: Session = Depends(get_db)) -> models.Message:
     session = get_session_or_404(db, session_id)
-    parent_id = payload.parent_id
-    if parent_id is None:
-        last = last_active_message(db, session)
-        parent_id = last.id if last else None
-    if parent_id and get_message_or_404(db, parent_id).status == "streaming":
-        raise HTTPException(status_code=409, detail="这条消息还在生成，请等它完成后再接着写")
-    return create_message(
-        db,
-        session,
-        parent_id=parent_id,
-        role=payload.role,
-        speaker=payload.speaker,
-        content=payload.content,
-        status=payload.status,
-        model=session.api_profile.model if session.api_profile else None,
-    )
+    try:
+        serialize_session_writes(db, session)
+        parent_id = payload.parent_id
+        if parent_id is None:
+            last = last_active_message(db, session)
+            parent_id = last.id if last else None
+        if parent_id and get_message_or_404(db, parent_id).status == "streaming":
+            raise HTTPException(status_code=409, detail="这条消息还在生成，请等它完成后再接着写")
+        return create_message(
+            db,
+            session,
+            parent_id=parent_id,
+            role=payload.role,
+            speaker=payload.speaker,
+            content=payload.content,
+            status=payload.status,
+            model=session.api_profile.model if session.api_profile else None,
+        )
+    except Exception:
+        db.rollback()
+        raise
 
 
 @router.patch("/messages/{message_id}", response_model=schemas.MessageOut)
@@ -257,18 +326,20 @@ def delete_message_endpoint(
     db: Session = Depends(get_db),
 ) -> schemas.MessageTreeMutationOut:
     session, deleted_count = delete_message_branch(db, message_id, scope=scope)
+    messages = list_messages(db, session.id)
     return schemas.MessageTreeMutationOut(
-        session=session, messages=list_messages(db, session.id),
-        active_path_ids=active_path_ids(db, session), deleted_count=deleted_count,
+        session=session, messages=messages,
+        active_path_ids=active_path_ids(db, session, messages=messages), deleted_count=deleted_count,
     )
 
 
 @router.post("/sessions/{session_id}/prune-empty-branches", response_model=schemas.MessageTreeMutationOut)
 def prune_empty_branches_endpoint(session_id: str, db: Session = Depends(get_db)) -> schemas.MessageTreeMutationOut:
     session, deleted_count = prune_empty_branches(db, session_id)
+    messages = list_messages(db, session.id)
     return schemas.MessageTreeMutationOut(
-        session=session, messages=list_messages(db, session.id),
-        active_path_ids=active_path_ids(db, session), deleted_count=deleted_count,
+        session=session, messages=messages,
+        active_path_ids=active_path_ids(db, session, messages=messages), deleted_count=deleted_count,
     )
 
 
@@ -276,14 +347,17 @@ def prune_empty_branches_endpoint(session_id: str, db: Session = Depends(get_db)
 def select_message_endpoint(message_id: str, db: Session = Depends(get_db)) -> schemas.SessionTreeOut:
     message = get_message_or_404(db, message_id)
     session = select_message(db, message)
-    return schemas.SessionTreeOut(session=session, messages=list_messages(db, session.id), active_path_ids=active_path_ids(db, session))
+    messages = list_messages(db, session.id)
+    return schemas.SessionTreeOut(
+        session=session, messages=messages, active_path_ids=active_path_ids(db, session, messages=messages),
+    )
 
 
 @router.post("/messages/{message_id}/swipes", response_model=schemas.SessionTreeOut)
 def create_swipe_endpoint(message_id: str, payload: schemas.SwipeCreate, db: Session = Depends(get_db)) -> schemas.SessionTreeOut:
     base = get_message_or_404(db, message_id)
     session = get_session_or_404(db, base.session_id)
-    swipe = create_swipe(
+    create_swipe(
         db,
         base,
         role=payload.role,
@@ -293,7 +367,10 @@ def create_swipe_endpoint(message_id: str, payload: schemas.SwipeCreate, db: Ses
         status=payload.status,
         model=session.api_profile.model if session.api_profile else None,
     )
-    return schemas.SessionTreeOut(session=session, messages=list_messages(db, session.id), active_path_ids=active_path_ids(db, session))
+    messages = list_messages(db, session.id)
+    return schemas.SessionTreeOut(
+        session=session, messages=messages, active_path_ids=active_path_ids(db, session, messages=messages),
+    )
 
 
 @router.post("/sessions/{session_id}/context/preview", response_model=schemas.ContextPreviewOut)
